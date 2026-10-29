@@ -14,6 +14,7 @@ pub struct RuntimeConfig {
     pub infrastructure: Infrastructure,
     pub worker: Worker,
     pub payment: Payment,
+    pub sandbox: SandboxLimits,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,12 +46,75 @@ pub struct Worker {
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SandboxLimits {
+    pub concurrency: usize,
+    pub artifact_bytes: usize,
+    pub input_bytes: usize,
+    pub output_bytes: usize,
+    pub schema_bytes: usize,
+    pub memory_bytes: usize,
+    pub fuel: u64,
+    pub artifacts_per_wallet: u64,
+    pub json_depth: usize,
+    pub json_nodes: usize,
+    pub collection_items: usize,
+}
+impl SandboxLimits {
+    fn validate(&self) -> anyhow::Result<()> {
+        if !(1..=16).contains(&self.concurrency)
+            || !(8..=1_048_576).contains(&self.artifact_bytes)
+            || !(1024..=262_144).contains(&self.input_bytes)
+            || !(1024..=262_144).contains(&self.output_bytes)
+            || !(256..=16_384).contains(&self.schema_bytes)
+            || !(65_536..=67_108_864).contains(&self.memory_bytes)
+            || !(100..=10_000_000).contains(&self.fuel)
+            || !(1..=1000).contains(&self.artifacts_per_wallet)
+            || !(1..=32).contains(&self.json_depth)
+            || !(64..=16_384).contains(&self.json_nodes)
+            || !(1..=1024).contains(&self.collection_items)
+        {
+            bail!("invalid sandbox resource limits");
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Payment {
+    pub decimals: u8,
+    pub settlement_finality: SettlementFinality,
     pub reorg_margin_seconds: u64,
     pub chain_id: u64,
     pub asset: String,
     pub name: String,
     pub version: String,
+}
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SettlementFinality {
+    Finalized,
+    Latest,
+}
+impl SettlementFinality {
+    #[must_use]
+    pub const fn tag(self) -> &'static str {
+        match self {
+            Self::Finalized => "finalized",
+            Self::Latest => "latest",
+        }
+    }
+    /// Unfinalized settlement is restricted to isolated loopback development RPCs.
+    /// # Errors
+    /// Rejects a latest-block policy against a non-loopback RPC endpoint.
+    pub fn validate_rpc(self, rpc_url: &str) -> anyhow::Result<()> {
+        let url = reqwest::Url::parse(rpc_url)?;
+        if self == Self::Latest
+            && !matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+        {
+            bail!("latest settlement finality requires a loopback development RPC");
+        }
+        Ok(())
+    }
 }
 impl Payment {
     #[must_use]
@@ -78,6 +142,7 @@ impl RuntimeConfig {
     /// # Errors
     /// Rejects zero, excessive, or inconsistent limits and malformed payment assets.
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.sandbox.validate()?;
         let h = &self.http;
         let i = &self.infrastructure;
         let w = &self.worker;
@@ -105,7 +170,8 @@ impl RuntimeConfig {
         {
             bail!("invalid or inconsistent Hiveway resource limits");
         }
-        if !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
+        if self.payment.decimals != 6
+            || !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
             || self.payment.chain_id == 0
             || self.payment.name.is_empty()
             || self.payment.name.len() > 80
@@ -114,12 +180,26 @@ impl RuntimeConfig {
         {
             bail!("invalid payment network configuration");
         }
+        self.payment
+            .settlement_finality
+            .validate_rpc(&self.rpc_url)?;
         crate::features::identity::wallet(&self.payment.asset)?;
         Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unfinalized_settlement_is_local_only() -> anyhow::Result<()> {
+        super::SettlementFinality::Latest.validate_rpc("http://127.0.0.1:8545")?;
+        assert!(
+            super::SettlementFinality::Latest
+                .validate_rpc("https://sepolia.base.org")
+                .is_err()
+        );
+        super::SettlementFinality::Finalized.validate_rpc("https://sepolia.base.org")?;
+        Ok(())
+    }
     #[test]
     fn unsafe_operational_overrides_fail_closed() -> anyhow::Result<()> {
         let valid: super::RuntimeConfig = toml::from_str(include_str!("../config.toml"))?;

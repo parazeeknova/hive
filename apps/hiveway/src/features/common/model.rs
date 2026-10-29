@@ -10,6 +10,7 @@ pub const ASSET: &str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 pub const SCOPES: &[&str] = &[
     "capabilities:read",
     "capabilities:publish",
+    "capabilities:invoke",
     "repository:analyze",
     "receipts:read",
     "sales:read",
@@ -113,13 +114,15 @@ pub struct PublishCapability {
     pub name: String,
     pub description: String,
     /// Supports `repository_stack` and `dependency_inventory`.
-    /// Publish workflow capabilities through `/v1/workflows`.
+    /// Publish workflow capabilities through `/v1/workflows`; `wasm` requires an owned artifact.
     pub runtime: String,
+    pub artifact_id: Option<Uuid>,
     pub price: String,
 }
 #[derive(Serialize, Deserialize, FromQueryResult, ToSchema)]
 pub struct Capability {
     pub id: Uuid,
+    pub created_at: i64,
     pub creator_wallet: String,
     pub name: String,
     pub description: String,
@@ -156,7 +159,7 @@ pub struct RepositoryInput {
 #[serde(deny_unknown_fields)]
 pub struct QuoteRequest {
     pub capability_id: Uuid,
-    pub input: RepositoryInput,
+    pub input: serde_json::Value,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, ToSchema)]
@@ -275,11 +278,48 @@ pub struct Sale {
     pub transaction_hash: String,
     pub created_at: i64,
 }
+#[derive(Serialize, ToSchema)]
+pub struct MethodEarnings {
+    pub method: String,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub amount: i64,
+    pub runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+    pub refunded_runs: i64,
+}
+#[derive(Serialize, ToSchema)]
+pub struct EarningsSummary {
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub lifetime_amount: i64,
+    pub settled_runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+    pub refunded_runs: i64,
+    pub methods: Vec<MethodEarnings>,
+}
+#[derive(Serialize, ToSchema)]
+pub struct CapabilityEarnings {
+    pub capability_id: Uuid,
+    pub name: String,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub amount: i64,
+    pub runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+}
 
 impl From<crate::entities::capabilities::Model> for Capability {
     fn from(model: crate::entities::capabilities::Model) -> Self {
         Self {
             id: model.id,
+            created_at: model.created_at,
             creator_wallet: model.creator_wallet,
             name: model.name,
             description: model.description,

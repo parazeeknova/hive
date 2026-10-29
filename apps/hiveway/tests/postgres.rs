@@ -142,7 +142,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        3
+        8
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {
@@ -242,5 +242,79 @@ async fn assert_settlement_output(
         .exec(db)
         .await?;
     assert_eq!(updated.rows_affected, 1);
+    assert_earnings_ledger(db, id, capability, owner).await?;
+    Ok(())
+}
+
+async fn assert_earnings_ledger(
+    db: &sea_orm::DatabaseConnection,
+    invocation: Uuid,
+    capability: Uuid,
+    owner: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use hiveway::entities::creator_earnings;
+    use sea_orm::sea_query::OnConflict;
+    let credit = || {
+        sea_orm::sea_query::Query::insert()
+            .into_table(creator_earnings::Entity)
+            .columns([
+                creator_earnings::Column::InvocationId,
+                creator_earnings::Column::CapabilityId,
+                creator_earnings::Column::CreatorWallet,
+                creator_earnings::Column::PayerWallet,
+                creator_earnings::Column::Amount,
+                creator_earnings::Column::Network,
+                creator_earnings::Column::TransactionHash,
+                creator_earnings::Column::PaymentMethod,
+                creator_earnings::Column::Refunded,
+                creator_earnings::Column::CreatedAt,
+            ])
+            .values_panic([
+                invocation.into(),
+                capability.into(),
+                owner.into(),
+                owner.into(),
+                60_i64.into(),
+                "dodo:test".into(),
+                "pay_fixture".into(),
+                "dodo".into(),
+                false.into(),
+                0_i64.into(),
+            ])
+            .on_conflict(
+                OnConflict::columns([creator_earnings::Column::InvocationId])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .to_owned()
+    };
+    // Concurrent settlement paths must not double-count the same invocation.
+    let tx = db.begin().await?;
+    tx.execute(&credit()).await?;
+    tx.execute(&credit()).await?;
+    tx.commit().await?;
+    assert_eq!(
+        creator_earnings::Entity::find()
+            .filter(creator_earnings::Column::InvocationId.eq(invocation))
+            .one(db)
+            .await?
+            .ok_or("missing earnings credit")?
+            .amount,
+        60
+    );
+    // A refund flags history instead of erasing it.
+    creator_earnings::Entity::update_many()
+        .col_expr(creator_earnings::Column::Refunded, Expr::val(true))
+        .filter(creator_earnings::Column::InvocationId.eq(invocation))
+        .exec(db)
+        .await?;
+    assert!(
+        creator_earnings::Entity::find()
+            .filter(creator_earnings::Column::InvocationId.eq(invocation))
+            .one(db)
+            .await?
+            .ok_or("missing earnings credit")?
+            .refunded
+    );
     Ok(())
 }

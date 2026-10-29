@@ -341,3 +341,32 @@ pub async fn cleanup_challenges(state: &AppState) -> ApiResult<()> {
         .await?;
     Ok(())
 }
+
+/// Resolve the invocation scope while preserving legacy repository credentials.
+/// # Errors
+/// Rejects credentials without either invocation scope.
+pub fn invocation_scope(credential: &Credential) -> ApiResult<&'static str> {
+    if credential
+        .scopes
+        .iter()
+        .any(|scope| scope == "capabilities:invoke")
+    {
+        Ok("capabilities:invoke")
+    } else if credential
+        .scopes
+        .iter()
+        .any(|scope| scope == "repository:analyze")
+    {
+        Ok("repository:analyze")
+    } else {
+        Err(ApiError::forbidden())
+    }
+}
+/// Authenticate an invoker; legacy repository credentials cannot quote arbitrary Wasm tools.
+/// # Errors
+/// Rejects missing, expired, revoked or insufficiently scoped credentials.
+pub async fn authenticate_invoker(state: &AppState, headers: &HeaderMap) -> ApiResult<Credential> {
+    let credential = authenticate(state, headers, "").await?;
+    invocation_scope(&credential)?;
+    Ok(credential)
+}

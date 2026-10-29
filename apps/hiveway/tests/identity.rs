@@ -137,11 +137,13 @@ async fn wallet_signatures_replay_scopes_and_revocation() -> TestResult {
     let db = Database::connect(options).await?;
     hiveway::database::migrate(&db).await?;
     let state = AppState {
+        sandbox: Arc::new(hiveway::features::cell::runtime::Sandbox::new(
+            hiveway::runtime::RuntimeConfig::load()?.sandbox,
+        )),
         postgres: db.clone(),
         settings: Arc::new(Settings::from_env()?),
         redis: fred::prelude::Builder::default_centralized().build()?,
         http: reqwest::Client::new(),
-        rig: None,
     };
     let app = hiveway::api::router().with_state(state.clone());
     let outcome = async {

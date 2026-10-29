@@ -1,3 +1,4 @@
+pub mod config;
 mod guard;
 use crate::{
     features::{comb, hiveway, identity, pollen, scout, waggle, wax},
@@ -15,7 +16,16 @@ use tower_http::cors::CorsLayer;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/mcp", post(hiveway::gateway))
+        .route("/v1/capabilities/page", get(scout::discovery::page))
+        .route("/v1/capabilities/{id}", get(scout::detail::detail))
+        .route(
+            "/v1/capabilities/{id}/availability",
+            post(wax::lifecycle::availability),
+        )
+        .route("/v1/artifacts", post(wax::artifacts::upload))
+        .route("/v1/artifacts/{id}", get(wax::artifacts::metadata))
         .route("/api/ready", get(ready))
+        .route("/api/config", get(config::configuration))
         .route("/v1/workflows", post(comb::compose))
         .route("/v1/activity", get(waggle::activity))
         .route("/v1/auth/challenges", post(identity::challenge))
@@ -33,7 +43,20 @@ pub fn router() -> Router<AppState> {
             post(pollen::dodo::checkout),
         )
         .route("/v1/webhooks/dodo", post(pollen::dodo::webhook))
+        .route(
+            "/v1/invocations/{id}/checkout/recover",
+            post(pollen::dodo::recover),
+        )
+        .route(
+            "/v1/invocations/{id}/refund",
+            get(pollen::dodo::refunds::status).post(pollen::dodo::refunds::refund),
+        )
         .route("/v1/sales", get(waggle::sales))
+        .route("/v1/earnings/summary", get(waggle::earnings::summary))
+        .route(
+            "/v1/earnings/by-capability",
+            get(waggle::earnings::by_capability),
+        )
         .layer(DefaultBodyLimit::disable())
 }
 /// # Errors

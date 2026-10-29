@@ -1,3 +1,4 @@
+pub mod earnings;
 use crate::entities::creator_sales::Column as CreatorSalesColumn;
 use crate::entities::creator_sales::Entity as CreatorSalesEntity;
 use crate::entities::invocations::Column as InvocationsColumn;

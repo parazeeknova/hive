@@ -1,0 +1,86 @@
+name: Hiveway
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    paths:
+      - "apps/hiveway/**"
+      - "packages/**"
+      - "scripts/**"
+      - "docker/**"
+      - "*.toml"
+      - "*.json"
+      - "*.yaml"
+      - "*.lock"
+      - "*.nix"
+      - ".github/workflows/hiveway.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hiveway-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: hive
+          POSTGRES_USER: hive
+          POSTGRES_PASSWORD: hive-ci-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hive -d hive" --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:8
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      CI: "true"
+      DATABASE_URL: postgres://hive:hive-ci-only@127.0.0.1:5432/hive
+      HIVE_TEST_DATABASE_URL: postgres://hive:hive-ci-only@127.0.0.1:5432/hive
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - name: Install development environment
+        run: nix profile install nixpkgs#devenv
+      - name: Install JavaScript dependencies
+        run: devenv shell -- bun install --frozen-lockfile
+      - name: Lint and format
+        run: devenv shell -- bun run check --ci
+      - name: Types, dependency audit and isolated Miri
+        run: devenv shell -- bun run check-types --ci
+      - name: PostgreSQL and security integration tests
+        run: devenv shell -- cargo test --locked --workspace --all-targets --all-features -- --include-ignored
+      - name: Start isolated payment infrastructure
+        run: devenv shell -- bun packages/local/src/chain/start.ts
+      - name: Exercise independent creator and buyer agents
+        env:
+          HIVE_DEMO_REPOSITORY: https://github.com/${{ github.repository }}
+        shell: bash
+        run: |
+          devenv shell -- bun packages/local/src/agents/serve.ts > .hive/local/backend.log 2>&1 &
+          backend_pid=$!
+          trap 'kill -TERM "$backend_pid" 2>/dev/null || true' EXIT
+          for _attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/api/ready; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:3001/api/ready
+          HIVE_DEMO_REVISION="$GITHUB_SHA" devenv shell -- bun packages/local/src/agents/demo.ts
+          devenv shell -- bun packages/local/src/agents/hosted-demo.ts
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          docker compose --profile payments logs --tail 100
+          test ! -f .hive/local/backend.log || tail -100 .hive/local/backend.log
+      - name: Stop isolated payment infrastructure
+        if: always()
+        run: docker compose --profile payments down

@@ -9,11 +9,11 @@ use crate::config::Config;
 /// Shared infrastructure handles. No capability or agent workflows are started.
 #[derive(Clone)]
 pub struct AppState {
+    pub sandbox: Arc<crate::features::cell::runtime::Sandbox>,
     pub settings: Arc<crate::features::common::settings::Settings>,
     pub postgres: DatabaseConnection,
     pub redis: fred::clients::Client,
     pub http: reqwest::Client,
-    pub rig: Option<rig_core::providers::openai::OpenAI>,
 }
 
 impl AppState {
@@ -56,16 +56,15 @@ impl AppState {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("hiveway/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        let rig = config
-            .openai_api_key
-            .as_deref()
-            .map(rig_core::providers::openai::OpenAI::new);
+        let sandbox = Arc::new(crate::features::cell::runtime::Sandbox::new(
+            settings.runtime.sandbox.clone(),
+        ));
         Ok(Self {
+            sandbox,
             settings,
             postgres,
             redis,
             http,
-            rig,
         })
     }
 }

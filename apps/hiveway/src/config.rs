@@ -14,7 +14,6 @@ pub struct Config {
     pub bind_address: std::net::SocketAddr,
     pub database_url: String,
     pub redis_url: String,
-    pub openai_api_key: Option<String>,
 }
 
 impl Config {
@@ -38,9 +37,6 @@ impl Config {
                 .map_err(|_| ConfigError::InvalidBindAddress)?,
             database_url: required("DATABASE_URL")?,
             redis_url: required("REDIS_URL")?,
-            openai_api_key: env::var("OPENAI_API_KEY")
-                .ok()
-                .filter(|key| !key.is_empty()),
         })
     }
 }

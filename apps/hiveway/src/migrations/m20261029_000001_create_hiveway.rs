@@ -97,6 +97,7 @@ fn capabilities() -> TableCreateStatement {
             "repository_stack",
             "dependency_inventory",
             "workflow",
+            "wasm",
         ]),
     ));
     table.check((

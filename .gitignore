@@ -30,3 +30,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Generated local chain configuration and run artifacts
+.hive/

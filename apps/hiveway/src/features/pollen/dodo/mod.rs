@@ -1,6 +1,9 @@
 //! Dodo test checkout and authenticated webhook inbox. Canonical provider reads
 //! establish payment status; neither redirects nor client-supplied receipts do.
-use super::{invocation, locked_credential, receipt, x402};
+mod provider;
+pub mod recovery;
+pub mod refunds;
+use super::{invocation, locked_credential, receipt};
 use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
 use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
 use crate::entities::invocations::Column as InvocationsColumn;
@@ -24,42 +27,16 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
+#[cfg(test)]
+use provider::definitive_rejection;
+use provider::{identifier, request};
+pub use recovery::recover;
 use sea_orm::sea_query::{Expr, ExprTrait, OnConflict, Query as SqlQuery};
 use sea_orm::{ColumnTrait, QueryOrder, QuerySelect};
 use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-async fn request(
-    state: &AppState,
-    method: reqwest::Method,
-    path: &str,
-    body: Option<Value>,
-) -> ApiResult<Value> {
-    let key = state
-        .settings
-        .dodo_api_key
-        .as_ref()
-        .ok_or_else(|| ApiError::unavailable("dodo_not_configured"))?;
-    let mut request = state
-        .http
-        .request(method, format!("{}{path}", state.settings.dodo_api_url))
-        .bearer_auth(key);
-    if let Some(body) = body {
-        request = request.json(&body);
-    }
-    let response = request
-        .send()
-        .await
-        .map_err(|_| ApiError::unavailable("dodo_unavailable"))?;
-    if definitive_rejection(response.status()) {
-        return Err(ApiError::bad("dodo_request_rejected"));
-    }
-    x402::json_response(response).await
-}
-fn definitive_rejection(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 400 | 401 | 403 | 404 | 422)
-}
 /// Queue uncertain checkout creation for operators; provider uncertainty never frees budget.
 /// The durable queue is `checkout_review`, with its issue visible in receipts and activity.
 /// # Errors
@@ -99,17 +76,6 @@ async fn reject_checkout(state: &AppState, id: Uuid, credential: Uuid) -> ApiRes
     tx.commit().await?;
     Ok(())
 }
-fn identifier(value: &str) -> ApiResult<&str> {
-    if value.is_empty()
-        || value.len() > 128
-        || !value
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-    {
-        return Err(ApiError::bad("invalid_provider_id"));
-    }
-    Ok(value)
-}
 #[utoipa::path(post,path="/v1/invocations/{id}/checkout",params(("id"=Uuid,Path)),responses((status=200,description="Hosted test checkout")))]
 /// # Errors
 /// Rejects invalid credentials, incompatible prices, unavailable configuration, and provider failures.
@@ -118,7 +84,7 @@ pub async fn checkout(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
-    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    let c = identity::authenticate_invoker(&state, &headers).await?;
     let product = state
         .settings
         .dodo_product_id
@@ -130,7 +96,7 @@ pub async fn checkout(
     }
     queue_stale_checkouts(&state).await?;
     let tx = state.postgres.begin().await?;
-    locked_credential(&tx, c.id, "repository:analyze").await?;
+    locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
     let inv = invocation(&tx, id, c.id).await?;
     if inv.payment_method.as_deref() == Some("dodo") {
         let response = json!({"invocation_id":id,"state":inv.state,"checkout_id":inv.checkout_id,"checkout_url":inv.checkout_url});
@@ -265,6 +231,8 @@ pub async fn webhook(
 }
 fn matches_payment(payment: &Value, session: &Value, inv: &Invocation, product: &str) -> bool {
     payment["status"] == "succeeded"
+        && payment.get("refund_status").is_none_or(Value::is_null)
+        && payment["refunds"].as_array().is_some_and(Vec::is_empty)
         && payment["currency"] == "USD"
         && payment["total_amount"]
             .as_i64()
@@ -420,6 +388,13 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
                         .await?;
                     if let Some(inv) = inv {
                         if kind == "payment.succeeded" {
+                            recovery::recover_paid_checkout(
+                                state,
+                                inv.id,
+                                inv.credential_id,
+                                &payment_id,
+                            )
+                            .await?;
                             reconcile(state, inv.id, inv.credential_id).await?;
                         } else if kind.contains("refund") || kind.contains("dispute") {
                             InvocationsEntity::update_many()
@@ -429,6 +404,11 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
                                 )
                                 .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
                                 .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                                .filter(
+                                    InvocationsColumn::PaymentIssue
+                                        .is_null()
+                                        .or(InvocationsColumn::PaymentIssue.ne("refunded")),
+                                )
                                 .exec(&state.postgres)
                                 .await?;
                         }
@@ -462,8 +442,15 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
 mod tests {
     #[test]
     fn ambiguous_provider_errors_keep_reservations() {
-        for status in [400, 401, 403, 404, 422] {
+        for status in [400, 404, 422] {
             assert!(super::definitive_rejection(
+                reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
+            ));
+        }
+        // Authentication rejections surface separately so refunds can be retried
+        // after credentials are corrected; they never release reservations either.
+        for status in [401, 403] {
+            assert!(!super::definitive_rejection(
                 reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
             ));
         }
@@ -510,12 +497,14 @@ mod tests {
             payment_issue: None,
         };
         let session = json!({"id":"cks_1","payment_id":"pay_1"});
-        let original = json!({"status":"succeeded","currency":"USD","total_amount":100,"payment_id":"pay_1","checkout_session_id":"cks_1","metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":"0x1111111111111111111111111111111111111111"},"product_cart":[{"product_id":"prod_1","quantity":1}]});
+        let original = json!({"status":"succeeded","refunds":[],"refund_status":null,"currency":"USD","total_amount":100,"payment_id":"pay_1","checkout_session_id":"cks_1","metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":"0x1111111111111111111111111111111111111111"},"product_cart":[{"product_id":"prod_1","quantity":1}]});
         assert!(super::matches_payment(&original, &session, &inv, "prod_1"));
         for (path, value) in [
             ("/total_amount", json!(99)),
             ("/total_amount", json!(200)),
             ("/currency", json!("EUR")),
+            ("/refund_status", json!("full")),
+            ("/refunds", json!([{"refund_id":"ref_1"}])),
             ("/checkout_session_id", json!("cks_other")),
             ("/payment_id", json!("pay_other")),
             ("/product_cart/0/product_id", json!("prod_other")),

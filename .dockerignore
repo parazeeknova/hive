@@ -1,0 +1,11 @@
+.git
+node_modules
+**/node_modules
+**/.next
+target
+.devenv
+.direnv
+.nx
+.hive
+.env*
+*.log

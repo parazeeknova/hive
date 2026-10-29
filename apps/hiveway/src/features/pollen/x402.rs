@@ -1,3 +1,4 @@
+mod finality;
 use crate::{
     features::{
         common::{
@@ -296,8 +297,13 @@ pub async fn confirm(
     let Some(from_block) = &invocation.settlement_block else {
         return Ok(None);
     };
+    ensure_chain(state).await?;
+    let boundary = finality::boundary(state).await?;
+    if finality::quantity(&json!(from_block))? > finality::quantity(&boundary["number"])? {
+        return Ok(None);
+    }
     let nonce = payload.payload.authorization.nonce.to_lowercase();
-    let logs=rpc(state,"eth_getLogs",json!([{"address":state.settings.runtime.payment.asset,"fromBlock":from_block,"toBlock":"latest","topics":[topic("AuthorizationUsed(address,bytes32)"),address_topic(&payload.payload.authorization.from)?,nonce]}])).await?;
+    let logs=rpc(state,"eth_getLogs",json!([{"address":state.settings.runtime.payment.asset,"fromBlock":from_block,"toBlock":boundary["number"],"topics":[topic("AuthorizationUsed(address,bytes32)"),address_topic(&payload.payload.authorization.from)?,nonce]}])).await?;
     let Some(log) = logs
         .as_array()
         .and_then(|l| l.iter().find(|l| l["removed"] != true))
@@ -311,26 +317,45 @@ pub async fn confirm(
     if receipt.is_null() {
         return Ok(None);
     }
+    if receipt["transactionHash"] != tx_hash {
+        return Err(ApiError::unavailable(
+            "settlement_receipt_transaction_mismatch",
+        ));
+    }
+    if !finality::canonical_receipt(state, log, &receipt, &boundary).await? {
+        return Ok(None);
+    }
     if receipt["status"] != "0x1" {
         return Err(ApiError::unavailable("settlement_transaction_failed"));
     }
     let from = address_topic(&payload.payload.authorization.from)?;
     let to = address_topic(&requirements.pay_to)?;
     let transfer = topic("Transfer(address,address,uint256)");
-    let valid = receipt["logs"].as_array().is_some_and(|logs| {
-        logs.iter().any(|l| {
-            l["address"]
+    let authorized = receipt["logs"].as_array().is_some_and(|logs| {
+        logs.iter().any(|event| {
+            event["address"]
                 .as_str()
-                .is_some_and(|a| a.eq_ignore_ascii_case(&state.settings.runtime.payment.asset))
-                && l["topics"][0] == transfer
-                && l["topics"][1] == from
-                && l["topics"][2] == to
-                && l["data"]
-                    .as_str()
-                    .and_then(|d| u128::from_str_radix(d.trim_start_matches("0x"), 16).ok())
-                    == requirements.amount.parse::<u128>().ok()
+                .is_some_and(|address| address.eq_ignore_ascii_case(&requirements.asset))
+                && event["topics"][0] == topic("AuthorizationUsed(address,bytes32)")
+                && event["topics"][1] == from
+                && event["topics"][2] == nonce
         })
     });
+    let valid = authorized
+        && receipt["logs"].as_array().is_some_and(|logs| {
+            logs.iter().any(|l| {
+                l["address"]
+                    .as_str()
+                    .is_some_and(|a| a.eq_ignore_ascii_case(&state.settings.runtime.payment.asset))
+                    && l["topics"][0] == transfer
+                    && l["topics"][1] == from
+                    && l["topics"][2] == to
+                    && l["data"]
+                        .as_str()
+                        .and_then(|d| u128::from_str_radix(d.trim_start_matches("0x"), 16).ok())
+                        == requirements.amount.parse::<u128>().ok()
+            })
+        });
     if !valid {
         return Err(ApiError::unavailable("settlement_transfer_mismatch"));
     }

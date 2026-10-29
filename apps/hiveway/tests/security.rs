@@ -1,6 +1,14 @@
 #![cfg(not(miri))]
+#[path = "security/artifacts.rs"]
+mod artifacts;
+#[path = "security/catalog.rs"]
+mod catalog;
+#[path = "security/dodo.rs"]
+mod dodo;
 #[path = "security/recovery.rs"]
 mod recovery;
+#[path = "security/refunds.rs"]
+mod refunds;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -249,6 +257,7 @@ async fn live_socket_probe(app: Router) -> Result {
 }
 #[tokio::test]
 #[ignore = "requires HIVE_TEST_DATABASE_URL pointing at local PostgreSQL"]
+#[allow(clippy::too_many_lines)]
 async fn adversarial_http_access_and_input_boundaries() -> Result {
     let url = std::env::var("HIVE_TEST_DATABASE_URL")?;
     let admin = Database::connect(url.clone()).await?;
@@ -279,9 +288,16 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let fixture_status = provider_status.clone();
     let chain = Arc::new(recovery::ChainFixture::default());
     let fixture_chain = chain.clone();
+    let provider = Arc::new(dodo::ProviderFixture::default());
+    let refund_fixture = Arc::new(refunds::Fixture::new(provider.clone()));
+    let server_refunds = refund_fixture.clone();
+    let payment_provider = provider.clone();
+    let session_provider = provider.clone();
     settings.rpc_url = settings.facilitator_url.clone();
     let facilitator = tokio::spawn(async move {
-        let router = Router::new()
+        let router = Router::new().merge(refunds::router(server_refunds))
+            .route("/payments/{id}", axum::routing::get(dodo::payment).with_state(payment_provider))
+            .route("/checkouts/{id}", axum::routing::get(dodo::session).with_state(session_provider))
             .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
             .route("/supported", axum::routing::get(|| async {
                 axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))
@@ -294,11 +310,13 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     });
     settings.dodo_webhook_secret = Some("AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=".into());
     let state = AppState {
+        sandbox: Arc::new(hiveway::features::cell::runtime::Sandbox::new(
+            hiveway::runtime::RuntimeConfig::load()?.sandbox,
+        )),
         postgres: db.clone(),
         settings: Arc::new(settings),
         redis: fred::prelude::Builder::default_centralized().build()?,
         http: reqwest::Client::new(),
-        rig: None,
     };
     let (app, _drain) = hiveway::api::protect(
         hiveway::api::router().with_state(state.clone()),
@@ -309,9 +327,21 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         probe_checkout_rejections(app.clone(), &db, a, id, &token_a, &provider_status).await;
     let recovery_result = async {
         recovery::checkout_queue(&state, id, a).await?;
-        recovery::expiry(&state, &chain, a, cap).await
+        dodo::exercise(app.clone(), &state, &provider, id, (&token_a, &token_b)).await?;
+        refunds::exercise(
+            app.clone(),
+            &state,
+            &refund_fixture,
+            id,
+            (&token_a, &token_b),
+        )
+        .await?;
+        recovery::expiry(&state, &chain, a, cap).await?;
+        recovery::settlement_finality(&state, &chain, a, cap).await
     }
     .await;
+    let artifacts_result = artifacts::exercise(app.clone(), &state, (&token_a, &token_b)).await;
+    let catalog_result = catalog::exercise(app.clone(), &state, (&token_a, &token_b)).await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -327,6 +357,8 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     outcome?;
     payment_result?;
     recovery_result?;
+    artifacts_result?;
+    catalog_result?;
     socket_result
 }
 
@@ -349,10 +381,16 @@ async fn seed(
             name: Set("fixture".into()),
             token_hash: Set(identity::hash(token.as_bytes())),
             scopes: Set(vec![
-                "repository:analyze".into(),
+                if credential == a {
+                    "capabilities:invoke"
+                } else {
+                    "repository:analyze"
+                }
+                .into(),
                 "receipts:read".into(),
                 "capabilities:read".into(),
                 "capabilities:publish".into(),
+                "sales:read".into(),
             ]),
             per_call_limit: Set(100),
             total_limit: Set(100),

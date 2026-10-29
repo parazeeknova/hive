@@ -36,6 +36,7 @@ impl Settings {
         let rpc_url = validate_url(
             &env::var("BASE_SEPOLIA_RPC_URL").unwrap_or_else(|_| runtime.rpc_url.clone()),
         )?;
+        runtime.payment.settlement_finality.validate_rpc(&rpc_url)?;
         let optional = |key| env::var(key).ok().filter(|s| !s.is_empty());
         Ok(Self {
             public_url,

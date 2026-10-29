@@ -52,7 +52,7 @@ pub async fn compose(
         .filter(Column::Id.is_in(request.steps.clone()))
         .filter(Column::Active.eq(true))
         .filter(Column::CreatorWallet.eq(&creator.wallet))
-        .filter(Column::Runtime.ne("workflow"))
+        .filter(Column::Runtime.is_in(["repository_stack", "dependency_inventory"]))
         .all(&tx)
         .await?;
     if steps.len() != request.steps.len() {
@@ -76,5 +76,6 @@ pub async fn compose(
     .await?;
 
     tx.commit().await?;
+    crate::features::scout::discovery::bump_catalog_version(&state).await;
     Ok(Json(capability.into()))
 }

@@ -9,7 +9,7 @@ use crate::{
         cell,
         common::{
             error::{ApiError, ApiResult},
-            model::{Invocation, RepositoryInput, Settlement, now},
+            model::{Invocation, Settlement, now},
         },
     },
     state::AppState,
@@ -40,7 +40,7 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
         return Ok(());
     }
     let start = Instant::now();
-    let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
+    let input = inv.input.clone();
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
         cell::execute_capability(state, inv.capability_id, &input),
@@ -159,6 +159,20 @@ async fn complete_paid(
             .to_owned(),
     )
     .await?;
+    super::credit_earnings(
+        &tx,
+        &super::EarningsCredit {
+            invocation_id: inv.id,
+            capability_id: inv.capability_id,
+            creator_wallet: creator.clone(),
+            payer_wallet: wallet.clone(),
+            amount: inv.price,
+            network: "dodo:test".into(),
+            transaction_hash: payment_id.into(),
+            payment_method: "dodo".into(),
+        },
+    )
+    .await?;
     tx.commit().await?;
     tracing::info!(invocation_id=%inv.id,execution_ms=elapsed,result_bytes=bytes,"Capability delivered after Dodo payment");
     Ok(())
@@ -169,6 +183,11 @@ async fn complete_paid(
 pub async fn tick(state: &AppState) -> ApiResult<()> {
     crate::features::identity::cleanup_challenges(state).await?;
     dodo::queue_stale_checkouts(state).await?;
+    if state.settings.dodo_api_key.is_some()
+        && let Err(error) = dodo::refunds::tick(state).await
+    {
+        tracing::warn!(error = error.code, "Refund recovery pending");
+    }
     if state.settings.dodo_api_key.is_some()
         && let Err(error) = dodo::process_events(state).await
     {
