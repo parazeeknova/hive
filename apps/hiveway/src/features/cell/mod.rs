@@ -379,12 +379,10 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
     if capability.runtime == "wasm" {
         let artifact = artifact_for(state, &capability).await?;
-        if serde_json::to_vec(input)?.len() > state.settings.runtime.sandbox.input_bytes
-            || !runtime::schemas::compile(&artifact.input_schema, &state.settings.runtime.sandbox)?
-                .is_valid(input)
-        {
-            return Err(ApiError::bad("capability_input_schema_mismatch"));
-        }
+        state
+            .sandbox
+            .validate_input(input.clone(), artifact.input_schema)
+            .await?;
     } else {
         let input: RepositoryInput = serde_json::from_value(input.clone())
             .map_err(|_| ApiError::bad("invalid_repository_input"))?;
@@ -416,14 +414,14 @@ pub async fn execute_capability(
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
     if capability.runtime == "wasm" {
         let artifact = artifact_for(state, &capability).await?;
-        if !runtime::schemas::compile(&artifact.input_schema, &state.settings.runtime.sandbox)?
-            .is_valid(input)
-        {
-            return Err(ApiError::bad("capability_input_schema_mismatch"));
-        }
         state
             .sandbox
-            .execute(artifact.wasm, input.clone(), artifact.output_schema)
+            .execute(
+                artifact.wasm,
+                input.clone(),
+                artifact.input_schema,
+                artifact.output_schema,
+            )
             .await
     } else {
         let input: RepositoryInput = serde_json::from_value(input.clone())

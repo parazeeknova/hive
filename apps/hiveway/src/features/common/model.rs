@@ -122,6 +122,7 @@ pub struct PublishCapability {
 #[derive(Serialize, Deserialize, FromQueryResult, ToSchema)]
 pub struct Capability {
     pub id: Uuid,
+    pub created_at: i64,
     pub creator_wallet: String,
     pub name: String,
     pub description: String,
@@ -282,6 +283,7 @@ impl From<crate::entities::capabilities::Model> for Capability {
     fn from(model: crate::entities::capabilities::Model) -> Self {
         Self {
             id: model.id,
+            created_at: model.created_at,
             creator_wallet: model.creator_wallet,
             name: model.name,
             description: model.description,

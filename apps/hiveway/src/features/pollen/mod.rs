@@ -1,17 +1,16 @@
 use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
 use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
-use crate::entities::capabilities::Column as CapabilitiesColumn;
-use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::entities::creator_sales::Column as CreatorSalesColumn;
 use crate::entities::creator_sales::Entity as CreatorSalesEntity;
 use crate::entities::invocations::Column as InvocationsColumn;
 use crate::entities::invocations::Entity as InvocationsEntity;
-use sea_orm::ActiveModelTrait;
-use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query as SqlQuery};
+use sea_orm::sea_query::{Expr, ExprTrait, Query as SqlQuery};
 use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 pub mod dodo;
+pub mod quotes;
 pub mod worker;
 pub mod x402;
+pub use quotes::quote;
 
 use crate::{
     features::{
@@ -19,9 +18,8 @@ use crate::{
         common::{
             error::{ApiError, ApiResult},
             model::{
-                Capability, Credential, Invocation, PaymentPayload, PaymentRequired,
-                PaymentRequirements, QuoteRequest, QuoteResponse, Receipt, Resource, Settlement,
-                now,
+                Credential, Invocation, PaymentPayload, PaymentRequired, PaymentRequirements,
+                Receipt, Settlement, now,
             },
         },
         identity,
@@ -35,7 +33,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sea_orm::DatabaseTransaction;
-use serde_json::json;
 use uuid::Uuid;
 
 type Tx = DatabaseTransaction;
@@ -149,209 +146,6 @@ pub(super) fn receipt(inv: Invocation) -> ApiResult<Response> {
         );
     }
     Ok(response)
-}
-
-async fn release_expired(tx: &Tx, credential: Uuid) -> ApiResult<()> {
-    use crate::entities::invocations::{Column as InvocationColumn, Entity as Invocations};
-    use sea_orm::{ColumnTrait, QuerySelect};
-    let condition = InvocationColumn::CredentialId
-        .eq(credential)
-        .and(InvocationColumn::State.eq("quoted"))
-        .and(InvocationColumn::ExpiresAt.lte(now()));
-    let released = Invocations::find()
-        .select_only()
-        .column_as(
-            Expr::col(InvocationColumn::Price)
-                .sum()
-                .cast_as(Alias::new("bigint")),
-            "amount",
-        )
-        .filter(condition.clone())
-        .into_tuple::<Option<i64>>()
-        .one(tx)
-        .await?
-        .flatten()
-        .unwrap_or(0);
-    if released > 0 {
-        Invocations::update_many()
-            .col_expr(InvocationColumn::State, Expr::val("expired"))
-            .col_expr(InvocationColumn::ErrorCode, Expr::val("quote_expired"))
-            .col_expr(InvocationColumn::UpdatedAt, Expr::val(now()))
-            .filter(condition)
-            .exec(tx)
-            .await?;
-        AgentCredentialsEntity::update_many()
-            .col_expr(
-                AgentCredentialsColumn::Reserved,
-                Expr::col(AgentCredentialsColumn::Reserved).sub(released),
-            )
-            .filter(AgentCredentialsColumn::Id.eq(credential))
-            .exec(tx)
-            .await?;
-    }
-    Ok(())
-}
-
-async fn existing_quote(
-    tx: &Tx,
-    credential: Uuid,
-    key: Uuid,
-    fingerprint: &[u8],
-) -> ApiResult<Option<QuoteResponse>> {
-    let existing = InvocationsEntity::find()
-        .filter(
-            Expr::col(InvocationsColumn::CredentialId)
-                .eq(Expr::val(credential))
-                .and(Expr::col(InvocationsColumn::IdempotencyKey).eq(Expr::val(key))),
-        )
-        .into_model::<Invocation>()
-        .one(tx)
-        .await?;
-    if let Some(inv) = existing {
-        let original: Vec<u8> = tx
-            .query_one(
-                &SqlQuery::select()
-                    .from(InvocationsEntity)
-                    .column(InvocationsColumn::RequestHash)
-                    .and_where(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
-                    .to_owned(),
-            )
-            .await?
-            .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?
-            .try_get_by_index(0)?;
-        if original != fingerprint {
-            return Err(ApiError::new(
-                StatusCode::CONFLICT,
-                "idempotency_key_reused_with_different_input",
-            ));
-        }
-        let result = QuoteResponse {
-            id: inv.id,
-            expires_at: inv.expires_at,
-            payment: required(&inv)?,
-        };
-        return Ok(Some(result));
-    }
-    Ok(None)
-}
-
-fn idempotency_key(headers: &HeaderMap) -> ApiResult<Uuid> {
-    if headers.get_all("idempotency-key").iter().count() != 1 {
-        return Err(ApiError::bad("uuid_idempotency_key_required"));
-    }
-    headers
-        .get("idempotency-key")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| ApiError::bad("uuid_idempotency_key_required"))
-}
-
-#[utoipa::path(post,path="/v1/quotes",request_body=QuoteRequest,responses((status=201,body=QuoteResponse)))]
-/// # Errors
-/// Rejects invalid credentials or input, conflicting idempotency keys, insufficient budgets, and unavailable payment infrastructure.
-pub async fn quote(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<QuoteRequest>,
-) -> ApiResult<Response> {
-    let c = identity::authenticate_invoker(&state, &headers).await?;
-    let key = idempotency_key(&headers)?;
-    cell::validate_input(&state, request.capability_id, &request.input).await?;
-    // Do remote I/O before acquiring a credential row lock or a pool transaction.
-    x402::supported(&state).await?;
-    let fingerprint = identity::hash(&serde_json::to_vec(&request)?);
-    let tx = state.postgres.begin().await?;
-    let c = locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
-    if let Some(result) = existing_quote(&tx, c.id, key, &fingerprint).await? {
-        tx.commit().await?;
-        return Ok((StatusCode::OK, Json(result)).into_response());
-    }
-    release_expired(&tx, c.id).await?;
-    let cap = CapabilitiesEntity::find()
-        .filter(
-            Expr::col(CapabilitiesColumn::Id)
-                .eq(Expr::val(request.capability_id))
-                .and(Expr::col(CapabilitiesColumn::Active)),
-        )
-        .into_model::<Capability>()
-        .one(&tx)
-        .await?
-        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
-    if cap.runtime == "wasm" && identity::invocation_scope(&c)? != "capabilities:invoke" {
-        return Err(ApiError::forbidden());
-    }
-    let reserved = AgentCredentialsEntity::update_many()
-        .col_expr(
-            AgentCredentialsColumn::Reserved,
-            Expr::col(AgentCredentialsColumn::Reserved).add(Expr::val(cap.price)),
-        )
-        .filter(
-            Expr::col(AgentCredentialsColumn::Id)
-                .eq(Expr::val(c.id))
-                .and(Expr::val(cap.price).lte(Expr::col(AgentCredentialsColumn::PerCallLimit)))
-                .and(
-                    Expr::col(AgentCredentialsColumn::Spent)
-                        .add(Expr::col(AgentCredentialsColumn::Reserved))
-                        .add(Expr::val(cap.price))
-                        .lte(Expr::col(AgentCredentialsColumn::TotalLimit)),
-                ),
-        )
-        .exec(&tx)
-        .await?
-        .rows_affected;
-    if reserved != 1 {
-        return Err(ApiError::forbidden());
-    }
-    let id = Uuid::new_v4();
-    let at = now();
-    let expires_at = at + 120;
-    let requirements = PaymentRequirements {
-        scheme: "exact".into(),
-        network: state.settings.runtime.payment.network(),
-        amount: cap.price.to_string(),
-        asset: state.settings.runtime.payment.asset.clone(),
-        pay_to: cap.creator_wallet,
-        max_timeout_seconds: 120,
-        extra: json!({"name":state.settings.runtime.payment.name,"version":state.settings.runtime.payment.version}),
-    };
-    let resource = Resource {
-        url: format!("{}/v1/invocations/{id}", state.settings.public_url),
-        description: cap.description,
-        mime_type: "application/json".into(),
-    };
-    crate::entities::invocations::ActiveModel {
-        id: sea_orm::Set(id),
-        credential_id: sea_orm::Set(c.id),
-        capability_id: sea_orm::Set(cap.id),
-        idempotency_key: sea_orm::Set(key),
-        request_hash: sea_orm::Set(fingerprint),
-        input: sea_orm::Set(serde_json::to_value(request.input)?),
-        requirements: sea_orm::Set(serde_json::to_value(&requirements)?),
-        resource: sea_orm::Set(serde_json::to_value(&resource)?),
-        state: sea_orm::Set("quoted".into()),
-        price: sea_orm::Set(cap.price),
-        expires_at: sea_orm::Set(expires_at),
-        created_at: sea_orm::Set(at),
-        updated_at: sea_orm::Set(at),
-        creator_wallet: sea_orm::Set(requirements.pay_to.clone()),
-        ..Default::default()
-    }
-    .insert(&tx)
-    .await?;
-    tx.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(QuoteResponse {
-            id,
-            expires_at,
-            payment: PaymentRequired {
-                x402_version: 2,
-                resource,
-                accepts: vec![requirements],
-            },
-        }),
-    )
-        .into_response())
 }
 
 #[utoipa::path(post,path="/v1/invocations/{id}",params(("id"=Uuid,Path)),responses((status=200,body=Receipt),(status=402,body=PaymentRequired),(status=202,body=Receipt)))]

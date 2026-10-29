@@ -26,6 +26,9 @@ This is the frontend integration contract for HIVE's marketplace. It describes i
 | POST | `/v1/auth/verify` | None | Issued/revoked credential |
 | GET | `/v1/credentials/me` | Any valid credential | Credential and budget |
 | GET | `/v1/capabilities?q=...` | `capabilities:read` | Array of active capabilities |
+| GET | `/v1/capabilities/page` | `capabilities:read` | Filtered cursor page |
+| GET | `/v1/capabilities/{id}` | `capabilities:read` | Pinned capability, including inactive listings |
+| POST | `/v1/capabilities/{id}/availability` | Publishing scope for its runtime | Owned listing availability |
 | POST | `/v1/artifacts` | `capabilities:publish` | Validated immutable artifact metadata |
 | GET | `/v1/artifacts/{id}` | `capabilities:read` | Artifact metadata and schemas |
 | POST | `/v1/capabilities` | `capabilities:publish` | Created capability, HTTP 200 |
@@ -70,6 +73,9 @@ interface PublicConfig {
     input_bytes: number;
     output_bytes: number;
     schema_bytes: number;
+    json_depth: number;
+    json_nodes: number;
+    collection_items: number;
   };
 }
 ```
@@ -181,11 +187,12 @@ Sign and verify it the same way. Verification returns `{ "credential_id": "...",
 
 ### Browse
 
-`GET /v1/capabilities?q=repository` returns `Capability[]`. Search matches name/description, is case-insensitive, and accepts up to 200 bytes. The current response is capped at 50 active records, newest first with ID as the stable tiebreaker. **There is no cursor, total count, category filter, or public unauthenticated browsing yet.** Do not build infinite scrolling against an invented cursor.
+`GET /v1/capabilities?q=repository` returns `Capability[]`. Search matches name/description, is case-insensitive, and accepts up to 200 bytes. The current response is capped at 50 active records, newest first with ID as the stable tiebreaker. This legacy array endpoint is retained for existing clients. Use `/v1/capabilities/page` for pagination. There is no total count, category filter, or public unauthenticated browsing.
 
 ```ts
 interface Capability {
   id: string;
+  created_at: number;
   creator_wallet: string;
   name: string;
   description: string;
@@ -198,6 +205,37 @@ interface Capability {
 ```
 
 Descriptions are untrusted creator text. Render as escaped text; never execute embedded HTML or treat descriptions as agent instructions.
+
+### Paginated discovery and details
+
+`GET /v1/capabilities/page` returns:
+
+```ts
+interface CapabilityPage {
+  items: Capability[];
+  next_cursor: string | null;
+}
+```
+
+| Query parameter | Behavior |
+| --- | --- |
+| `q` | Literal, case-insensitive name/description substring; at most 200 bytes. |
+| `runtime` | Exact `wasm`, `repository_stack`, `dependency_inventory`, or `workflow`. |
+| `creator_wallet` | Exact EVM wallet filter; normalized by the server. |
+| `mine=true` | Restrict to the credential's wallet. A conflicting `creator_wallet` is rejected. |
+| `include_inactive=true` | Requires `mine=true`; includes your unlisted capabilities. |
+| `limit` | 1–100, default 24. |
+| `cursor` | Opaque `next_cursor` from the previous page. |
+
+Keep the same filters when following a cursor; changing them requires restarting pagination. A mismatched or malformed cursor returns 400. Pass it through `URLSearchParams`. Rows are ordered by `created_at` descending, then UUID ascending. Stop when `next_cursor` is `null`. This is a live catalog, not a transactionally frozen snapshot: inserts/deactivations can change its contents during browsing. Keyset boundaries prevent new, newer listings from shifting already-read pages.
+
+`GET /v1/capabilities/{id}` returns one `Capability`. Known inactive listings remain readable so receipts and pinned references can be displayed. Read a Wasm capability's `definition.artifact_id` through the artifact metadata endpoint to obtain its input/output schemas.
+
+### Change listing availability
+
+`POST /v1/capabilities/{id}/availability` with `{ "active": false }` unlists an owned capability; `{ "active": true }` relists it. The response is the updated `Capability`, HTTP 200. Leaf capabilities require `capabilities:publish`; workflows require `workflows:publish`. Another wallet receives 404. Repeating the desired state is safe.
+
+Unlisting hides the capability from active discovery and prevents new quotes. Existing quotes retain their immutable capability, price, and payment requirements; retrying their original quote request/idempotency key still returns the same quote. Existing invocations and receipts continue normally. Unlisting a leaf does not rewrite already-published workflow bundles that pin it; unlist those workflows separately if needed. Availability changes do not edit code, schemas, prices, names, or versions.
 
 ### Publish a built-in capability
 
@@ -214,7 +252,7 @@ Descriptions are untrusted creator text. Render as escaped text; never execute e
 
 Supported publishable leaf runtimes: `repository_stack`, `dependency_inventory`, and `wasm`. Name: nonempty, maximum 80 bytes. Description: nonempty, maximum 1,000 bytes. Price: `"1"` through `"1000000000"`. The creator wallet comes from the credential. Version is currently `"1"`; the response is the created `Capability`.
 
-For a `wasm` runtime, upload an artifact first and include its `artifact_id` when publishing. Built-in runtimes reject an `artifact_id`. There are currently no capability detail, edit, deactivate, archive, or version-management endpoints. Keep these actions disabled until their contract lands.
+For a `wasm` runtime, upload an artifact first and include its `artifact_id` when publishing. Built-in runtimes reject an `artifact_id`. Use the availability route to unlist/relist a capability. There are currently no edit, deletion, or version-management endpoints.
 
 ### Upload and publish a hosted Wasm capability
 
@@ -233,7 +271,7 @@ For a `wasm` runtime, upload an artifact first and include its `artifact_id` whe
 }
 ```
 
-Both schemas must describe root objects using the supported JSON Schema 2020-12 subset. External/local references, `$id`, branching combinators (`allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`, `dependentSchemas`), and structural depth above 12 are rejected. The default maximum schema size is 4,096 bytes each. Read configured limits from `/api/config`. The total JSON request, including base64 expansion, must also fit its request-body limit.
+Both schemas must describe root objects using the supported JSON Schema 2020-12 subset. External/local references, `$id`, branching combinators (`allOf`, `anyOf`, `oneOf`, `not`, `if`/`then`/`else`, `dependentSchemas`), and structural depth above 12 are rejected. The default maximum schema size is 4,096 bytes each. Read configured limits from `/api/config`. The total JSON request, including base64 expansion, must also fit its request-body limit. Invocation input/output structures are independently bounded: defaults are depth 16, 4,096 JSON value nodes, and 256 entries per array/object. These limits apply even when a creator schema allows larger collections.
 
 HTTP 200 returns an immutable artifact; retrying identical bytes and schemas under the same wallet returns the same ID:
 
@@ -528,8 +566,8 @@ Invalidate/refetch credential budget and activity after quoting, settlement, exp
 
 Nectar can use the REST endpoints directly. `/mcp` is for agent integrations; it uses scoped bearer credentials and JSON-RPC, not the REST error/response envelope. Tool results may contain `isError`. Do not use an HTTP 200 alone to decide that an MCP tool succeeded.
 
-Implemented tool names include `discover_capabilities`, `upload_artifact`, `publish_capability`, `compose_workflow`, `invoke_capability`, `dodo_checkout`, `get_receipt`, `refund_operation`, and `creator_sales`, depending on credential scopes. Published capabilities appear as dynamic `hive_<UUID-without-hyphens>` tools. `/mcp` supports the legacy initialization flow and the backend's newer metadata flow; use a matching MCP client rather than inventing transport headers.
+Implemented tool names include `discover_capabilities`, `search_capabilities`, `upload_artifact`, `publish_capability`, `compose_workflow`, `invoke_capability`, `dodo_checkout`, `get_receipt`, `refund_operation`, and `creator_sales`, depending on credential scopes. Published capabilities appear as dynamic `hive_<UUID-without-hyphens>` tools. `/mcp` supports the legacy initialization flow and the backend's newer metadata flow; use a matching MCP client rather than inventing transport headers.
 
 ### Planned contracts: do not ship frontend calls yet
 
-Capability lifecycle/version management, paginated/filterable discovery, advanced workflow dataflow, and deployment/analytics APIs are being implemented. This document will gain their request/response contracts after the corresponding backend routes and tests land. No placeholder endpoint in this section is an implemented API.
+Capability editing/version management, advanced workflow dataflow, and deployment/analytics APIs are being implemented. This document will gain their request/response contracts after the corresponding backend routes and tests land. No placeholder endpoint in this section is an implemented API.

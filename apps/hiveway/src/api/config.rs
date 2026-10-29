@@ -36,6 +36,9 @@ pub struct PublicLimits {
     pub input_bytes: usize,
     pub output_bytes: usize,
     pub schema_bytes: usize,
+    pub json_depth: usize,
+    pub json_nodes: usize,
+    pub collection_items: usize,
 }
 /// Read public network, origin, feature and size information for clients.
 #[utoipa::path(get,path="/api/config",responses((status=200,body=PublicConfig)))]
@@ -69,6 +72,9 @@ pub async fn configuration(State(state): State<AppState>) -> Json<PublicConfig> 
             input_bytes: sandbox.input_bytes,
             output_bytes: sandbox.output_bytes,
             schema_bytes: sandbox.schema_bytes,
+            json_depth: sandbox.json_depth,
+            json_nodes: sandbox.json_nodes,
+            collection_items: sandbox.collection_items,
         },
     })
 }

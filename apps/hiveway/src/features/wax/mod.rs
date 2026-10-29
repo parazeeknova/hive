@@ -1,4 +1,5 @@
 pub mod artifacts;
+pub mod lifecycle;
 use crate::{
     features::{
         common::{

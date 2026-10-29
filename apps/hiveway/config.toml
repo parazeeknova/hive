@@ -47,3 +47,6 @@ schema_bytes = 4096
 memory_bytes = 16777216
 fuel = 2000000
 artifacts_per_wallet = 100
+json_depth = 16
+json_nodes = 4096
+collection_items = 256

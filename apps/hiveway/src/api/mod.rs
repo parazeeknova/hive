@@ -16,6 +16,12 @@ use tower_http::cors::CorsLayer;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/mcp", post(hiveway::gateway))
+        .route("/v1/capabilities/page", get(scout::discovery::page))
+        .route("/v1/capabilities/{id}", get(scout::detail::detail))
+        .route(
+            "/v1/capabilities/{id}/availability",
+            post(wax::lifecycle::availability),
+        )
         .route("/v1/artifacts", post(wax::artifacts::upload))
         .route("/v1/artifacts/{id}", get(wax::artifacts::metadata))
         .route("/api/ready", get(ready))

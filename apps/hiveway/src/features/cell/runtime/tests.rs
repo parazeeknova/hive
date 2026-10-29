@@ -10,6 +10,9 @@ fn limits() -> crate::runtime::SandboxLimits {
         memory_bytes: 65_536,
         fuel: 1000,
         artifacts_per_wallet: 10,
+        json_depth: 16,
+        json_nodes: 4096,
+        collection_items: 256,
     }
 }
 #[test]
@@ -70,5 +73,26 @@ fn hostile_modules_are_bounded_and_cannot_import_host_functions() -> anyhow::Res
         let code = wat::parse_str(source)?;
         assert!(engine::execute(&engine, &code, &json!({"input":true}), &limits()).is_err());
     }
+    Ok(())
+}
+
+#[test]
+fn json_structure_is_bounded_before_schema_evaluation() -> anyhow::Result<()> {
+    let mut limits = limits();
+    data::validate(&json!({"value":[1,2,3]}), &limits, limits.input_bytes)?;
+    limits.collection_items = 2;
+    assert!(data::validate(&json!({"value":[1,2,3]}), &limits, limits.input_bytes).is_err());
+    limits.json_depth = 1;
+    assert!(
+        data::validate(
+            &json!({"nested":{"deep":{"value":true}}}),
+            &limits,
+            limits.input_bytes
+        )
+        .is_err()
+    );
+    limits.json_nodes = 2;
+    assert!(data::validate(&json!({"a":1,"b":2}), &limits, limits.input_bytes).is_err());
+    assert!(data::validate(&json!({"value":"oversized"}), &limits, 8).is_err());
     Ok(())
 }

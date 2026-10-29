@@ -1,6 +1,8 @@
 #![cfg(not(miri))]
 #[path = "security/artifacts.rs"]
 mod artifacts;
+#[path = "security/catalog.rs"]
+mod catalog;
 #[path = "security/dodo.rs"]
 mod dodo;
 #[path = "security/recovery.rs"]
@@ -255,6 +257,7 @@ async fn live_socket_probe(app: Router) -> Result {
 }
 #[tokio::test]
 #[ignore = "requires HIVE_TEST_DATABASE_URL pointing at local PostgreSQL"]
+#[allow(clippy::too_many_lines)]
 async fn adversarial_http_access_and_input_boundaries() -> Result {
     let url = std::env::var("HIVE_TEST_DATABASE_URL")?;
     let admin = Database::connect(url.clone()).await?;
@@ -339,6 +342,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     }
     .await;
     let artifacts_result = artifacts::exercise(app.clone(), &state, (&token_a, &token_b)).await;
+    let catalog_result = catalog::exercise(app.clone(), &state, (&token_a, &token_b)).await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -355,6 +359,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     payment_result?;
     recovery_result?;
     artifacts_result?;
+    catalog_result?;
     socket_result
 }
 

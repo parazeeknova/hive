@@ -55,6 +55,9 @@ pub struct SandboxLimits {
     pub memory_bytes: usize,
     pub fuel: u64,
     pub artifacts_per_wallet: u64,
+    pub json_depth: usize,
+    pub json_nodes: usize,
+    pub collection_items: usize,
 }
 impl SandboxLimits {
     fn validate(&self) -> anyhow::Result<()> {
@@ -66,6 +69,9 @@ impl SandboxLimits {
             || !(65_536..=67_108_864).contains(&self.memory_bytes)
             || !(100..=10_000_000).contains(&self.fuel)
             || !(1..=1000).contains(&self.artifacts_per_wallet)
+            || !(1..=32).contains(&self.json_depth)
+            || !(64..=16_384).contains(&self.json_nodes)
+            || !(1..=1024).contains(&self.collection_items)
         {
             bail!("invalid sandbox resource limits");
         }
