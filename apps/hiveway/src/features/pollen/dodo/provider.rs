@@ -29,10 +29,7 @@ pub(super) async fn request(
         .await
         .map_err(|_| ApiError::unavailable("dodo_unavailable"))?;
     if matches!(response.status().as_u16(), 401 | 403) {
-        return Err(ApiError::new(
-            axum::http::StatusCode::UNAUTHORIZED,
-            "dodo_unauthorized",
-        ));
+        return Err(ApiError::unavailable("dodo_unauthorized"));
     }
     if definitive_rejection(response.status()) {
         return Err(ApiError::bad("dodo_request_rejected"));
