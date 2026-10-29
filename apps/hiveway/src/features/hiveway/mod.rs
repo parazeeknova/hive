@@ -270,6 +270,10 @@ async fn dynamic_call(
     let response = result(pollen::invoke(State(state), Path(id), headers).await?).await?;
     Ok(json!({"invocation_id":id,"http_status":response["http_status"],"data":response["data"]}))
 }
+fn discovery() -> Value {
+    json!({"supportedVersions":[MODERN,"2025-11-25"],"capabilities":{"tools":{}},"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"Hiveway","version":env!("CARGO_PKG_VERSION")}}})
+}
+
 /// Stateless MCP transport with scoped credentials and origin validation.
 /// # Errors
 /// Rejects invalid credentials, origins, malformed messages, and database failures.
@@ -313,9 +317,7 @@ pub async fn gateway(
         };
     }
     let mut value = match request.method.as_str() {
-        "server/discover" => {
-            json!({"serverInfo":{"name":"Hiveway","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{}},"protocolVersions":[MODERN,"2025-11-25"]})
-        }
+        "server/discover" => discovery(),
         "initialize" if !modern => {
             json!({"protocolVersion":request.params["protocolVersion"].as_str().filter(|v|LEGACY.contains(v)).unwrap_or("2025-11-25"),"serverInfo":{"name":"Hiveway","version":env!("CARGO_PKG_VERSION")},"capabilities":{"tools":{}},"instructions":"Discover priced hosted capabilities. Scoped credentials enforce budgets; client wallets authorize x402 payments."})
         }
@@ -371,6 +373,16 @@ mod tests {
             method: "tools/list".into(),
             params: json!({"_meta":{"io.modelcontextprotocol/protocolVersion":MODERN,"io.modelcontextprotocol/clientInfo":{"name":"test","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}),
         }
+    }
+    #[test]
+    fn discovery_declares_supported_versions_and_identity() {
+        let result = super::discovery();
+        assert_eq!(result["supportedVersions"][0], MODERN);
+        assert_eq!(
+            result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
+            "Hiveway"
+        );
+        assert!(result["capabilities"]["tools"].is_object());
     }
     #[test]
     fn modern_metadata_and_headers_must_agree() {
