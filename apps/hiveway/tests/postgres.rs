@@ -1,11 +1,11 @@
 //! Run explicitly against a disposable local PostgreSQL database:
-//! `HIVE_TEST_DATABASE_URL=postgres`://... cargo test --test postgres -- --ignored
+//! `HIVE_TEST_DATABASE_URL=postgres://... cargo test --test postgres -- --ignored`
 #![cfg(not(miri))]
 use hiveway::{
     database,
     entities::{agent_credentials, capabilities},
 };
-use sea_orm::sea_query::{Expr, ExprTrait};
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, EntityTrait, PaginatorTrait,
     QueryFilter, Set, TransactionTrait,
@@ -25,7 +25,7 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
     options.set_schema_search_path(schema.clone());
     let db = Database::connect(options).await?;
     let outcome = async {
-        database::migrate(&db).await?;
+        verify_migrations(&db, &schema).await?;
         // The runner must be safe to invoke again without recreating tables.
         database::migrate(&db).await?;
         let id = Uuid::new_v4();
@@ -141,7 +141,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        1
+        2
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {
@@ -158,5 +158,28 @@ async fn assert_database_constraints(
         .is_err(),
         "foreign keys must reject sales without an invocation"
     );
+    Ok(())
+}
+
+async fn verify_migrations(
+    db: &sea_orm::DatabaseConnection,
+    schema: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (first, second) = tokio::join!(database::migrate(db), database::migrate(db));
+    first?;
+    second?;
+    let index = db
+        .query_one(
+            &Query::select()
+                .column(Alias::new("indexdef"))
+                .from(Alias::new("pg_indexes"))
+                .and_where(Expr::col(Alias::new("schemaname")).eq(schema.to_owned()))
+                .and_where(Expr::col(Alias::new("indexname")).eq("creator_sales_creator_activity"))
+                .to_owned(),
+        )
+        .await?
+        .ok_or("creator activity index missing")?;
+    let definition: String = index.try_get_by_index(0)?;
+    assert!(definition.contains("(creator_wallet, created_at DESC, invocation_id DESC)"));
     Ok(())
 }

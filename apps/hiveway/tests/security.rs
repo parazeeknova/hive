@@ -10,7 +10,10 @@ use hiveway::{
     features::{common::settings::Settings, identity},
     state::AppState,
 };
-use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, EntityTrait, PaginatorTrait, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, EntityTrait, PaginatorTrait,
+    QueryFilter, Set,
+};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceExt;
@@ -267,8 +270,21 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let mut settings = Settings::from_env()?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     settings.facilitator_url = format!("http://{}", listener.local_addr()?);
+    settings.dodo_api_url = settings.facilitator_url.clone();
+    settings.dodo_api_key = Some("fixture".into());
+    settings.dodo_product_id = Some("pdt_fixture".into());
+    let provider_status = Arc::new(std::sync::atomic::AtomicU16::new(400));
+    let fixture_status = provider_status.clone();
     let facilitator = tokio::spawn(async move {
-        axum::serve(listener,Router::new().route("/supported",axum::routing::get(||async{axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))}))).await
+        let router = Router::new()
+            .route("/supported", axum::routing::get(|| async {
+                axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))
+            }))
+            .route("/checkouts", axum::routing::post(move || {
+                let status = fixture_status.load(std::sync::atomic::Ordering::Relaxed);
+                async move { StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR) }
+            }));
+        axum::serve(listener, router).await
     });
     settings.dodo_webhook_secret = Some("AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=".into());
     let state = AppState {
@@ -280,6 +296,8 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     };
     let app = hiveway::api::protect(hiveway::api::router().with_state(state.clone()), state);
     let outcome = probe(app.clone(), id, &token_a, &token_b).await;
+    let payment_result =
+        probe_checkout_rejections(app.clone(), &db, a, id, &token_a, &provider_status).await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -293,6 +311,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         .await?;
     admin.close().await?;
     outcome?;
+    payment_result?;
     socket_result
 }
 
@@ -363,5 +382,108 @@ async fn seed(
     .insert(db)
     .await?;
 
+    Ok(())
+}
+
+async fn probe_checkout_rejections(
+    app: Router,
+    db: &sea_orm::DatabaseConnection,
+    credential: Uuid,
+    id: Uuid,
+    token: &str,
+    provider_status: &std::sync::atomic::AtomicU16,
+) -> Result {
+    use hiveway::entities::invocations;
+    use sea_orm::sea_query::{Expr, ExprTrait};
+    agent_credentials::Entity::update_many()
+        .col_expr(
+            agent_credentials::Column::PerCallLimit,
+            Expr::val(100_000_i64),
+        )
+        .col_expr(
+            agent_credentials::Column::TotalLimit,
+            Expr::val(1_000_000_i64),
+        )
+        .filter(agent_credentials::Column::Id.eq(credential))
+        .exec(db)
+        .await?;
+    let bearer = format!("Bearer {token}");
+    for (status, expected) in [(400, "failed"), (500, "checkout_creating")] {
+        let before = agent_credentials::Entity::find_by_id(credential)
+            .one(db)
+            .await?
+            .ok_or("missing credential")?
+            .reserved;
+        agent_credentials::Entity::update_many()
+            .col_expr(
+                agent_credentials::Column::Reserved,
+                Expr::col(agent_credentials::Column::Reserved).add(10_000_i64),
+            )
+            .filter(agent_credentials::Column::Id.eq(credential))
+            .exec(db)
+            .await?;
+        invocations::Entity::update_many()
+            .col_expr(invocations::Column::State, Expr::val("quoted"))
+            .col_expr(invocations::Column::Price, Expr::val(10_000_i64))
+            .col_expr(
+                invocations::Column::PaymentMethod,
+                Expr::val(Option::<String>::None),
+            )
+            .col_expr(
+                invocations::Column::ExpiresAt,
+                Expr::val(time::OffsetDateTime::now_utc().unix_timestamp() + 300),
+            )
+            .filter(invocations::Column::Id.eq(id))
+            .exec(db)
+            .await?;
+        provider_status.store(status, std::sync::atomic::Ordering::Relaxed);
+        let (response, _) = attack(
+            app.clone(),
+            "POST",
+            &format!("/v1/invocations/{id}/checkout"),
+            String::new(),
+            &[("authorization", &bearer)],
+        )
+        .await?;
+        assert_eq!(
+            response,
+            if status == 400 {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+        );
+        let inv = invocations::Entity::find_by_id(id)
+            .one(db)
+            .await?
+            .ok_or("missing invocation")?;
+        assert_eq!(inv.state, expected);
+        let after = agent_credentials::Entity::find_by_id(credential)
+            .one(db)
+            .await?
+            .ok_or("missing credential")?
+            .reserved;
+        assert_eq!(after, before + if status == 400 { 0 } else { 10_000 });
+        if status == 400 {
+            assert_eq!(inv.error_code.as_deref(), Some("dodo_request_rejected"));
+            // Retrying a rejected invocation must not release the same reservation twice.
+            let _ = attack(
+                app.clone(),
+                "POST",
+                &format!("/v1/invocations/{id}/checkout"),
+                String::new(),
+                &[("authorization", &bearer)],
+            )
+            .await?;
+            assert_eq!(
+                agent_credentials::Entity::find_by_id(credential)
+                    .one(db)
+                    .await?
+                    .ok_or("missing credential")?
+                    .reserved,
+                before
+            );
+        }
+    }
     Ok(())
 }

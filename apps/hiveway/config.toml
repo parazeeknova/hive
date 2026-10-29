@@ -21,6 +21,7 @@ connection_timeout_seconds = 5
 outbound_timeout_seconds = 30
 
 [worker]
+challenge_retention_seconds = 86400
 interval_seconds = 5
 batch_size = 20
 webhook_max_attempts = 20

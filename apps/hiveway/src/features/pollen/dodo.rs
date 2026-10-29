@@ -48,13 +48,27 @@ async fn request(
     if let Some(body) = body {
         request = request.json(&body);
     }
-    x402::json_response(
-        request
-            .send()
-            .await
-            .map_err(|_| ApiError::unavailable("dodo_unavailable"))?,
-    )
-    .await
+    let response = request
+        .send()
+        .await
+        .map_err(|_| ApiError::unavailable("dodo_unavailable"))?;
+    if definitive_rejection(response.status()) {
+        return Err(ApiError::bad("dodo_request_rejected"));
+    }
+    x402::json_response(response).await
+}
+fn definitive_rejection(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 400 | 401 | 403 | 404 | 422)
+}
+async fn reject_checkout(state: &AppState, id: Uuid, credential: Uuid) -> ApiResult<()> {
+    let tx = state.postgres.begin().await?;
+    crate::database::lock_credential(&tx, credential).await?;
+    let inv = invocation(&tx, id, credential).await?;
+    if inv.state == "checkout_creating" {
+        super::release(&tx, &inv, "failed", "dodo_request_rejected").await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 fn identifier(value: &str) -> ApiResult<&str> {
     if value.is_empty()
@@ -109,7 +123,15 @@ pub async fn checkout(
         .exec(&tx)
         .await?;
     tx.commit().await?;
-    let response=request(&state,reqwest::Method::POST,"/checkouts",Some(json!({"product_cart":[{"product_id":product,"quantity":1,"amount":inv.price/10_000}],"metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":c.wallet},"feature_flags":{"allow_currency_selection":false,"allow_discount_code":false}}))).await?;
+    let response = match request(&state,reqwest::Method::POST,"/checkouts",Some(json!({"product_cart":[{"product_id":product,"quantity":1,"amount":inv.price/10_000}],"metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":c.wallet},"feature_flags":{"allow_currency_selection":false,"allow_discount_code":false}}))).await {
+        Ok(response) => response,
+        Err(error) => {
+            if error.code == "dodo_request_rejected" {
+                reject_checkout(&state, id, c.id).await?;
+            }
+            return Err(error);
+        }
+    };
     let session = response["session_id"]
         .as_str()
         .ok_or_else(|| ApiError::unavailable("invalid_dodo_checkout"))?;
@@ -406,6 +428,20 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ambiguous_provider_errors_keep_reservations() {
+        for status in [400, 401, 403, 404, 422] {
+            assert!(super::definitive_rejection(
+                reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
+            ));
+        }
+        for status in [200, 408, 409, 429, 500, 502, 503, 504] {
+            assert!(!super::definitive_rejection(
+                reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
+            ));
+        }
+    }
+
     use super::identifier;
     #[cfg(not(miri))]
     use axum::http::{HeaderMap, HeaderValue};

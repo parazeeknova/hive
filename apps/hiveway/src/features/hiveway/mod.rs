@@ -121,6 +121,7 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
         tools.push(tool("dodo_checkout","Create a hosted Dodo test checkout for a quoted invocation. Requires a human card checkout.",json!({"invocation_id":{"type":"string","format":"uuid"}}),json!(["invocation_id"]),false));
         let caps = CapabilitiesEntity::find()
             .filter(CapabilitiesColumn::Active.eq(true))
+            .order_by_desc(CapabilitiesColumn::CreatedAt)
             .order_by_asc(CapabilitiesColumn::Id)
             .limit(100)
             .all(&state.postgres)

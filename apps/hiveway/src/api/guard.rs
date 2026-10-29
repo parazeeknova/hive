@@ -20,6 +20,19 @@ pub(super) struct Admission {
     pub requests: Arc<tokio::sync::Semaphore>,
     pub peers: Arc<Mutex<PeerWindows>>,
 }
+fn peer_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(ip) => ip.to_ipv4_mapped().map_or_else(
+            || {
+                let mut bytes = ip.octets();
+                bytes[8..].fill(0);
+                IpAddr::V6(bytes.into())
+            },
+            IpAddr::V4,
+        ),
+    }
+}
 fn admit(
     peers: &mut HashMap<IpAddr, (Instant, u32)>,
     ip: IpAddr,
@@ -77,11 +90,11 @@ pub(super) async fn guard(
     let allowed = admission
         .peers
         .lock()
-        .is_ok_and(|mut peers| admit(&mut peers, peer.ip(), Instant::now(), limits));
+        .is_ok_and(|mut peers| admit(&mut peers, peer_key(peer.ip()), Instant::now(), limits));
     if !allowed {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
-    let Ok(_permit) = admission.requests.try_acquire() else {
+    let Ok(permit) = admission.requests.clone().try_acquire_owned() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let (parts, body) = request.into_parts();
@@ -96,15 +109,12 @@ pub(super) async fn guard(
         Err(_) => return StatusCode::REQUEST_TIMEOUT.into_response(),
     };
     let request = Request::from_parts(parts, Body::from(bytes));
-    let mut response = match tokio::time::timeout(
-        Duration::from_secs(limits.request_timeout_seconds),
+    let mut response = finish_handler(
         next.run(request),
+        permit,
+        Duration::from_secs(limits.request_timeout_seconds),
     )
-    .await
-    {
-        Ok(response) => response,
-        Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
-    };
+    .await;
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -114,14 +124,53 @@ pub(super) async fn guard(
     );
     response
 }
+async fn finish_handler(
+    handler: impl std::future::Future<Output = Response> + Send + 'static,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    duration: Duration,
+) -> Response {
+    let task = tokio::spawn(async move {
+        let _permit = permit;
+        handler.await
+    });
+    match tokio::time::timeout(duration, task).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
+            tracing::error!(%error, "Request handler task failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+        Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
+    }
+}
 #[cfg(test)]
 mod tests {
-    use super::admit;
+    use super::{admit, peer_key};
     use std::{
         collections::HashMap,
         net::{IpAddr, Ipv4Addr},
         time::{Duration, Instant},
     };
+    #[test]
+    fn peers_share_mapped_addresses_and_ipv6_prefixes() -> anyhow::Result<()> {
+        let v4: IpAddr = "192.0.2.1".parse()?;
+        assert_eq!(peer_key(v4), v4);
+        assert_eq!(peer_key("::ffff:192.0.2.1".parse()?), v4);
+        let prefix = peer_key("2001:db8:1:2::1".parse()?);
+        assert_eq!(prefix, peer_key("2001:db8:1:2:ffff::2".parse()?));
+        assert_ne!(prefix, peer_key("2001:db8:1:3::1".parse()?));
+        let mut limits = crate::runtime::RuntimeConfig::load()?.http;
+        limits.requests_per_minute = 1;
+        let mut peers = HashMap::new();
+        assert!(admit(&mut peers, prefix, Instant::now(), &limits));
+        assert!(!admit(
+            &mut peers,
+            peer_key("2001:db8:1:2::3".parse()?),
+            Instant::now(),
+            &limits
+        ));
+        assert_eq!(peers.len(), 1);
+        Ok(())
+    }
     #[test]
     fn flood_is_bounded_and_window_expires() {
         let limits = crate::runtime::RuntimeConfig::load()
@@ -163,5 +212,49 @@ mod tests {
             &limits
         ));
         assert_eq!(peers.len(), 4096);
+    }
+}
+
+#[cfg(all(test, not(miri)))]
+mod timeout_tests {
+    use super::*;
+    #[tokio::test]
+    async fn timeout_keeps_handler_and_permit_alive() -> anyhow::Result<()> {
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = semaphore.clone().acquire_owned().await?;
+        let (finish, wait) = tokio::sync::oneshot::channel();
+        let (done, completed) = tokio::sync::oneshot::channel();
+        let response = finish_handler(
+            async move {
+                let _ = wait.await;
+                let _ = done.send(());
+                StatusCode::OK.into_response()
+            },
+            permit,
+            Duration::from_millis(10),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+        assert_eq!(semaphore.available_permits(), 0);
+        finish
+            .send(())
+            .map_err(|()| anyhow::anyhow!("handler was cancelled"))?;
+        tokio::time::timeout(Duration::from_secs(2), completed).await??;
+        let _permit =
+            tokio::time::timeout(Duration::from_secs(2), semaphore.acquire_owned()).await??;
+        Ok(())
+    }
+    #[tokio::test]
+    async fn task_failure_is_distinct_from_timeout() -> anyhow::Result<()> {
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let response = finish_handler(
+            async { panic!("fixture panic") },
+            semaphore.clone().acquire_owned().await?,
+            Duration::from_secs(2),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(semaphore.available_permits(), 1);
+        Ok(())
     }
 }

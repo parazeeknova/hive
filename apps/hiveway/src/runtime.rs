@@ -36,6 +36,7 @@ pub struct Infrastructure {
 #[serde(deny_unknown_fields)]
 pub struct Worker {
     pub interval_seconds: u64,
+    pub challenge_retention_seconds: i64,
     pub batch_size: i64,
     pub webhook_max_attempts: u32,
     pub execution_timeout_seconds: u64,
@@ -88,6 +89,7 @@ impl RuntimeConfig {
             || !(1..=100).contains(&i.postgres_connections)
             || !(1..=60).contains(&i.connection_timeout_seconds)
             || !(1..=60).contains(&i.outbound_timeout_seconds)
+            || w.challenge_retention_seconds <= 60
             || !(1..=60).contains(&w.interval_seconds)
             || !(1..=100).contains(&w.batch_size)
             || !(1..=1000).contains(&w.webhook_max_attempts)

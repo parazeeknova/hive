@@ -167,6 +167,7 @@ async fn complete_paid(
 /// # Errors
 /// Returns database errors; individual provider failures are logged and retried.
 pub async fn tick(state: &AppState) -> ApiResult<()> {
+    crate::features::identity::cleanup_challenges(state).await?;
     if state.settings.dodo_api_key.is_some()
         && let Err(error) = dodo::process_events(state).await
     {
@@ -220,7 +221,11 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         if inv.state != "paid" {
             InvocationsEntity::update_many()
                 .col_expr(InvocationsColumn::WorkerStartedAt, Expr::val(now()))
-                .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                .filter(
+                    Expr::col(InvocationsColumn::Id)
+                        .eq(Expr::val(inv.id))
+                        .and(Expr::col(InvocationsColumn::State).eq(Expr::val(inv.state.clone()))),
+                )
                 .exec(&state.postgres)
                 .await?;
         }
@@ -240,6 +245,10 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
             tracing::warn!(error = error.code, "Payment recovery pending");
         }
     }
+    release_abandoned(state).await
+}
+
+async fn release_abandoned(state: &AppState) -> ApiResult<()> {
     // Release abandoned pre-settlement x402 executions only after the request's
     // bounded execution window. A state CAS in the request prevents later settlement.
     let abandoned = InvocationsEntity::find()

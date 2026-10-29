@@ -112,7 +112,8 @@ impl From<Credential> for CredentialStatus {
 pub struct PublishCapability {
     pub name: String,
     pub description: String,
-    /// Only `repository_stack` is supported by the initial bounded runtime.
+    /// Supports `repository_stack` and `dependency_inventory`.
+    /// Publish workflow capabilities through `/v1/workflows`.
     pub runtime: String,
     pub price: String,
 }

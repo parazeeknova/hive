@@ -131,9 +131,8 @@ pub async fn challenge(
                 .from(WalletChallengesEntity)
                 .expr(Expr::col(Asterisk).count())
                 .and_where(
-                    Expr::col(WalletChallengesColumn::Wallet)
-                        .eq(Expr::val(address.clone()))
-                        .or(Expr::col(WalletChallengesColumn::PeerIp).eq(Expr::val(ip.clone())))
+                    Expr::col(WalletChallengesColumn::PeerIp)
+                        .eq(Expr::val(ip.clone()))
                         .and(Expr::col(WalletChallengesColumn::CreatedAt).gt(Expr::val(at - 60))),
                 )
                 .to_owned(),
@@ -330,4 +329,18 @@ pub async fn me(
 ) -> ApiResult<Json<CredentialStatus>> {
     let c = authenticate(&state, &headers, "").await?;
     Ok(Json(c.into()))
+}
+
+/// Remove expired challenges after retaining the full rate-limit counting window.
+/// # Errors
+/// Returns database failures.
+pub async fn cleanup_challenges(state: &AppState) -> ApiResult<()> {
+    WalletChallengesEntity::delete_many()
+        .filter(
+            WalletChallengesColumn::ExpiresAt
+                .lt(now() - state.settings.runtime.worker.challenge_retention_seconds),
+        )
+        .exec(&state.postgres)
+        .await?;
+    Ok(())
 }

@@ -433,6 +433,19 @@ pub async fn invoke(
     execute_and_settle(&state, id, c.id, inv, payload, requirements).await
 }
 
+fn settlement_rejection(response: Option<&serde_json::Value>) -> Option<String> {
+    response
+        .filter(|value| value["success"] == false)
+        .map(|value| {
+            value["errorReason"]
+                .as_str()
+                .filter(|reason| !reason.is_empty())
+                .unwrap_or("facilitator_rejected_settlement")
+                .chars()
+                .take(200)
+                .collect()
+        })
+}
 async fn execute_and_settle(
     state: &AppState,
     id: Uuid,
@@ -526,6 +539,10 @@ async fn execute_and_settle(
     InvocationsEntity::update_many()
         .col_expr(InvocationsColumn::State, Expr::val("settlement_unknown"))
         .col_expr(InvocationsColumn::Settlement, Expr::val((response).clone()))
+        .col_expr(
+            InvocationsColumn::ErrorCode,
+            Expr::val(settlement_rejection(response.as_ref())),
+        )
         .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
         .filter(
             Expr::col(InvocationsColumn::Id)
@@ -671,4 +688,28 @@ pub async fn get_receipt(
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
     receipt(inv)
+}
+
+#[cfg(test)]
+mod rejection_tests {
+    #[test]
+    fn explicit_rejection_is_visible_but_uncertainty_is_preserved() {
+        use serde_json::json;
+        assert_eq!(
+            super::settlement_rejection(Some(
+                &json!({"success":false,"errorReason":"invalid_signature"})
+            ))
+            .as_deref(),
+            Some("invalid_signature")
+        );
+        assert_eq!(
+            super::settlement_rejection(Some(&json!({"success":false}))).as_deref(),
+            Some("facilitator_rejected_settlement")
+        );
+        assert_eq!(
+            super::settlement_rejection(Some(&json!({"success":true}))),
+            None
+        );
+        assert_eq!(super::settlement_rejection(None), None);
+    }
 }

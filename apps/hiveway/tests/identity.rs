@@ -143,11 +143,92 @@ async fn wallet_signatures_replay_scopes_and_revocation() -> TestResult {
         http: reqwest::Client::new(),
         rig: None,
     };
-    let outcome = exercise(hiveway::api::router().with_state(state)).await;
+    let app = hiveway::api::router().with_state(state.clone());
+    let outcome = async {
+        exercise(app.clone()).await?;
+        challenge_limits_and_retention(app, &state).await
+    }
+    .await;
     db.close().await?;
     admin
         .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
         .await?;
     admin.close().await?;
     outcome
+}
+
+async fn challenge_limits_and_retention(app: Router, state: &AppState) -> TestResult {
+    use hiveway::entities::wallet_challenges;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+    let at = time::OffsetDateTime::now_utc().unix_timestamp();
+    let victim = "0x2222222222222222222222222222222222222222";
+    for _ in 0..10 {
+        wallet_challenges::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            wallet: Set(victim.into()),
+            peer_ip: Set("192.0.2.1".into()),
+            message: Set("fixture".into()),
+            action: Set(json!({})),
+            created_at: Set(at),
+            expires_at: Set(at + 300),
+            consumed_at: Set(None),
+        }
+        .insert(&state.postgres)
+        .await?;
+    }
+    let request =
+        json!({"wallet":victim,"action":{"type":"revoke","credential_id":Uuid::new_v4()}});
+    let (status, _) = call(app.clone(), "/v1/auth/challenges", request.clone(), None).await?;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "other peers must not exhaust a victim wallet limit"
+    );
+    let mut old_id = Uuid::nil();
+    let recent_id = Uuid::new_v4();
+    for index in 0..11 {
+        let id = if index == 10 {
+            recent_id
+        } else {
+            Uuid::new_v4()
+        };
+        let expired = if index == 9 {
+            old_id = id;
+            at - state.settings.runtime.worker.challenge_retention_seconds - 1
+        } else {
+            at - 1
+        };
+        wallet_challenges::ActiveModel {
+            id: Set(id),
+            wallet: Set(victim.into()),
+            peer_ip: Set("127.0.0.1".into()),
+            message: Set("fixture".into()),
+            action: Set(json!({})),
+            created_at: Set(at),
+            expires_at: Set(expired),
+            consumed_at: Set(None),
+        }
+        .insert(&state.postgres)
+        .await?;
+    }
+    hiveway::features::identity::cleanup_challenges(state).await?;
+    assert!(
+        wallet_challenges::Entity::find_by_id(old_id)
+            .one(&state.postgres)
+            .await?
+            .is_none()
+    );
+    assert!(
+        wallet_challenges::Entity::find_by_id(recent_id)
+            .one(&state.postgres)
+            .await?
+            .is_some()
+    );
+    let (status, _) = call(app, "/v1/auth/challenges", request, None).await?;
+    assert_eq!(
+        status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "recent expired challenges still count per peer"
+    );
+    Ok(())
 }
