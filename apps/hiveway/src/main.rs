@@ -22,10 +22,17 @@ async fn serve() -> anyhow::Result<()> {
         address = "127.0.0.1:3001",
         "Hiveway ready"
     );
-    let result = axum::serve(listener, hiveway::router().with_state(state.clone()))
-        .with_graceful_shutdown(shutdown())
-        .await;
-    state.postgres.close().await;
+    let result = axum::serve(
+        listener,
+        hiveway::router()
+            .merge(hiveway::api::router())
+            .layer(hiveway::api::cors(&state.settings.auth_uri)?)
+            .with_state(state.clone())
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown())
+    .await;
+    state.postgres.close().await?;
     state
         .redis
         .quit()

@@ -1,4 +1,8 @@
+pub mod api;
 pub mod config;
+pub mod database;
+pub mod entities;
+pub mod features;
 pub mod state;
 pub mod telemetry;
 
@@ -28,9 +32,21 @@ pub struct Health {
 #[openapi(
     info(
         title = "Hiveway",
-        description = "Hive capability network API bootstrap"
+        description = "Hiveway gateway: wallet identities, scoped credentials, paid capabilities and receipts"
     ),
-    paths(health),
+    paths(
+        health,
+        features::identity::challenge,
+        features::identity::verify,
+        features::identity::me,
+        features::scout::discover,
+        features::wax::publish,
+        features::pollen::quote,
+        features::pollen::invoke,
+        features::pollen::get_receipt,
+        features::pollen::reconcile,
+        features::waggle::sales
+    ),
     components(schemas(Health))
 )]
 struct ApiDoc;
