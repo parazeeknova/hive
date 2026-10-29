@@ -1,4 +1,10 @@
+pub mod api;
 pub mod config;
+pub mod database;
+pub mod entities;
+pub mod features;
+pub mod migrations;
+pub mod runtime;
 pub mod state;
 pub mod telemetry;
 
@@ -28,9 +34,26 @@ pub struct Health {
 #[openapi(
     info(
         title = "Hiveway",
-        description = "Hive capability network API bootstrap"
+        description = "Hiveway gateway: wallet identities, scoped credentials, paid capabilities and receipts"
     ),
-    paths(health),
+    paths(
+        health,
+        api::ready,
+        features::comb::compose,
+        features::waggle::activity,
+        features::identity::challenge,
+        features::identity::verify,
+        features::identity::me,
+        features::scout::discover,
+        features::wax::publish,
+        features::pollen::quote,
+        features::pollen::invoke,
+        features::pollen::get_receipt,
+        features::pollen::reconcile,
+        features::pollen::dodo::checkout,
+        features::pollen::dodo::webhook,
+        features::waggle::sales
+    ),
     components(schemas(Health))
 )]
 struct ApiDoc;
@@ -40,11 +63,15 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/openapi.json", get(openapi))
-        .layer(
-            ServiceBuilder::new()
-                .layer(middleware::from_fn(request_context))
-                .layer(TraceLayer::new_for_http()),
-        )
+}
+
+/// Apply request tracing to every API route, including paid invocations.
+pub fn observe<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S> {
+    router.layer(
+        ServiceBuilder::new()
+            .layer(middleware::from_fn(request_context))
+            .layer(TraceLayer::new_for_http()),
+    )
 }
 
 #[utoipa::path(get, path = "/api/health", responses((status = 200, body = Health)))]

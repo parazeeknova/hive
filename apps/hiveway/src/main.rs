@@ -1,6 +1,7 @@
 use anyhow::Context;
 use fred::prelude::ClientLike;
 use hiveway::{config::Config, state::AppState, telemetry};
+use std::future::IntoFuture;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,23 +16,87 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn serve() -> anyhow::Result<()> {
-    let state = AppState::connect(&Config::from_env()?).await?;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3001").await?;
+    let config = Config::from_env()?;
+    let state = AppState::connect(&config).await?;
+    let listener = tokio::net::TcpListener::bind(config.bind_address).await?;
     tracing::info!(
         service = "hiveway",
-        address = "127.0.0.1:3001",
+        address = %config.bind_address,
         "Hiveway ready"
     );
-    let result = axum::serve(listener, hiveway::router().with_state(state.clone()))
-        .with_graceful_shutdown(shutdown())
+    let cors = hiveway::api::cors(&state.settings.auth_uri)?;
+    let (router, drain) = hiveway::api::protect(
+        hiveway::observe(hiveway::router().merge(hiveway::api::router())).with_state(state.clone()),
+        state.clone(),
+    );
+    let (stop_worker, worker_shutdown) = tokio::sync::oneshot::channel();
+    let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
+    let mut worker = tokio::spawn(recovery_worker(state.clone(), worker_shutdown));
+    let server = axum::serve(
+        listener,
+        router
+            .layer(cors)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        tokio::select! {
+            () = shutdown() => {},
+            _ = server_shutdown => {},
+        }
+    });
+    let server = server.into_future();
+    tokio::pin!(server);
+    let (result, worker_result) = tokio::select! {
+        result = &mut server => {
+            let _ = stop_worker.send(());
+            (result, worker.await.context("Pollen recovery task failed"))
+        }
+        outcome = &mut worker => {
+            let error = match outcome {
+                Ok(()) => anyhow::anyhow!("Pollen recovery task stopped unexpectedly"),
+                Err(error) => anyhow::Error::new(error).context("Pollen recovery task failed"),
+            };
+            tracing::error!(%error, "Pollen recovery stopped");
+            let _ = stop_server.send(());
+            (server.await, Err(error))
+        }
+    };
+    if let Err(error) = &worker_result {
+        tracing::error!(%error, "Pollen recovery task failed");
+    }
+    let drained = drain
+        .wait(std::time::Duration::from_secs(
+            state.settings.runtime.http.shutdown_drain_timeout_seconds,
+        ))
         .await;
-    state.postgres.close().await;
-    state
-        .redis
-        .quit()
-        .await
-        .context("closing Redis connection")?;
-    result.context("serving Hiveway")
+    if let Err(error) = &drained {
+        tracing::error!(%error, "Handler drain deadline exceeded; proceeding with shutdown");
+    }
+    let postgres = state.postgres.close().await;
+    let redis = state.redis.quit().await;
+    result.context("serving Hiveway")?;
+    postgres.context("closing PostgreSQL connection")?;
+    redis.context("closing Redis connection")?;
+    let _drained = drained.context("draining Hiveway handlers")?;
+    worker_result
+}
+
+async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Receiver<()>) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+        state.settings.runtime.worker.interval_seconds,
+    ));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut shutdown => break,
+            _ = interval.tick() => {},
+        }
+        // Shutdown is observed between ticks so financial recovery is not cancelled midway.
+        if let Err(error) = hiveway::features::pollen::worker::tick(&state).await {
+            tracing::error!(error = error.code, "Pollen recovery cycle failed");
+        }
+    }
 }
 
 async fn shutdown() {
