@@ -4,18 +4,31 @@ use sea_orm::sea_query::{Expr, ExprTrait};
 use std::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Default)]
-pub(super) struct ChainFixture(pub AtomicU8);
+pub(super) struct ChainFixture(pub AtomicU8, std::sync::Mutex<Value>);
 pub(super) async fn rpc(
     axum::extract::State(fixture): axum::extract::State<Arc<ChainFixture>>,
     axum::Json(request): axum::Json<Value>,
 ) -> axum::Json<Value> {
     let mode = fixture.0.load(Ordering::Relaxed);
     let result = match request["method"].as_str().unwrap_or_default() {
-        "eth_getLogs" => json!([]),
+        "eth_getLogs" => {
+            if mode < 8 {
+                json!([])
+            } else {
+                let log = json!({"address":request["params"][0]["address"],"topics":request["params"][0]["topics"],
+                    "transactionHash":format!("0x{}","22".repeat(32)),"blockHash":format!("0x{}","33".repeat(32)),"blockNumber":"0x10","removed":false});
+                if let Ok(mut saved) = fixture.1.lock() {
+                    *saved = log.clone();
+                }
+                json!([log])
+            }
+        }
+        "eth_getTransactionReceipt" => settlement_receipt(fixture.as_ref(), mode),
         "eth_chainId" => json!(if mode == 5 { "0x1" } else { "0x14a34" }),
         "eth_getBlockByNumber" => {
-            assert_eq!(request["params"], json!(["finalized", false]));
-            if mode == 6 {
+            if mode >= 8 && request["params"][0] != "finalized" {
+                json!({"hash":format!("0x{}",if mode == 11 {"44"} else {"33"}.repeat(32)),"number":"0x10"})
+            } else if mode == 6 {
                 Value::Null
             } else {
                 let timestamp = match mode {
@@ -23,7 +36,7 @@ pub(super) async fn rpc(
                     7 => 260,
                     _ => 1000,
                 };
-                json!({"hash":format!("0x{}", "11".repeat(32)),"timestamp":format!("0x{timestamp:x}")})
+                json!({"hash":format!("0x{}", "11".repeat(32)),"timestamp":format!("0x{timestamp:x}"),"number":if mode == 9 {"0xf"} else {"0xff"}})
             }
         }
         "eth_call" => {
@@ -43,7 +56,10 @@ pub(super) async fn rpc(
             if mode == 3 {
                 json!("0x")
             } else {
-                json!(format!("0x{:0>64}", if mode == 1 { "1" } else { "0" }))
+                json!(format!(
+                    "0x{:0>64}",
+                    if mode == 1 || mode >= 8 { "1" } else { "0" }
+                ))
             }
         }
         other => panic!("unexpected fixture RPC method {other}"),
@@ -211,5 +227,55 @@ pub(super) async fn checkout_queue(state: &AppState, id: Uuid, credential: Uuid)
             .reserved,
         before
     );
+    Ok(())
+}
+
+fn settlement_receipt(fixture: &ChainFixture, mode: u8) -> Value {
+    use sha3::{Digest, Keccak256};
+    let authorization = fixture.1.lock().map_or(Value::Null, |saved| saved.clone());
+    let payer = format!("0x{:0>64}", "11".repeat(20));
+    let transfer = json!({"address":authorization["address"],"topics":[
+        format!("0x{}",hex::encode(Keccak256::digest(b"Transfer(address,address,uint256)"))),payer,payer],"data":format!("0x{:0>64}","1")});
+    let logs = match mode {
+        12 => json!([transfer]),
+        13 => json!([authorization]),
+        _ => json!([authorization, transfer]),
+    };
+    json!({"transactionHash":format!("0x{}",if mode==14 {"44"}else{"22"}.repeat(32)),"blockHash":format!("0x{}",if mode==10 {"44"}else{"33"}.repeat(32)),"blockNumber":"0x10","status":"0x1","logs":logs})
+}
+pub(super) async fn settlement_finality(
+    state: &AppState,
+    fixture: &ChainFixture,
+    credential: Uuid,
+    capability: Uuid,
+) -> Result {
+    for mode in 8..=14 {
+        fixture.0.store(mode, Ordering::Relaxed);
+        let id = pending(state, credential, capability, "settlement_unknown").await?;
+        let before = agent_credentials::Entity::find_by_id(credential)
+            .one(&state.postgres)
+            .await?
+            .ok_or("missing credential")?;
+        pollen::reconcile_inner(state, id, credential).await?;
+        let current = invocations::Entity::find_by_id(id)
+            .one(&state.postgres)
+            .await?
+            .ok_or("missing invocation")?;
+        assert_eq!(
+            current.state,
+            if mode == 8 {
+                "settled"
+            } else {
+                "settlement_unknown"
+            },
+            "incorrect finality decision for mode {mode}"
+        );
+        let after = agent_credentials::Entity::find_by_id(credential)
+            .one(&state.postgres)
+            .await?
+            .ok_or("missing credential")?;
+        assert_eq!(after.reserved, before.reserved - i64::from(mode == 8));
+        assert_eq!(after.spent, before.spent + i64::from(mode == 8));
+    }
     Ok(())
 }

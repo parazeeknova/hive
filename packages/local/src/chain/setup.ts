@@ -73,6 +73,7 @@ for (const [key, value] of Object.entries({
   chain_id: chain.id,
   facilitator_url: "http://127.0.0.1:4022",
   rpc_url: rpcUrl,
+  settlement_finality: "latest",
 })) {
   config = config.replace(
     new RegExp(`^${key} = .+$`, "mu"),

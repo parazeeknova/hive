@@ -329,7 +329,8 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
             (&token_a, &token_b),
         )
         .await?;
-        recovery::expiry(&state, &chain, a, cap).await
+        recovery::expiry(&state, &chain, a, cap).await?;
+        recovery::settlement_finality(&state, &chain, a, cap).await
     }
     .await;
     let socket_result = live_socket_probe(app).await;

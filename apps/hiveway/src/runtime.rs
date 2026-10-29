@@ -46,11 +46,39 @@ pub struct Worker {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Payment {
+    pub settlement_finality: SettlementFinality,
     pub reorg_margin_seconds: u64,
     pub chain_id: u64,
     pub asset: String,
     pub name: String,
     pub version: String,
+}
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SettlementFinality {
+    Finalized,
+    Latest,
+}
+impl SettlementFinality {
+    #[must_use]
+    pub const fn tag(self) -> &'static str {
+        match self {
+            Self::Finalized => "finalized",
+            Self::Latest => "latest",
+        }
+    }
+    /// Unfinalized settlement is restricted to isolated loopback development RPCs.
+    /// # Errors
+    /// Rejects a latest-block policy against a non-loopback RPC endpoint.
+    pub fn validate_rpc(self, rpc_url: &str) -> anyhow::Result<()> {
+        let url = reqwest::Url::parse(rpc_url)?;
+        if self == Self::Latest
+            && !matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))
+        {
+            bail!("latest settlement finality requires a loopback development RPC");
+        }
+        Ok(())
+    }
 }
 impl Payment {
     #[must_use]
@@ -114,12 +142,26 @@ impl RuntimeConfig {
         {
             bail!("invalid payment network configuration");
         }
+        self.payment
+            .settlement_finality
+            .validate_rpc(&self.rpc_url)?;
         crate::features::identity::wallet(&self.payment.asset)?;
         Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unfinalized_settlement_is_local_only() -> anyhow::Result<()> {
+        super::SettlementFinality::Latest.validate_rpc("http://127.0.0.1:8545")?;
+        assert!(
+            super::SettlementFinality::Latest
+                .validate_rpc("https://sepolia.base.org")
+                .is_err()
+        );
+        super::SettlementFinality::Finalized.validate_rpc("https://sepolia.base.org")?;
+        Ok(())
+    }
     #[test]
     fn unsafe_operational_overrides_fail_closed() -> anyhow::Result<()> {
         let valid: super::RuntimeConfig = toml::from_str(include_str!("../config.toml"))?;
