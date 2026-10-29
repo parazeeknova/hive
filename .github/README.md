@@ -212,6 +212,7 @@ Enter the Nix environment with `devenv shell`, then run `bun install --frozen-lo
 - `HIVE_LOCAL_PAYMENTS=1 bun run dev` starts the ordinary development stack plus an isolated Anvil chain, deploys/funds a local test token, starts the Docker x402 facilitator, and runs Hiveway with generated payment configuration. It also starts Nectar.
 - For backend-only work, start PostgreSQL/Redis with `docker compose up -d --wait postgres redis`, run `bun packages/local/src/chain/start.ts`, then `bun packages/local/src/agents/serve.ts` in a separate terminal.
 - Run `HIVE_DEMO_REVISION=<full-commit-sha> bun packages/local/src/agents/demo.ts`. Set `HIVE_DEMO_REPOSITORY` to analyze a different public GitHub repository.
+- Run `bun packages/local/src/agents/hosted-demo.ts` to upload a pure Wasm artifact, publish/discover its capability, and pay for two different inputs. It checks dynamic outputs, direct creator payouts, sales records, and replay protection.
 
 The demo uses independent creator/buyer wallets and scoped credentials, publishes and discovers a built-in repository-analysis capability, settles a signed x402 transfer, verifies the creator's token balance and sales entry, and checks that replaying the invocation does not charge twice. These are API clients, not autonomous model agents; this demo does not measure token savings. The chain is isolated, its accounts are public fixtures, and its tokens have no value. No public-chain funds are required. Generated configuration stays under ignored `.hive/local/`.
 
@@ -222,3 +223,7 @@ For an uncertain Dodo checkout whose payment later succeeded, the owning credent
 Real creator payouts use direct x402 wallet transfers. Dodo remains test-only. Public-network x402 receipts wait for finalized canonical transfer evidence; the generated local Anvil configuration uses immediate confirmation, permitted only for a loopback RPC. While finality is pending, the invocation retains its reservation and can be reconciled through its receipt.
 
 Failed paid Dodo executions create a durable full-refund operation. `POST /v1/invocations/{id}/refund` requests/reconciles it and `GET` reads its status; the owning agent can also use the `refund_operation` MCP tool. The worker processes refunds automatically. Existing refund history is checked before sending, ambiguous creation is never automatically reposted, and budget is restored once only after a matching full USD refund is confirmed by the provider. Partial, rejected, and uncertain refunds remain visible without restoring budget.
+
+Frontend integration contracts live in [specs/api.md](../specs/api.md), including wallet credentials, marketplace publishing, hosted artifacts, quotes, receipts, and refund states. `GET /api/config` exposes public payment settings and limits without provider secrets.
+
+Hosted artifacts use a fuel-metered Wasmi interpreter with bounded memory and JSON schemas. Modules cannot import host functions or access WASI, network, files, clocks, or environment. Upload validation establishes the sandbox ABI; it does not certify business correctness. Existing repository bundles currently accept only built-in repository runtimes.
