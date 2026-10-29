@@ -6,7 +6,7 @@ import { Icon } from "../../components/icon";
 const footerLink = "inline-flex items-center gap-1";
 
 const Footer = () => (
-  <footer className="mx-auto max-w-6xl px-10 pt-12 pb-5 max-[760px]:px-4">
+  <footer className="mx-auto w-[calc(100%-4rem)] max-w-6xl pt-12 pb-5 max-[760px]:w-[calc(100%-2rem)]">
     <div className="flex items-center justify-between pb-8 max-[760px]:flex-col max-[760px]:items-start max-[760px]:gap-6">
       <div>
         <Brand />
