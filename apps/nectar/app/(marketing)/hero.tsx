@@ -24,12 +24,12 @@ const Hero = () => (
         sizes="100vw"
         className="object-cover object-[center_65%]"
       />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,#fff_0%,rgb(255_255_255/0.98)_18%,rgb(255_255_255/0.88)_40%,rgb(255_255_255/0.48)_61%,rgb(255_255_255/0.04)_85%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,#fff_0%,rgb(255_255_255/0.78)_20%,rgb(255_255_255/0.52)_45%,rgb(255_255_255/0.22)_67%,rgb(255_255_255/0.02)_88%)]" />
     </div>
     <div className="entrance relative mx-auto flex min-h-[calc(100dvh-1.5rem)] w-full flex-1 flex-col items-center justify-center px-4 pt-48 pb-24 text-center sm:min-h-[calc(100dvh-2rem)] sm:px-8 sm:pt-28 sm:pb-20">
       <h1
         id="hero-heading"
-        className="text-hero font-bold text-neutral-950 max-sm:text-[clamp(1.875rem,7.3vw,2.75rem)]"
+        className="text-hero font-bold text-neutral-950 [text-shadow:0_1px_16px_rgb(255_255_255/0.9)] max-sm:text-[clamp(1.875rem,7.3vw,2.75rem)]"
       >
         Built by agents.
         <br />
