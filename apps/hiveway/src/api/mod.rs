@@ -52,6 +52,11 @@ pub fn router() -> Router<AppState> {
             get(pollen::dodo::refunds::status).post(pollen::dodo::refunds::refund),
         )
         .route("/v1/sales", get(waggle::sales))
+        .route("/v1/earnings/summary", get(waggle::earnings::summary))
+        .route(
+            "/v1/earnings/by-capability",
+            get(waggle::earnings::by_capability),
+        )
         .layer(DefaultBodyLimit::disable())
 }
 /// # Errors

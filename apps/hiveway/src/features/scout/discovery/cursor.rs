@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Cursor {
+    pub tier: i32,
     pub created_at: i64,
     pub id: Uuid,
     pub filter_hash: String,
@@ -36,12 +37,14 @@ mod tests {
     #[test]
     fn cursors_are_bounded_and_bound_to_query_filters() -> anyhow::Result<()> {
         let cursor = Cursor {
+            tier: 1,
             created_at: 10,
             id: Uuid::nil(),
             filter_hash: "fixture".into(),
         };
         let encoded = cursor.encode()?;
         assert_eq!(Cursor::decode(&encoded, "fixture")?.id, cursor.id);
+        assert_eq!(Cursor::decode(&encoded, "fixture")?.tier, 1);
         assert!(Cursor::decode(&encoded, "different").is_err());
         assert!(Cursor::decode(&"x".repeat(513), "fixture").is_err());
         assert!(Cursor::decode("invalid!", "fixture").is_err());

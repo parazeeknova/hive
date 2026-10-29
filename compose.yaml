@@ -50,7 +50,7 @@ services:
       - openobserve-data:/data
 
   anvil:
-    image: ghcr.io/foundry-rs/foundry:latest
+    image: ghcr.io/foundry-rs/foundry@sha256:6fec6dc8249fb0231144b159e4ee1d86e486e3dc8eccb09a25e5e16ce494236b
     profiles: [payments]
     entrypoint: [anvil]
     command:

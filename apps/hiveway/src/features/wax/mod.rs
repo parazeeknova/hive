@@ -60,6 +60,7 @@ pub async fn publish(
     }
     .insert(&state.postgres)
     .await?;
+    crate::features::scout::discovery::bump_catalog_version(&state).await;
 
     Ok(Json(capability.into()))
 }

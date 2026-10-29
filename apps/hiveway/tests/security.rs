@@ -317,7 +317,6 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         settings: Arc::new(settings),
         redis: fred::prelude::Builder::default_centralized().build()?,
         http: reqwest::Client::new(),
-        rig: None,
     };
     let (app, _drain) = hiveway::api::protect(
         hiveway::api::router().with_state(state.clone()),
@@ -391,6 +390,7 @@ async fn seed(
                 "receipts:read".into(),
                 "capabilities:read".into(),
                 "capabilities:publish".into(),
+                "sales:read".into(),
             ]),
             per_call_limit: Set(100),
             total_limit: Set(100),

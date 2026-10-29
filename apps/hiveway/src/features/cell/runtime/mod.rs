@@ -8,6 +8,7 @@ use crate::{
 };
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub struct Sandbox {
     limits: SandboxLimits,
@@ -25,11 +26,11 @@ impl Sandbox {
         &self,
         work: impl FnOnce(SandboxLimits) -> ApiResult<T> + Send + 'static,
     ) -> ApiResult<T> {
-        let permit = self
-            .slots
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ApiError::unavailable("sandbox_busy"))?;
+        let permit =
+            tokio::time::timeout(Duration::from_secs(10), self.slots.clone().acquire_owned())
+                .await
+                .map_err(|_| ApiError::unavailable("sandbox_busy"))?
+                .map_err(|_| ApiError::unavailable("sandbox_busy"))?;
         let limits = self.limits.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;

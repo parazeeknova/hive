@@ -1,4 +1,10 @@
-//! Keyset pagination preserves the original array discovery endpoint.
+//! Tiered-relevance keyset pagination with a versioned Redis cache.
+//!
+//! Relevance tiers are integers so keyset boundaries stay exact: `0` is an
+//! exact substring hit, `1` is a full-text match, `2` is trigram similarity.
+//! Empty queries match everything at tier `0`, which keeps the legacy
+//! recency ordering. Cached pages are keyed by a catalog version that write
+//! paths bump, so publish and availability changes invalidate immediately.
 mod cursor;
 pub mod model;
 use crate::{
@@ -18,18 +24,80 @@ use axum::{
     http::HeaderMap,
 };
 use cursor::Cursor;
+use fred::interfaces::KeysInterface;
+use fred::types::Expiration;
 use model::{CapabilityPage, PageQuery};
-use sea_orm::{ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+use sea_orm::sea_query::ExprTrait;
+use sea_orm::sea_query::SimpleExpr;
+use sea_orm::{
+    ColumnTrait, Condition, EntityTrait, FromQueryResult, QueryFilter, QueryOrder, QuerySelect,
+};
+use std::collections::HashMap;
+use std::time::Duration;
 
-#[utoipa::path(get,path="/v1/capabilities/page",params(PageQuery),responses((status=200,body=CapabilityPage)))]
-/// # Errors
-/// Rejects invalid filters, credentials and cursors; inactive listings require an owned query.
-pub async fn page(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(request): Query<PageQuery>,
-) -> ApiResult<Json<CapabilityPage>> {
-    let owner = identity::authenticate(&state, &headers, "capabilities:read").await?;
+const CACHE_TTL_SECONDS: i64 = 30;
+const CACHE_TIMEOUT: Duration = Duration::from_millis(200);
+
+/// Bump the catalog version after a write so cached discovery pages expire.
+pub async fn bump_catalog_version(state: &AppState) {
+    let bumped = tokio::time::timeout(
+        CACHE_TIMEOUT,
+        state.redis.incr::<i64, _>("scout:catalog_ver"),
+    )
+    .await;
+    if !matches!(bumped, Ok(Ok(_))) {
+        tracing::warn!("Catalog version bump failed; discovery cache may be stale");
+    }
+}
+
+async fn cache_get(state: &AppState, key: &str) -> Option<String> {
+    tokio::time::timeout(CACHE_TIMEOUT, state.redis.get::<Option<String>, _>(key))
+        .await
+        .ok()?
+        .ok()?
+}
+
+async fn catalog_version(state: &AppState) -> String {
+    cache_get(state, "scout:catalog_ver")
+        .await
+        .unwrap_or_else(|| "0".into())
+}
+
+/// Integer relevance tier: exact substring, full-text, then trigram similarity.
+fn tier(query: &str) -> SimpleExpr {
+    sea_orm::sea_query::Expr::cust_with_values(
+        "CASE WHEN strpos(lower(name), lower($1)) > 0 OR strpos(lower(description), lower($1)) > 0 THEN 0 \
+         WHEN search_vector @@ plainto_tsquery('english', $1) THEN 1 \
+         WHEN public.similarity(lower(name), lower($1)) > 0.15 OR public.similarity(lower(description), lower($1)) > 0.15 THEN 2 \
+         ELSE 3 END",
+        [query.to_owned()],
+    )
+}
+
+#[derive(FromQueryResult)]
+struct PageKey {
+    id: uuid::Uuid,
+    tier: i32,
+    created_at: i64,
+}
+
+struct ResolvedPage {
+    query: String,
+    runtime: Option<String>,
+    creator: Option<String>,
+    mine: bool,
+    include_inactive: bool,
+    limit: u8,
+    cursor: Option<String>,
+    filter_hash: String,
+}
+
+async fn resolve(
+    state: &AppState,
+    headers: &HeaderMap,
+    request: PageQuery,
+) -> ApiResult<ResolvedPage> {
+    let owner = identity::authenticate(state, headers, "capabilities:read").await?;
     let query = request.q.unwrap_or_default();
     if query.len() > 200 {
         return Err(ApiError::bad("search_too_long"));
@@ -69,44 +137,122 @@ pub async fn page(
         &creator,
         request.include_inactive,
     ))?));
-    let mut selection = Entity::find().filter(super::matching(&query));
-    if !request.include_inactive {
-        selection = selection.filter(Column::Active.eq(true));
+    Ok(ResolvedPage {
+        query,
+        runtime: request.runtime,
+        creator,
+        mine: request.mine,
+        include_inactive: request.include_inactive,
+        limit,
+        cursor: request.cursor,
+        filter_hash,
+    })
+}
+
+async fn fetch_page_keys(
+    postgres: &sea_orm::DatabaseConnection,
+    req: &ResolvedPage,
+) -> ApiResult<(Vec<PageKey>, bool)> {
+    let tier_expr = tier(&req.query);
+    let mut keys = Entity::find()
+        .select_only()
+        .column(Column::Id)
+        .column_as(tier_expr.clone(), "tier")
+        .column(Column::CreatedAt)
+        .filter(tier_expr.clone().lte(2));
+    if !req.include_inactive {
+        keys = keys.filter(Column::Active.eq(true));
     }
-    if let Some(runtime) = request.runtime {
-        selection = selection.filter(Column::Runtime.eq(runtime));
+    if let Some(runtime) = req.runtime.clone() {
+        keys = keys.filter(Column::Runtime.eq(runtime));
     }
-    if let Some(creator) = creator {
-        selection = selection.filter(Column::CreatorWallet.eq(creator));
+    if let Some(creator) = req.creator.clone() {
+        keys = keys.filter(Column::CreatorWallet.eq(creator));
     }
-    if let Some(encoded) = request.cursor {
-        let cursor = Cursor::decode(&encoded, &filter_hash)?;
-        selection = selection.filter(
+    if let Some(encoded) = req.cursor.clone() {
+        let cursor = Cursor::decode(&encoded, &req.filter_hash)?;
+        keys = keys.filter(
             Condition::any()
-                .add(Column::CreatedAt.lt(cursor.created_at))
+                .add(tier_expr.clone().gt(cursor.tier))
                 .add(
                     Condition::all()
+                        .add(tier_expr.clone().eq(cursor.tier))
+                        .add(Column::CreatedAt.lt(cursor.created_at)),
+                )
+                .add(
+                    Condition::all()
+                        .add(tier_expr.clone().eq(cursor.tier))
                         .add(Column::CreatedAt.eq(cursor.created_at))
                         .add(Column::Id.gt(cursor.id)),
                 ),
         );
     }
-    let mut values = selection
+    let mut keys = keys
+        .order_by_asc(tier_expr)
         .order_by_desc(Column::CreatedAt)
         .order_by_asc(Column::Id)
-        .limit(u64::from(limit) + 1)
-        .all(&state.postgres)
+        .limit(u64::from(req.limit) + 1)
+        .into_model::<PageKey>()
+        .all(postgres)
         .await?;
-    let more = values.len() > usize::from(limit);
-    values.truncate(usize::from(limit));
+    let more = keys.len() > usize::from(req.limit);
+    keys.truncate(usize::from(req.limit));
+    Ok((keys, more))
+}
+
+#[utoipa::path(get,path="/v1/capabilities/page",params(PageQuery),responses((status=200,body=CapabilityPage)))]
+/// # Errors
+/// Rejects invalid filters, credentials and cursors; inactive listings require an owned query.
+pub async fn page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(request): Query<PageQuery>,
+) -> ApiResult<Json<CapabilityPage>> {
+    let req = resolve(&state, &headers, request).await?;
+    let version = catalog_version(&state).await;
+    let cache_key = format!(
+        "scout:v{version}:{}",
+        hex::encode(identity::hash(&serde_json::to_vec(&(
+            &req.query,
+            &req.runtime,
+            &req.creator,
+            req.mine,
+            req.include_inactive,
+            req.limit,
+            &req.cursor,
+        ))?))
+    );
+    if let Some(hit) = cache_get(&state, &cache_key).await
+        && let Ok(page) = serde_json::from_str::<CapabilityPage>(&hit)
+    {
+        return Ok(Json(page));
+    }
+    let (keys, more) = fetch_page_keys(&state.postgres, &req).await?;
+    let ids: Vec<uuid::Uuid> = keys.iter().map(|key| key.id).collect();
+    let rows = if ids.is_empty() {
+        Vec::new()
+    } else {
+        Entity::find()
+            .filter(Column::Id.is_in(ids))
+            .all(&state.postgres)
+            .await?
+    };
+    let by_id: HashMap<uuid::Uuid, crate::entities::capabilities::Model> =
+        rows.into_iter().map(|row| (row.id, row)).collect();
+    let values: Vec<Capability> = keys
+        .iter()
+        .filter_map(|key| by_id.get(&key.id))
+        .cloned()
+        .map(Capability::from)
+        .collect();
     let next_cursor = if more {
-        values
-            .last()
-            .map(|row| {
+        keys.last()
+            .map(|key| {
                 Cursor {
-                    created_at: row.created_at,
-                    id: row.id,
-                    filter_hash,
+                    tier: key.tier,
+                    created_at: key.created_at,
+                    id: key.id,
+                    filter_hash: req.filter_hash.clone(),
                 }
                 .encode()
             })
@@ -114,8 +260,25 @@ pub async fn page(
     } else {
         None
     };
-    Ok(Json(CapabilityPage {
-        items: values.into_iter().map(Capability::from).collect(),
+    let page = CapabilityPage {
+        items: values,
         next_cursor,
-    }))
+    };
+    if let Ok(body) = serde_json::to_string(&page) {
+        let stored = tokio::time::timeout(
+            CACHE_TIMEOUT,
+            state.redis.set::<(), _, _>(
+                cache_key,
+                body,
+                Some(Expiration::EX(CACHE_TTL_SECONDS)),
+                None,
+                false,
+            ),
+        )
+        .await;
+        if !matches!(stored, Ok(Ok(()))) {
+            tracing::debug!("Discovery page cache write failed");
+        }
+    }
+    Ok(Json(page))
 }

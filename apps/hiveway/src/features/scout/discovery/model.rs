@@ -15,7 +15,7 @@ pub struct PageQuery {
     pub limit: Option<u8>,
     pub cursor: Option<String>,
 }
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct CapabilityPage {
     pub items: Vec<Capability>,
     pub next_cursor: Option<String>,

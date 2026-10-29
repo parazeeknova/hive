@@ -63,6 +63,8 @@ pub(super) async fn send(state: &AppState, id: Uuid) -> ApiResult<()> {
     };
     let next = if issue == Some("dodo_request_rejected") {
         "failed"
+    } else if issue == Some("dodo_unauthorized") {
+        "prepared"
     } else if refund_id.is_some() {
         "pending"
     } else {

@@ -57,5 +57,6 @@ pub async fn availability(
     cap.active = Set(request.active);
     let cap = cap.update(&tx).await?;
     tx.commit().await?;
+    crate::features::scout::discovery::bump_catalog_version(&state).await;
     Ok(Json(cap.into()))
 }

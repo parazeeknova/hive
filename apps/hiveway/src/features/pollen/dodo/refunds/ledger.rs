@@ -1,6 +1,6 @@
 //! Serialize refund state and budget transitions with the same credential lock as payments.
 use crate::{
-    entities::{agent_credentials, invocations, refund_operations},
+    entities::{agent_credentials, creator_earnings, invocations, refund_operations},
     features::{
         common::{
             error::{ApiError, ApiResult},
@@ -50,6 +50,7 @@ pub(super) async fn transition(
                 Expr::val(match next {
                     "failed" => "refund_rejected",
                     "pending" => "refund_pending",
+                    "prepared" => "refund_required",
                     _ => "refund_review_required",
                 }),
             )
@@ -106,6 +107,12 @@ pub(super) async fn book(
         invocations::Entity::update_many()
             .col_expr(invocations::Column::PaymentIssue, Expr::val("refunded"))
             .filter(invocations::Column::Id.eq(inv.id))
+            .exec(&tx)
+            .await?;
+        // Earnings history is preserved for credibility; only the flag flips.
+        creator_earnings::Entity::update_many()
+            .col_expr(creator_earnings::Column::Refunded, Expr::val(true))
+            .filter(creator_earnings::Column::InvocationId.eq(op.invocation_id))
             .exec(&tx)
             .await?;
     }

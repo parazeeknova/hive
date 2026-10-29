@@ -76,5 +76,6 @@ pub async fn compose(
     .await?;
 
     tx.commit().await?;
+    crate::features::scout::discovery::bump_catalog_version(&state).await;
     Ok(Json(capability.into()))
 }

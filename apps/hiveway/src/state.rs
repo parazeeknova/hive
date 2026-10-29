@@ -14,7 +14,6 @@ pub struct AppState {
     pub postgres: DatabaseConnection,
     pub redis: fred::clients::Client,
     pub http: reqwest::Client,
-    pub rig: Option<rig_core::providers::openai::OpenAI>,
 }
 
 impl AppState {
@@ -57,10 +56,6 @@ impl AppState {
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("hiveway/", env!("CARGO_PKG_VERSION")))
             .build()?;
-        let rig = config
-            .openai_api_key
-            .as_deref()
-            .map(rig_core::providers::openai::OpenAI::new);
         let sandbox = Arc::new(crate::features::cell::runtime::Sandbox::new(
             settings.runtime.sandbox.clone(),
         ));
@@ -70,7 +65,6 @@ impl AppState {
             postgres,
             redis,
             http,
-            rig,
         })
     }
 }

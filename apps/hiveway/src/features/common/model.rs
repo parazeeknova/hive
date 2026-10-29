@@ -278,6 +278,42 @@ pub struct Sale {
     pub transaction_hash: String,
     pub created_at: i64,
 }
+#[derive(Serialize, ToSchema)]
+pub struct MethodEarnings {
+    pub method: String,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub amount: i64,
+    pub runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+    pub refunded_runs: i64,
+}
+#[derive(Serialize, ToSchema)]
+pub struct EarningsSummary {
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub lifetime_amount: i64,
+    pub settled_runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+    pub refunded_runs: i64,
+    pub methods: Vec<MethodEarnings>,
+}
+#[derive(Serialize, ToSchema)]
+pub struct CapabilityEarnings {
+    pub capability_id: Uuid,
+    pub name: String,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub amount: i64,
+    pub runs: i64,
+    #[schema(value_type = String)]
+    #[serde(with = "amount_string")]
+    pub refunded_amount: i64,
+}
 
 impl From<crate::entities::capabilities::Model> for Capability {
     fn from(model: crate::entities::capabilities::Model) -> Self {

@@ -159,6 +159,20 @@ async fn complete_paid(
             .to_owned(),
     )
     .await?;
+    super::credit_earnings(
+        &tx,
+        &super::EarningsCredit {
+            invocation_id: inv.id,
+            capability_id: inv.capability_id,
+            creator_wallet: creator.clone(),
+            payer_wallet: wallet.clone(),
+            amount: inv.price,
+            network: "dodo:test".into(),
+            transaction_hash: payment_id.into(),
+            payment_method: "dodo".into(),
+        },
+    )
+    .await?;
     tx.commit().await?;
     tracing::info!(invocation_id=%inv.id,execution_ms=elapsed,result_bytes=bytes,"Capability delivered after Dodo payment");
     Ok(())

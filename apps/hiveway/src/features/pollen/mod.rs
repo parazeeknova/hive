@@ -1,10 +1,12 @@
 use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
 use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
+use crate::entities::creator_earnings::Column as CreatorEarningsColumn;
+use crate::entities::creator_earnings::Entity as CreatorEarningsEntity;
 use crate::entities::creator_sales::Column as CreatorSalesColumn;
 use crate::entities::creator_sales::Entity as CreatorSalesEntity;
 use crate::entities::invocations::Column as InvocationsColumn;
 use crate::entities::invocations::Entity as InvocationsEntity;
-use sea_orm::sea_query::{Expr, ExprTrait, Query as SqlQuery};
+use sea_orm::sea_query::{Expr, ExprTrait, OnConflict, Query as SqlQuery};
 use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 pub mod dodo;
 pub mod quotes;
@@ -36,6 +38,119 @@ use sea_orm::DatabaseTransaction;
 use uuid::Uuid;
 
 type Tx = DatabaseTransaction;
+/// Ledger-only earnings credit. Credits never move funds; they are analytics
+/// history for creator credibility.
+pub(super) struct EarningsCredit {
+    pub invocation_id: Uuid,
+    pub capability_id: Uuid,
+    pub creator_wallet: String,
+    pub payer_wallet: String,
+    pub amount: i64,
+    pub network: String,
+    pub transaction_hash: String,
+    pub payment_method: String,
+}
+
+/// Credit the ledger for an x402 settlement: same invocation, price and
+/// payment requirements as the recorded sale.
+pub(super) async fn credit_settlement_ledger(
+    tx: &Tx,
+    id: Uuid,
+    inv: &Invocation,
+    requirements: &PaymentRequirements,
+    payload: &PaymentPayload,
+    settlement: &Settlement,
+    network: &str,
+) -> ApiResult<()> {
+    credit_earnings(
+        tx,
+        &EarningsCredit {
+            invocation_id: id,
+            capability_id: inv.capability_id,
+            creator_wallet: identity::wallet(&requirements.pay_to)?,
+            payer_wallet: identity::wallet(&payload.payload.authorization.from)?,
+            amount: inv.price,
+            network: network.into(),
+            transaction_hash: settlement.transaction.clone(),
+            payment_method: inv.payment_method.clone().unwrap_or_else(|| "x402".into()),
+        },
+    )
+    .await
+}
+
+/// Record one earnings credit for a settled invocation. The insert is
+/// idempotent so concurrent settlement paths cannot double-count.
+pub(super) async fn credit_earnings(tx: &Tx, credit: &EarningsCredit) -> ApiResult<()> {
+    tx.execute(
+        &SqlQuery::insert()
+            .into_table(CreatorEarningsEntity)
+            .columns([
+                CreatorEarningsColumn::InvocationId,
+                CreatorEarningsColumn::CapabilityId,
+                CreatorEarningsColumn::CreatorWallet,
+                CreatorEarningsColumn::PayerWallet,
+                CreatorEarningsColumn::Amount,
+                CreatorEarningsColumn::Network,
+                CreatorEarningsColumn::TransactionHash,
+                CreatorEarningsColumn::PaymentMethod,
+                CreatorEarningsColumn::Refunded,
+                CreatorEarningsColumn::CreatedAt,
+            ])
+            .values_panic([
+                Expr::val(credit.invocation_id),
+                Expr::val(credit.capability_id),
+                Expr::val(credit.creator_wallet.clone()),
+                Expr::val(credit.payer_wallet.clone()),
+                Expr::val(credit.amount),
+                Expr::val(credit.network.clone()),
+                Expr::val(credit.transaction_hash.clone()),
+                Expr::val(credit.payment_method.clone()),
+                Expr::val(false),
+                Expr::val(now()),
+            ])
+            .on_conflict(
+                OnConflict::columns([CreatorEarningsColumn::InvocationId])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .to_owned(),
+    )
+    .await?;
+    Ok(())
+}
+/// Move a settled invocation's reserved budget to spent and persist settlement.
+async fn mark_settled(
+    tx: &Tx,
+    id: Uuid,
+    credential_id: Uuid,
+    price: i64,
+    settlement: &Settlement,
+) -> ApiResult<()> {
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("settled"))
+        .col_expr(
+            InvocationsColumn::Settlement,
+            Expr::val(serde_json::to_value(settlement)?),
+        )
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+        .exec(tx)
+        .await?;
+    AgentCredentialsEntity::update_many()
+        .col_expr(
+            AgentCredentialsColumn::Reserved,
+            Expr::col(AgentCredentialsColumn::Reserved).sub(Expr::val(price)),
+        )
+        .col_expr(
+            AgentCredentialsColumn::Spent,
+            Expr::col(AgentCredentialsColumn::Spent).add(Expr::val(price)),
+        )
+        .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(credential_id)))
+        .exec(tx)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn locked_credential(tx: &Tx, id: Uuid, scope: &str) -> ApiResult<Credential> {
     let c = AgentCredentialsEntity::find()
         .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(id)))
@@ -423,28 +538,8 @@ pub async fn reconcile_inner(
         crate::database::lock_credential(&tx, credential_id).await?;
         let inv = invocation(&tx, id, credential_id).await?;
         if inv.state != "settled" {
-            InvocationsEntity::update_many()
-                .col_expr(InvocationsColumn::State, Expr::val("settled"))
-                .col_expr(
-                    InvocationsColumn::Settlement,
-                    Expr::val((serde_json::to_value(&settlement)?).clone()),
-                )
-                .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
-                .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
-                .exec(&tx)
-                .await?;
-            AgentCredentialsEntity::update_many()
-                .col_expr(
-                    AgentCredentialsColumn::Reserved,
-                    Expr::col(AgentCredentialsColumn::Reserved).sub(Expr::val(inv.price)),
-                )
-                .col_expr(
-                    AgentCredentialsColumn::Spent,
-                    Expr::col(AgentCredentialsColumn::Spent).add(Expr::val(inv.price)),
-                )
-                .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(credential_id)))
-                .exec(&tx)
-                .await?;
+            mark_settled(&tx, id, credential_id, inv.price, &settlement).await?;
+            let inv = invocation(&tx, id, credential_id).await?;
             tx.execute(
                 &SqlQuery::insert()
                     .into_table(CreatorSalesEntity)
@@ -467,6 +562,16 @@ pub async fn reconcile_inner(
                         Expr::val(now()),
                     ])
                     .to_owned(),
+            )
+            .await?;
+            credit_settlement_ledger(
+                &tx,
+                id,
+                &inv,
+                &requirements,
+                &payload,
+                &settlement,
+                &state.settings.runtime.payment.network(),
             )
             .await?;
         }

@@ -442,8 +442,15 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
 mod tests {
     #[test]
     fn ambiguous_provider_errors_keep_reservations() {
-        for status in [400, 401, 403, 404, 422] {
+        for status in [400, 404, 422] {
             assert!(super::definitive_rejection(
+                reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
+            ));
+        }
+        // Authentication rejections surface separately so refunds can be retried
+        // after credentials are corrected; they never release reservations either.
+        for status in [401, 403] {
+            assert!(!super::definitive_rejection(
                 reqwest::StatusCode::from_u16(status).unwrap_or(reqwest::StatusCode::OK)
             ));
         }

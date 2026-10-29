@@ -28,13 +28,19 @@ pub(super) async fn request(
         .send()
         .await
         .map_err(|_| ApiError::unavailable("dodo_unavailable"))?;
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::UNAUTHORIZED,
+            "dodo_unauthorized",
+        ));
+    }
     if definitive_rejection(response.status()) {
         return Err(ApiError::bad("dodo_request_rejected"));
     }
     x402::json_response(response).await
 }
 pub(super) fn definitive_rejection(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 400 | 401 | 403 | 404 | 422)
+    matches!(status.as_u16(), 400 | 404 | 422)
 }
 pub(super) fn identifier(value: &str) -> ApiResult<&str> {
     if value.is_empty()
