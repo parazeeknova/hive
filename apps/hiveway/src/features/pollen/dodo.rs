@@ -60,11 +60,40 @@ async fn request(
 fn definitive_rejection(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 400 | 401 | 403 | 404 | 422)
 }
+/// Queue uncertain checkout creation for operators; provider uncertainty never frees budget.
+/// The durable queue is `checkout_review`, with its issue visible in receipts and activity.
+/// # Errors
+/// Returns database failures.
+pub async fn queue_stale_checkouts(state: &AppState) -> ApiResult<()> {
+    let queued = InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("checkout_review"))
+        .col_expr(
+            InvocationsColumn::PaymentIssue,
+            Expr::val("operator_review_required"),
+        )
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(InvocationsColumn::PaymentMethod.eq("dodo"))
+        .filter(InvocationsColumn::State.eq("checkout_creating"))
+        .filter(
+            InvocationsColumn::UpdatedAt
+                .lt(now() - state.settings.runtime.worker.stale_after_seconds),
+        )
+        .exec(&state.postgres)
+        .await?
+        .rows_affected;
+    if queued > 0 {
+        tracing::warn!(
+            queued,
+            "Dodo checkout creation requires operator review; reservations retained"
+        );
+    }
+    Ok(())
+}
 async fn reject_checkout(state: &AppState, id: Uuid, credential: Uuid) -> ApiResult<()> {
     let tx = state.postgres.begin().await?;
     crate::database::lock_credential(&tx, credential).await?;
     let inv = invocation(&tx, id, credential).await?;
-    if inv.state == "checkout_creating" {
+    if matches!(inv.state.as_str(), "checkout_creating" | "checkout_review") {
         super::release(&tx, &inv, "failed", "dodo_request_rejected").await?;
     }
     tx.commit().await?;
@@ -99,6 +128,7 @@ pub async fn checkout(
     if state.settings.dodo_api_key.is_none() {
         return Err(ApiError::unavailable("dodo_not_configured"));
     }
+    queue_stale_checkouts(&state).await?;
     let tx = state.postgres.begin().await?;
     locked_credential(&tx, c.id, "repository:analyze").await?;
     let inv = invocation(&tx, id, c.id).await?;
@@ -150,14 +180,16 @@ pub async fn checkout(
     }
     InvocationsEntity::update_many()
         .col_expr(InvocationsColumn::State, Expr::val("checkout_pending"))
+        .col_expr(
+            InvocationsColumn::PaymentIssue,
+            Expr::val(Option::<String>::None),
+        )
         .col_expr(InvocationsColumn::CheckoutId, Expr::val(session))
         .col_expr(InvocationsColumn::CheckoutUrl, Expr::val(url))
         .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
-        .filter(
-            Expr::col(InvocationsColumn::Id)
-                .eq(Expr::val(id))
-                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("checkout_creating"))),
-        )
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)).and(
+            Expr::col(InvocationsColumn::State).is_in(["checkout_creating", "checkout_review"]),
+        ))
         .exec(&state.postgres)
         .await?;
     Ok(Json(

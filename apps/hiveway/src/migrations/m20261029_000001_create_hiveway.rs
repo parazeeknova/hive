@@ -109,23 +109,7 @@ fn capabilities() -> TableCreateStatement {
 fn invocations() -> TableCreateStatement {
     let mut table = sea_orm::Schema::new(sea_orm::DbBackend::Postgres)
         .create_table_from_entity(InvocationsEntity);
-    table.check((
-        "invocations_rule_0",
-        Expr::col(InvocationsColumn::State).is_in([
-            "quoted",
-            "verifying",
-            "executing",
-            "settling",
-            "settlement_unknown",
-            "settled",
-            "failed",
-            "expired",
-            "checkout_creating",
-            "checkout_pending",
-            "paid",
-            "execution_failed",
-        ]),
-    ));
+    table.check(("invocations_rule_0", invocation_states()));
     table.check((
         "invocations_rule_1",
         Expr::col(InvocationsColumn::Price).gt(Expr::val(0_i64)),
@@ -134,14 +118,7 @@ fn invocations() -> TableCreateStatement {
         "invocations_rule_2",
         Expr::col(InvocationsColumn::PaymentMethod).is_in(["x402", "dodo"]),
     ));
-    table.check((
-        "invocations_rule_3",
-        Expr::col(InvocationsColumn::State)
-            .ne(Expr::val("settled"))
-            .or(Expr::col(InvocationsColumn::Result)
-                .is_null()
-                .and(Expr::col(InvocationsColumn::Settlement).is_null())),
-    ));
+    table.check(("invocations_rule_3", settled_output()));
     table
 }
 fn creator_sales() -> TableCreateStatement {
@@ -244,4 +221,29 @@ fn indexes() -> Vec<IndexCreateStatement> {
             .col(CreatorSalesColumn::TransactionHash)
             .to_owned(),
     ]
+}
+
+pub(super) fn invocation_states() -> Expr {
+    Expr::col(InvocationsColumn::State).is_in([
+        "quoted",
+        "verifying",
+        "executing",
+        "settling",
+        "settlement_unknown",
+        "settled",
+        "failed",
+        "expired",
+        "checkout_creating",
+        "checkout_pending",
+        "checkout_review",
+        "paid",
+        "execution_failed",
+    ])
+}
+pub(super) fn settled_output() -> Expr {
+    Expr::col(InvocationsColumn::State)
+        .ne("settled")
+        .or(Expr::col(InvocationsColumn::Result)
+            .is_not_null()
+            .and(Expr::col(InvocationsColumn::Settlement).is_not_null()))
 }

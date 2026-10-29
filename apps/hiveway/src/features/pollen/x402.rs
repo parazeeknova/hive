@@ -199,6 +199,14 @@ pub async fn rpc(state: &AppState, method: &str, params: Value) -> ApiResult<Val
 /// # Errors
 /// Rejects unavailable RPC endpoints, invalid responses, and an unexpected chain identifier.
 pub async fn block_number(state: &AppState) -> ApiResult<String> {
+    ensure_chain(state).await?;
+    rpc(state, "eth_blockNumber", json!([]))
+        .await?
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| ApiError::unavailable("invalid_block_number"))
+}
+async fn ensure_chain(state: &AppState) -> ApiResult<()> {
     let chain = rpc(state, "eth_chainId", json!([])).await?;
     if chain
         .as_str()
@@ -207,11 +215,63 @@ pub async fn block_number(state: &AppState) -> ApiResult<String> {
     {
         return Err(ApiError::unavailable("wrong_payment_network"));
     }
-    rpc(state, "eth_blockNumber", json!([]))
-        .await?
+    Ok(())
+}
+
+/// Prove an expired authorization unused at a finalized, canonical block.
+/// # Errors
+/// Rejects changed payment profiles and unavailable or malformed finality/state proofs.
+pub async fn expired_without_payment(
+    state: &AppState,
+    payload: &PaymentPayload,
+    requirements: &PaymentRequirements,
+) -> ApiResult<bool> {
+    let profile = &state.settings.runtime.payment;
+    if requirements.network != profile.network()
+        || !requirements.asset.eq_ignore_ascii_case(&profile.asset)
+    {
+        return Err(ApiError::unavailable("payment_profile_changed"));
+    }
+    ensure_chain(state).await?;
+    let authorization = &payload.payload.authorization;
+    let deadline = authorization
+        .valid_before
+        .parse::<u64>()
+        .ok()
+        .and_then(|expiry| expiry.checked_add(profile.reorg_margin_seconds))
+        .ok_or_else(|| ApiError::bad("invalid_authorization_expiry"))?;
+    let block = rpc(state, "eth_getBlockByNumber", json!(["finalized", false])).await?;
+    let timestamp = block["timestamp"]
         .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| ApiError::unavailable("invalid_block_number"))
+        .filter(|value| value.starts_with("0x"))
+        .and_then(|value| u64::from_str_radix(&value[2..], 16).ok())
+        .ok_or_else(|| ApiError::unavailable("invalid_finalized_block"))?;
+    if timestamp <= deadline {
+        return Ok(false);
+    }
+    let hash = block["hash"]
+        .as_str()
+        .filter(|hash| hash_string(hash))
+        .ok_or_else(|| ApiError::unavailable("invalid_finalized_block"))?;
+    if !hash_string(&authorization.nonce) {
+        return Err(ApiError::bad("invalid_authorization_nonce"));
+    }
+    let selector = hex::encode(&Keccak256::digest(b"authorizationState(address,bytes32)")[..4]);
+    let data = format!(
+        "0x{selector}{}{}",
+        &address_topic(&authorization.from)?[2..],
+        &authorization.nonce[2..]
+    );
+    let result = rpc(
+        state,
+        "eth_call",
+        json!([
+            {"to":profile.asset,"data":data}, {"blockHash":hash,"requireCanonical":true}
+        ]),
+    )
+    .await?;
+    // An empty EOA response or malformed bool cannot establish non-use.
+    Ok(result.as_str() == Some(&format!("0x{}", "00".repeat(32))))
 }
 fn topic(signature: &str) -> String {
     format!("0x{}", hex::encode(Keccak256::digest(signature.as_bytes())))

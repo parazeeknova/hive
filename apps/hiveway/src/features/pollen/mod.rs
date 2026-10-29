@@ -554,6 +554,33 @@ async fn execute_and_settle(
     reconcile_inner(state, id, credential_id).await
 }
 
+async fn release_unexecuted(
+    state: &AppState,
+    id: Uuid,
+    credential: Uuid,
+    payload: &PaymentPayload,
+    requirements: &PaymentRequirements,
+) -> ApiResult<()> {
+    match x402::expired_without_payment(state, payload, requirements).await {
+        Ok(true) => {}
+        Ok(false) => return Ok(()),
+        Err(error) => {
+            tracing::warn!(invocation_id=%id, error=error.code, "Settlement expiry proof unavailable");
+            return Ok(());
+        }
+    }
+    let tx = state.postgres.begin().await?;
+    crate::database::lock_credential(&tx, credential).await?;
+    let current = invocation(&tx, id, credential).await?;
+    if current.payment_method.as_deref() == Some("x402")
+        && matches!(current.state.as_str(), "settling" | "settlement_unknown")
+    {
+        release(&tx, &current, "failed", "settlement_not_executed").await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// # Errors
 /// Returns errors for missing invocations, malformed recovery data, or database failures.
 pub async fn reconcile_inner(
@@ -590,6 +617,9 @@ pub async fn reconcile_inner(
             None
         }
     };
+    if confirmed.is_none() {
+        release_unexecuted(state, id, credential_id, &payload, &requirements).await?;
+    }
     if let Some(settlement) = confirmed {
         let tx = state.postgres.begin().await?;
         // Settlement is finalized even if the credential expired or was revoked meanwhile.

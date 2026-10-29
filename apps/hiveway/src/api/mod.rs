@@ -9,6 +9,7 @@ use axum::{
     http::{HeaderValue, Method, header},
     routing::{get, post},
 };
+pub use guard::HandlerDrain;
 use tower_http::cors::CorsLayer;
 
 pub fn router() -> Router<AppState> {
@@ -83,7 +84,7 @@ pub async fn ready(
 }
 
 /// Add admission control after attaching shared state.
-pub fn protect(router: Router, state: AppState) -> Router {
+pub fn protect(router: Router, state: AppState) -> (Router, HandlerDrain) {
     let admission = guard::Admission {
         requests: std::sync::Arc::new(tokio::sync::Semaphore::new(
             state.settings.runtime.http.concurrency,
@@ -91,8 +92,15 @@ pub fn protect(router: Router, state: AppState) -> Router {
         peers: std::sync::Arc::default(),
         state,
     };
-    router.layer(axum::middleware::from_fn_with_state(
-        admission,
-        guard::guard,
-    ))
+    let drain = HandlerDrain::new(
+        admission.requests.clone(),
+        admission.state.settings.runtime.http.concurrency,
+    );
+    (
+        router.layer(axum::middleware::from_fn_with_state(
+            admission,
+            guard::guard,
+        )),
+        drain,
+    )
 }

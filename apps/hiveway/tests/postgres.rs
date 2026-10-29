@@ -94,6 +94,7 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
             .ok_or("missing fixture")?;
         assert_eq!((credential.reserved, credential.spent), (60, 0));
         assert_database_constraints(&db, id, owner).await?;
+        assert_settlement_output(&db, id, cap.id, owner).await?;
 
         Ok::<(), Box<dyn std::error::Error>>(())
     }
@@ -141,7 +142,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        2
+        3
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {
@@ -181,5 +182,65 @@ async fn verify_migrations(
         .ok_or("creator activity index missing")?;
     let definition: String = index.try_get_by_index(0)?;
     assert!(definition.contains("(creator_wallet, created_at DESC, invocation_id DESC)"));
+    Ok(())
+}
+
+async fn assert_settlement_output(
+    db: &sea_orm::DatabaseConnection,
+    credential: Uuid,
+    capability: Uuid,
+    owner: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use hiveway::entities::invocations;
+    let id = Uuid::new_v4();
+    invocations::ActiveModel {
+        id: Set(id),
+        credential_id: Set(credential),
+        capability_id: Set(capability),
+        creator_wallet: Set(owner.into()),
+        idempotency_key: Set(Uuid::new_v4()),
+        request_hash: Set(vec![1; 32]),
+        input: Set(serde_json::json!({})),
+        requirements: Set(serde_json::json!({})),
+        resource: Set(serde_json::json!({})),
+        state: Set("settling".into()),
+        price: Set(1),
+        expires_at: Set(0),
+        created_at: Set(0),
+        updated_at: Set(0),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?;
+    for (result, settlement) in [
+        (None, None),
+        (Some(serde_json::json!({})), None),
+        (None, Some(serde_json::json!({}))),
+    ] {
+        assert!(
+            invocations::Entity::update_many()
+                .col_expr(invocations::Column::State, Expr::val("settled"))
+                .col_expr(invocations::Column::Result, Expr::val(result))
+                .col_expr(invocations::Column::Settlement, Expr::val(settlement))
+                .filter(invocations::Column::Id.eq(id))
+                .exec(db)
+                .await
+                .is_err()
+        );
+    }
+    let updated = invocations::Entity::update_many()
+        .col_expr(invocations::Column::State, Expr::val("settled"))
+        .col_expr(
+            invocations::Column::Result,
+            Expr::val(serde_json::json!({"ok":true})),
+        )
+        .col_expr(
+            invocations::Column::Settlement,
+            Expr::val(serde_json::json!({"success":true})),
+        )
+        .filter(invocations::Column::Id.eq(id))
+        .exec(db)
+        .await?;
+    assert_eq!(updated.rows_affected, 1);
     Ok(())
 }

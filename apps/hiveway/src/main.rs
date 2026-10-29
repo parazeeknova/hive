@@ -25,18 +25,18 @@ async fn serve() -> anyhow::Result<()> {
         "Hiveway ready"
     );
     let cors = hiveway::api::cors(&state.settings.auth_uri)?;
+    let (router, drain) = hiveway::api::protect(
+        hiveway::observe(hiveway::router().merge(hiveway::api::router())).with_state(state.clone()),
+        state.clone(),
+    );
     let (stop_worker, worker_shutdown) = tokio::sync::oneshot::channel();
     let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
     let mut worker = tokio::spawn(recovery_worker(state.clone(), worker_shutdown));
     let server = axum::serve(
         listener,
-        hiveway::api::protect(
-            hiveway::observe(hiveway::router().merge(hiveway::api::router()))
-                .with_state(state.clone()),
-            state.clone(),
-        )
-        .layer(cors)
-        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        router
+            .layer(cors)
+            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async {
         tokio::select! {
@@ -64,11 +64,20 @@ async fn serve() -> anyhow::Result<()> {
     if let Err(error) = &worker_result {
         tracing::error!(%error, "Pollen recovery task failed");
     }
+    let drained = drain
+        .wait(std::time::Duration::from_secs(
+            state.settings.runtime.http.shutdown_drain_timeout_seconds,
+        ))
+        .await;
+    if let Err(error) = &drained {
+        tracing::error!(%error, "Handler drain deadline exceeded; proceeding with shutdown");
+    }
     let postgres = state.postgres.close().await;
     let redis = state.redis.quit().await;
     result.context("serving Hiveway")?;
     postgres.context("closing PostgreSQL connection")?;
     redis.context("closing Redis connection")?;
+    let _drained = drained.context("draining Hiveway handlers")?;
     worker_result
 }
 

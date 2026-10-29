@@ -20,6 +20,29 @@ pub(super) struct Admission {
     pub requests: Arc<tokio::sync::Semaphore>,
     pub peers: Arc<Mutex<PeerWindows>>,
 }
+/// Tracks handler lifetimes, including tasks whose HTTP response has timed out.
+pub struct HandlerDrain {
+    requests: Arc<tokio::sync::Semaphore>,
+    concurrency: usize,
+}
+impl HandlerDrain {
+    pub(super) fn new(requests: Arc<tokio::sync::Semaphore>, concurrency: usize) -> Self {
+        Self {
+            requests,
+            concurrency,
+        }
+    }
+    /// Wait for all handlers and hold admission closed through infrastructure cleanup.
+    /// # Errors
+    /// Returns an error if draining exceeds the deadline or admission is closed.
+    pub async fn wait(
+        self,
+        timeout: Duration,
+    ) -> anyhow::Result<tokio::sync::OwnedSemaphorePermit> {
+        let count = u32::try_from(self.concurrency)?;
+        Ok(tokio::time::timeout(timeout, self.requests.acquire_many_owned(count)).await??)
+    }
+}
 fn peer_key(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V4(_) => ip,
@@ -236,12 +259,33 @@ mod timeout_tests {
         .await;
         assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
         assert_eq!(semaphore.available_permits(), 0);
+        let drain = HandlerDrain::new(semaphore.clone(), 1);
+        let mut draining = tokio::spawn(drain.wait(Duration::from_secs(2)));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut draining)
+                .await
+                .is_err()
+        );
         finish
             .send(())
             .map_err(|()| anyhow::anyhow!("handler was cancelled"))?;
         tokio::time::timeout(Duration::from_secs(2), completed).await??;
-        let _permit =
-            tokio::time::timeout(Duration::from_secs(2), semaphore.acquire_owned()).await??;
+        let drained = draining.await??;
+        assert_eq!(semaphore.available_permits(), 0);
+        drop(drained);
+        assert_eq!(semaphore.available_permits(), 1);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn draining_has_a_bounded_deadline() -> anyhow::Result<()> {
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+        let _permit = semaphore.clone().acquire_owned().await?;
+        assert!(
+            HandlerDrain::new(semaphore, 1)
+                .wait(Duration::from_millis(10))
+                .await
+                .is_err()
+        );
         Ok(())
     }
     #[tokio::test]

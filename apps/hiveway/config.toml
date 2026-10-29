@@ -14,6 +14,7 @@ tracked_peers = 4096
 body_bytes = 131072
 body_timeout_seconds = 5
 request_timeout_seconds = 180
+shutdown_drain_timeout_seconds = 300
 
 [infrastructure]
 postgres_connections = 5
@@ -29,6 +30,7 @@ execution_timeout_seconds = 60
 stale_after_seconds = 180
 
 [payment]
+reorg_margin_seconds = 60
 chain_id = 84532
 asset = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 name = "USDC"

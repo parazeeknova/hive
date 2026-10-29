@@ -1,4 +1,6 @@
 #![cfg(not(miri))]
+#[path = "security/recovery.rs"]
+mod recovery;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -275,8 +277,12 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     settings.dodo_product_id = Some("pdt_fixture".into());
     let provider_status = Arc::new(std::sync::atomic::AtomicU16::new(400));
     let fixture_status = provider_status.clone();
+    let chain = Arc::new(recovery::ChainFixture::default());
+    let fixture_chain = chain.clone();
+    settings.rpc_url = settings.facilitator_url.clone();
     let facilitator = tokio::spawn(async move {
         let router = Router::new()
+            .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
             .route("/supported", axum::routing::get(|| async {
                 axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))
             }))
@@ -294,10 +300,18 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         http: reqwest::Client::new(),
         rig: None,
     };
-    let app = hiveway::api::protect(hiveway::api::router().with_state(state.clone()), state);
+    let (app, _drain) = hiveway::api::protect(
+        hiveway::api::router().with_state(state.clone()),
+        state.clone(),
+    );
     let outcome = probe(app.clone(), id, &token_a, &token_b).await;
     let payment_result =
         probe_checkout_rejections(app.clone(), &db, a, id, &token_a, &provider_status).await;
+    let recovery_result = async {
+        recovery::checkout_queue(&state, id, a).await?;
+        recovery::expiry(&state, &chain, a, cap).await
+    }
+    .await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -312,6 +326,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     admin.close().await?;
     outcome?;
     payment_result?;
+    recovery_result?;
     socket_result
 }
 

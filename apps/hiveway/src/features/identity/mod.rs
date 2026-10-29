@@ -110,21 +110,18 @@ pub async fn challenge(
     let tx = state.postgres.begin().await?;
     // Serialize challenge issuance per socket peer so concurrent requests cannot bypass the limit.
     let ip = peer.ip().to_string();
-    for resource in [format!("hive:ip:{ip}"), format!("hive:wallet:{address}")] {
-        use sha2::Digest;
-        let digest = sha2::Sha256::digest(resource.as_bytes());
-        let key = i64::from_be_bytes(
-            digest[..8]
-                .try_into()
-                .map_err(|_| ApiError::bad("invalid_lock_key"))?,
-        );
-        tx.query_one(
-            &SqlQuery::select()
-                .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(key))
-                .to_owned(),
-        )
-        .await?;
-    }
+    let digest = Sha256::digest(format!("hive:ip:{ip}").as_bytes());
+    let key = i64::from_be_bytes(
+        digest[..8]
+            .try_into()
+            .map_err(|_| ApiError::bad("invalid_lock_key"))?,
+    );
+    tx.query_one(
+        &SqlQuery::select()
+            .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(key))
+            .to_owned(),
+    )
+    .await?;
     let count: i64 = tx
         .query_one(
             &SqlQuery::select()

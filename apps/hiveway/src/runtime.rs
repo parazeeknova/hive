@@ -24,6 +24,7 @@ pub struct HttpLimits {
     pub body_bytes: usize,
     pub body_timeout_seconds: u64,
     pub request_timeout_seconds: u64,
+    pub shutdown_drain_timeout_seconds: u64,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,6 +46,7 @@ pub struct Worker {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Payment {
+    pub reorg_margin_seconds: u64,
     pub chain_id: u64,
     pub asset: String,
     pub name: String,
@@ -86,6 +88,7 @@ impl RuntimeConfig {
             || !(1024..=1_048_576).contains(&h.body_bytes)
             || !(1..=30).contains(&h.body_timeout_seconds)
             || !(1..=600).contains(&h.request_timeout_seconds)
+            || !(1..=600).contains(&h.shutdown_drain_timeout_seconds)
             || !(1..=100).contains(&i.postgres_connections)
             || !(1..=60).contains(&i.connection_timeout_seconds)
             || !(1..=60).contains(&i.outbound_timeout_seconds)
@@ -102,7 +105,8 @@ impl RuntimeConfig {
         {
             bail!("invalid or inconsistent Hiveway resource limits");
         }
-        if self.payment.chain_id == 0
+        if !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
+            || self.payment.chain_id == 0
             || self.payment.name.is_empty()
             || self.payment.name.len() > 80
             || self.payment.version.is_empty()

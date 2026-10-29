@@ -146,6 +146,7 @@ async fn wallet_signatures_replay_scopes_and_revocation() -> TestResult {
     let app = hiveway::api::router().with_state(state.clone());
     let outcome = async {
         exercise(app.clone()).await?;
+        challenge_lock_boundaries(app.clone(), &state).await?;
         challenge_limits_and_retention(app, &state).await
     }
     .await;
@@ -230,5 +231,48 @@ async fn challenge_limits_and_retention(app: Router, state: &AppState) -> TestRe
         StatusCode::TOO_MANY_REQUESTS,
         "recent expired challenges still count per peer"
     );
+    Ok(())
+}
+
+async fn challenge_lock_boundaries(app: Router, state: &AppState) -> TestResult {
+    use sea_orm::TransactionTrait;
+    use sea_orm::sea_query::{Alias, Func, Query};
+    use sha2::{Digest, Sha256};
+    let wallet = "0x3333333333333333333333333333333333333333";
+    for (resource, blocks) in [
+        (format!("hive:wallet:{wallet}"), false),
+        ("hive:ip:127.0.0.1".into(), true),
+    ] {
+        let tx = state.postgres.begin().await?;
+        let digest = Sha256::digest(resource.as_bytes());
+        let key = i64::from_be_bytes(digest[..8].try_into()?);
+        tx.query_one(
+            &Query::select()
+                .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(key))
+                .to_owned(),
+        )
+        .await?;
+        let request =
+            json!({"wallet":wallet,"action":{"type":"revoke","credential_id":Uuid::new_v4()}});
+        let pending = call(app.clone(), "/v1/auth/challenges", request, None);
+        tokio::pin!(pending);
+        if blocks {
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), &mut pending)
+                    .await
+                    .is_err()
+            );
+            tx.commit().await?;
+            assert_eq!(pending.await?.0, StatusCode::OK);
+        } else {
+            assert_eq!(
+                tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+                    .await??
+                    .0,
+                StatusCode::OK
+            );
+            tx.commit().await?;
+        }
+    }
     Ok(())
 }

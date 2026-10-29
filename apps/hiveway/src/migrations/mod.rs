@@ -3,6 +3,7 @@
 use sea_orm_migration::prelude::*;
 mod m20261029_000001_create_hiveway;
 mod m20261029_000002_creator_sales_read_index;
+mod m20261030_000003_payment_recovery_constraints;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -10,6 +11,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20261029_000001_create_hiveway::Migration),
             Box::new(m20261029_000002_creator_sales_read_index::Migration),
+            Box::new(m20261030_000003_payment_recovery_constraints::Migration),
         ]
     }
 }
