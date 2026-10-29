@@ -2,7 +2,10 @@ name: hive
 
 services:
   postgres:
-    image: docker.io/library/postgres:18.6-alpine
+    image: hive-postgres:development
+    build:
+      context: ./docker
+      target: postgres
     environment:
       POSTGRES_DB: hive
       POSTGRES_USER: hive
@@ -18,7 +21,10 @@ services:
       retries: 30
 
   redis:
-    image: docker.io/library/redis:8.10.3-alpine
+    image: hive-redis:development
+    build:
+      context: ./docker
+      target: redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "127.0.0.1:6379:6379"

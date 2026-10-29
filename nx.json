@@ -52,7 +52,7 @@
         "env": "MIRIFLAGS"
       },
       "{workspaceRoot}/compose.yaml",
-      "{workspaceRoot}/.env.example",
+      "{workspaceRoot}/.env.development",
       "{workspaceRoot}/.cargo/**/*",
       {
         "env": "CARGO_BUILD_TARGET"
@@ -63,7 +63,8 @@
       {
         "env": "RUSTDOCFLAGS"
       },
-      "{workspaceRoot}/lefthook.yml"
+      "{workspaceRoot}/lefthook.yml",
+      "{workspaceRoot}/docker/**/*"
     ],
     "default": [
       "{projectRoot}/**/*",

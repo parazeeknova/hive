@@ -5,9 +5,9 @@ import { parseEnv } from "node:util";
 import { root, run } from "./run";
 
 const defaults = parseEnv(
-  await Bun.file(new URL("../.env.example", import.meta.url)).text()
+  await Bun.file(new URL("../.env.development", import.meta.url)).text()
 );
-const localFile = Bun.file(new URL("../.env", import.meta.url));
+const localFile = Bun.file(new URL("../.env.local", import.meta.url));
 const local = (await localFile.exists())
   ? parseEnv(await localFile.text())
   : {};
@@ -37,9 +37,25 @@ if (!process.env.DOCKER_HOST && !existsSync("/var/run/docker.sock")) {
     process.env.DOCKER_HOST = `unix://${socket}`;
   }
 }
+// Podman exposes a native image builder through its Docker-compatible API.
+if (process.env.DOCKER_HOST?.includes("/podman/")) {
+  process.env.DOCKER_BUILDKIT ??= "0";
+}
 await run([
   "docker",
   "compose",
+  "--env-file",
+  ".env.development",
+  "build",
+  "--pull",
+  "postgres",
+  "redis",
+]);
+await run([
+  "docker",
+  "compose",
+  "--env-file",
+  ".env.development",
   "up",
   "--detach",
   "--wait",

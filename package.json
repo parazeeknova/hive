@@ -1,6 +1,6 @@
 {
   "name": "hive",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Hive: an agent-native capability network. Hiveway API and Nectar web app.",
   "license": "MIT",
@@ -9,7 +9,7 @@
   ],
   "type": "module",
   "scripts": {
-    "dev": "bun scripts/dev.ts",
+    "dev": "cross-env NODE_ENV=development bun scripts/dev.ts",
     "check": "bun scripts/check.ts",
     "check-types": "bun scripts/check-types.ts"
   },
@@ -17,6 +17,7 @@
     "@types/bun": "^1.4.4",
     "@types/node": "^24.19.2",
     "bumpp": "^12.3.0",
+    "cross-env": "^10.1.0",
     "lefthook": "^2.2.2",
     "lerna": "^10.1.1",
     "oxfmt": "^0.75.0",

@@ -20,7 +20,7 @@ result-*
 # Secrets and local overrides
 .env
 .env.*
-!.env.example
+!.env.development
 
 # Logs, coverage, and editor/OS state
 *.log
