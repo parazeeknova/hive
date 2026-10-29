@@ -8,6 +8,7 @@ pub struct Settings {
     pub facilitator_url: String,
     pub rpc_url: String,
     pub github_token: Option<String>,
+    pub dodo_api_url: String,
     pub dodo_api_key: Option<String>,
     pub dodo_webhook_secret: Option<String>,
     pub dodo_product_id: Option<String>,
@@ -45,6 +46,20 @@ impl Settings {
             facilitator_url,
             rpc_url,
             github_token: optional("GITHUB_TOKEN"),
+            dodo_api_url: {
+                let value = validate_url(
+                    &env::var("DODO_PAYMENTS_API_URL")
+                        .unwrap_or_else(|_| "https://test.dodopayments.com".into()),
+                )?;
+                let url = reqwest::Url::parse(&value)?;
+                if !matches!(
+                    url.host_str(),
+                    Some("test.dodopayments.com" | "127.0.0.1" | "localhost")
+                ) {
+                    bail!("Dodo integration requires test mode or a loopback test fixture");
+                }
+                value
+            },
             dodo_api_key: optional("DODO_PAYMENTS_API_KEY"),
             dodo_webhook_secret: optional("DODO_PAYMENTS_WEBHOOK_SECRET"),
             dodo_product_id: optional("DODO_PAYMENTS_PRODUCT_ID"),

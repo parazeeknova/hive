@@ -22,6 +22,11 @@ pub fn router() -> Router<AppState> {
             get(pollen::get_receipt).post(pollen::invoke),
         )
         .route("/v1/invocations/{id}/reconcile", post(pollen::reconcile))
+        .route(
+            "/v1/invocations/{id}/checkout",
+            post(pollen::dodo::checkout),
+        )
+        .route("/v1/webhooks/dodo", post(pollen::dodo::webhook))
         .route("/v1/sales", get(waggle::sales))
         .layer(DefaultBodyLimit::max(131_072))
 }

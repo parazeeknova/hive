@@ -1,3 +1,5 @@
+pub mod dodo;
+pub mod worker;
 use sea_orm::{ConnectionTrait, FromQueryResult, TransactionTrait};
 pub mod x402;
 
@@ -110,7 +112,7 @@ pub(super) fn receipt(inv: Invocation) -> ApiResult<Response> {
         .settlement
         .map(serde_json::from_value::<Settlement>)
         .transpose()?;
-    let header = if settled {
+    let header = if settled && inv.payment_method.as_deref() == Some("x402") {
         settlement.as_ref().map(x402::encode).transpose()?
     } else {
         None
@@ -123,10 +125,16 @@ pub(super) fn receipt(inv: Invocation) -> ApiResult<Response> {
         result: if settled { inv.result } else { None },
         settlement: if settled { settlement } else { None },
         error_code: inv.error_code,
+        execution_ms: inv.execution_ms,
+        result_bytes: inv.result_bytes,
+        payment_issue: inv.payment_issue,
     };
     let code = if settled {
         StatusCode::OK
-    } else if matches!(body.state.as_str(), "failed" | "expired") {
+    } else if matches!(
+        body.state.as_str(),
+        "failed" | "expired" | "execution_failed"
+    ) {
         StatusCode::CONFLICT
     } else {
         StatusCode::ACCEPTED
@@ -316,38 +324,65 @@ pub async fn invoke(
         fail(&state, id, c.id, error.code).await?;
         return Err(error);
     }
-    state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='executing',updated_at=$1 WHERE id=$2 AND state='verifying'", vec![(now()).into(), (id).into()])).await?;
+    execute_and_settle(&state, id, c.id, inv, payload, requirements).await
+}
+
+async fn execute_and_settle(
+    state: &AppState,
+    id: Uuid,
+    credential_id: Uuid,
+    inv: Invocation,
+    payload: PaymentPayload,
+    requirements: PaymentRequirements,
+) -> ApiResult<Response> {
+    let changed=state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='executing',started_at=$1,updated_at=$1 WHERE id=$2 AND state='verifying'", vec![(now()).into(), (id).into()])).await?.rows_affected();
+    if changed != 1 {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "invocation_state_changed",
+        ));
+    }
+    let execution_started = std::time::Instant::now();
     let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
     let result = match tokio::time::timeout(
         std::time::Duration::from_secs(60),
-        cell::execute_capability(&state, inv.capability_id, &input),
+        cell::execute_capability(state, inv.capability_id, &input),
     )
     .await
     {
         Ok(Ok(result)) => result,
         Ok(Err(error)) => {
-            fail(&state, id, c.id, error.code).await?;
+            fail(state, id, credential_id, error.code).await?;
             return Err(error);
         }
         Err(_) => {
-            fail(&state, id, c.id, "execution_timeout").await?;
+            fail(state, id, credential_id, "execution_timeout").await?;
             return Err(ApiError::unavailable("execution_timeout"));
         }
     };
+    let execution_ms = i64::try_from(execution_started.elapsed().as_millis()).unwrap_or(i64::MAX);
+    let result_bytes = i64::try_from(serde_json::to_vec(&result)?.len()).unwrap_or(i64::MAX);
+    state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,"UPDATE invocations SET execution_ms=$1,result_bytes=$2,completed_at=$3 WHERE id=$4 AND state='executing'",[execution_ms.into(),result_bytes.into(),now().into(),id.into()])).await?;
     // Persist both output and the recovery scan boundary before any settlement request.
-    let block = match x402::block_number(&state).await {
+    let block = match x402::block_number(state).await {
         Ok(block) => block,
         Err(e) => {
-            fail(&state, id, c.id, e.code).await?;
+            fail(state, id, credential_id, e.code).await?;
             return Err(e);
         }
     };
-    state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='settling',result=$1,settlement_block=$2,updated_at=$3 WHERE id=$4 AND state='executing'", vec![(result).into(), (block).into(), (now()).into(), (id).into()])).await?;
-    let settled = x402::settle(&state, &payload, &requirements).await;
+    let changed=state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='settling',result=$1,settlement_block=$2,updated_at=$3 WHERE id=$4 AND state='executing'", vec![(result).into(), (block).into(), (now()).into(), (id).into()])).await?.rows_affected();
+    if changed != 1 {
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            "invocation_state_changed",
+        ));
+    }
+    let settled = x402::settle(state, &payload, &requirements).await;
     // A timeout or provider error does not prove that funds did not move.
     let response = settled.ok().map(serde_json::to_value).transpose()?;
     state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='settlement_unknown',settlement=$1,updated_at=$2 WHERE id=$3 AND state='settling'", vec![(response).into(), (now()).into(), (id).into()])).await?;
-    reconcile_inner(&state, id, c.id).await
+    reconcile_inner(state, id, credential_id).await
 }
 
 /// # Errors
@@ -365,6 +400,9 @@ pub async fn reconcile_inner(
     .one(&state.postgres)
     .await?
     .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
+    if inv.payment_method.as_deref() == Some("dodo") {
+        return dodo::reconcile(state, id, credential_id).await;
+    }
     if !matches!(inv.state.as_str(), "settling" | "settlement_unknown") {
         return receipt(inv);
     }

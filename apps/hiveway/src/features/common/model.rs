@@ -237,6 +237,10 @@ pub struct Invocation {
     pub checkout_id: Option<String>,
     pub checkout_url: Option<String>,
     pub provider_payment_id: Option<String>,
+    pub worker_started_at: Option<i64>,
+    pub execution_ms: Option<i64>,
+    pub result_bytes: Option<i64>,
+    pub payment_issue: Option<String>,
 }
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct QuoteResponse {
@@ -253,6 +257,9 @@ pub struct Receipt {
     pub result: Option<serde_json::Value>,
     pub settlement: Option<Settlement>,
     pub error_code: Option<String>,
+    pub execution_ms: Option<i64>,
+    pub result_bytes: Option<i64>,
+    pub payment_issue: Option<String>,
 }
 #[derive(Serialize, FromQueryResult, ToSchema)]
 pub struct Sale {

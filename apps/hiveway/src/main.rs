@@ -16,6 +16,16 @@ async fn main() -> anyhow::Result<()> {
 
 async fn serve() -> anyhow::Result<()> {
     let state = AppState::connect(&Config::from_env()?).await?;
+    let worker_state = state.clone();
+    let worker = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            if let Err(error) = hiveway::features::pollen::worker::tick(&worker_state).await {
+                tracing::error!(error = error.code, "Pollen recovery cycle failed");
+            }
+        }
+    });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3001").await?;
     tracing::info!(
         service = "hiveway",
@@ -24,14 +34,15 @@ async fn serve() -> anyhow::Result<()> {
     );
     let result = axum::serve(
         listener,
-        hiveway::router()
-            .merge(hiveway::api::router())
+        hiveway::observe(hiveway::router().merge(hiveway::api::router()))
             .layer(hiveway::api::cors(&state.settings.auth_uri)?)
             .with_state(state.clone())
             .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown())
     .await;
+    worker.abort();
+    let _ = worker.await;
     state.postgres.close().await?;
     state
         .redis
