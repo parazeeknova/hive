@@ -49,6 +49,56 @@ services:
     volumes:
       - openobserve-data:/data
 
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    profiles: [payments]
+    entrypoint: [anvil]
+    command:
+      [
+        "--host",
+        "0.0.0.0",
+        "--chain-id",
+        "31337",
+        "--block-time",
+        "1",
+        "--silent",
+      ]
+    ports:
+      - "127.0.0.1:8545:8545"
+    healthcheck:
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  facilitator:
+    profiles: [payments]
+    build:
+      context: .
+      dockerfile: docker/payments/Dockerfile
+    environment:
+      HIVE_LOCAL_RPC_URL: http://anvil:8545
+      HIVE_FACILITATOR_HOST: 0.0.0.0
+    ports:
+      - "127.0.0.1:4022:4022"
+    depends_on:
+      anvil:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:4022/supported').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
 volumes:
   postgres-data:
   redis-data:

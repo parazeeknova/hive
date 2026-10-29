@@ -15,5 +15,10 @@
     "noUnusedParameters": true,
     "types": ["bun", "node"]
   },
-  "include": ["scripts/**/*.ts", "oxlint.config.ts", "oxfmt.config.ts"]
+  "include": [
+    "scripts/**/*.ts",
+    "oxlint.config.ts",
+    "oxfmt.config.ts",
+    "packages/**/*.ts"
+  ]
 }

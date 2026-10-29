@@ -86,6 +86,14 @@ if (!ready) {
   );
 }
 
+if (process.env.HIVE_LOCAL_PAYMENTS === "1") {
+  await run(["bun", "packages/local/src/chain/start.ts"]);
+  process.env.HIVE_CONFIG_FILE = `${root}/.hive/local/hiveway.toml`;
+  process.env.BASE_SEPOLIA_RPC_URL =
+    process.env.HIVE_LOCAL_RPC_URL ?? "http://127.0.0.1:8545";
+  process.env.X402_FACILITATOR_URL = "http://127.0.0.1:4022";
+}
+
 // Compile first so the first page request can reach the API while Next starts.
 await run(["cargo", "build", "--locked", "--package", "hiveway"]);
 

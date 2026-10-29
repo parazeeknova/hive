@@ -1,9 +1,13 @@
 {
   "name": "@hive/local",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "private": true,
   "description": "Development-only payment fixtures and protocol test dependencies for Hiveway",
   "type": "module",
+  "scripts": {
+    "check": "oxlint --deny-warnings . && oxfmt --check .",
+    "check-types": "tsc --project ../../tsconfig.json --noEmit"
+  },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
     "@openzeppelin/contracts": "^5.6.1",
