@@ -7,7 +7,6 @@ pub struct Settings {
     pub auth_uri: String,
     pub facilitator_url: String,
     pub rpc_url: String,
-    pub github_token: Option<String>,
     pub dodo_api_url: String,
     pub dodo_api_key: Option<String>,
     pub dodo_webhook_secret: Option<String>,
@@ -45,7 +44,6 @@ impl Settings {
             auth_uri,
             facilitator_url,
             rpc_url,
-            github_token: optional("GITHUB_TOKEN"),
             dodo_api_url: {
                 let value = validate_url(
                     &env::var("DODO_PAYMENTS_API_URL")

@@ -143,14 +143,11 @@ async fn github_json<T: serde::de::DeserializeOwned>(
     path: &str,
     limit: usize,
 ) -> ApiResult<T> {
-    let mut request = state
+    let request = state
         .http
         .get(format!("https://api.github.com{path}"))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
-    if let Some(token) = &state.settings.github_token {
-        request = request.bearer_auth(token);
-    }
     let mut response = request
         .send()
         .await
@@ -365,6 +362,30 @@ pub async fn execute_capability(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ssrf_payloads_never_select_an_outbound_host() {
+        for url in [
+            "http://169.254.169.254/latest/meta-data/",
+            "https://127.0.0.1/a/b",
+            "https://[::1]/a/b",
+            "https://github.com.evil.example/a/b",
+            "https://github.com%2eevil.example/a/b",
+            "https://github.com/a/%2e%2e/b",
+            "https://github.com/a/b?url=http://127.0.0.1",
+            "https://user:pass@github.com/a/b",
+            "https://github.com:444/a/b",
+            "file:///etc/passwd",
+        ] {
+            assert!(
+                validate(&RepositoryInput {
+                    repository_url: url.into(),
+                    revision: "a".repeat(40)
+                })
+                .is_err(),
+                "accepted SSRF input: {url}"
+            );
+        }
+    }
     #[test]
     fn rejects_private_hosts_and_moving_revisions() {
         for url in [

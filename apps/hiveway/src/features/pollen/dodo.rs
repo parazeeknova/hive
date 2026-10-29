@@ -128,6 +128,14 @@ pub async fn webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<StatusCode> {
+    for name in ["webhook-id", "webhook-timestamp", "webhook-signature"] {
+        if headers.get_all(name).iter().count() != 1 {
+            return Err(ApiError::new(
+                StatusCode::UNAUTHORIZED,
+                "ambiguous_webhook_headers",
+            ));
+        }
+    }
     let secret = state
         .settings
         .dodo_webhook_secret
@@ -160,7 +168,7 @@ fn matches_payment(payment: &Value, session: &Value, inv: &Invocation, product: 
         && payment["currency"] == "USD"
         && payment["total_amount"]
             .as_i64()
-            .is_some_and(|n| n >= inv.price / 10_000)
+            .is_some_and(|n| n == inv.price / 10_000)
         && payment["metadata"]["hive_invocation_id"] == inv.id.to_string()
         && payment["metadata"]["hive_wallet"]
             .as_str()
@@ -297,6 +305,59 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
 mod tests {
     use super::identifier;
     use axum::http::{HeaderMap, HeaderValue};
+    #[test]
+    fn canonical_checkout_rejects_amount_and_session_tampering()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::features::common::model::Invocation;
+        use serde_json::json;
+        use uuid::Uuid;
+        let id = Uuid::new_v4();
+        let inv = Invocation {
+            id,
+            credential_id: Uuid::new_v4(),
+            capability_id: Uuid::new_v4(),
+            input: json!({}),
+            requirements: json!({}),
+            resource: json!({}),
+            state: "checkout_pending".into(),
+            price: 1_000_000,
+            expires_at: 0,
+            payment_nonce: None,
+            payment_payload: None,
+            result: None,
+            settlement: None,
+            settlement_block: None,
+            error_code: None,
+            payment_method: Some("dodo".into()),
+            checkout_id: Some("cks_1".into()),
+            checkout_url: None,
+            provider_payment_id: None,
+            worker_started_at: None,
+            execution_ms: None,
+            result_bytes: None,
+            payment_issue: None,
+        };
+        let session = json!({"id":"cks_1","payment_id":"pay_1"});
+        let original = json!({"status":"succeeded","currency":"USD","total_amount":100,"payment_id":"pay_1","checkout_session_id":"cks_1","metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":"0x1111111111111111111111111111111111111111"},"product_cart":[{"product_id":"prod_1","quantity":1}]});
+        assert!(super::matches_payment(&original, &session, &inv, "prod_1"));
+        for (path, value) in [
+            ("/total_amount", json!(99)),
+            ("/total_amount", json!(200)),
+            ("/currency", json!("EUR")),
+            ("/checkout_session_id", json!("cks_other")),
+            ("/payment_id", json!("pay_other")),
+            ("/product_cart/0/product_id", json!("prod_other")),
+            ("/product_cart/0/quantity", json!(2)),
+        ] {
+            let mut altered = original.clone();
+            *altered.pointer_mut(path).ok_or("missing fixture field")? = value;
+            assert!(
+                !super::matches_payment(&altered, &session, &inv, "prod_1"),
+                "accepted altered payment: {path}"
+            );
+        }
+        Ok(())
+    }
     #[test]
     fn provider_ids_cannot_escape_api_paths() {
         for value in ["../payments/other", "id?secret=x", "id/another", ""] {

@@ -158,12 +158,17 @@ pub async fn quote(
     Json(request): Json<QuoteRequest>,
 ) -> ApiResult<Response> {
     let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    if headers.get_all("idempotency-key").iter().count() != 1 {
+        return Err(ApiError::bad("uuid_idempotency_key_required"));
+    }
     let key = headers
         .get("idempotency-key")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<Uuid>().ok())
         .ok_or_else(|| ApiError::bad("uuid_idempotency_key_required"))?;
     cell::validate(&request.input)?;
+    // Do remote I/O before acquiring a credential row lock or a pool transaction.
+    x402::supported(&state).await?;
     let fingerprint = identity::hash(&serde_json::to_vec(&request)?);
     let tx = state.postgres.begin().await?;
     let c = locked_credential(&tx, c.id, "repository:analyze").await?;
@@ -220,8 +225,6 @@ pub async fn quote(
     if reserved != 1 {
         return Err(ApiError::forbidden());
     }
-    // Do not advertise a payment method that the selected facilitator does not support.
-    x402::supported(&state).await?;
     let id = Uuid::new_v4();
     let at = now();
     let expires_at = at + 120;

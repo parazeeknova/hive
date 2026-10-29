@@ -1,3 +1,4 @@
+mod guard;
 use crate::{
     features::{comb, hiveway, identity, pollen, scout, waggle, wax},
     state::AppState,
@@ -79,4 +80,9 @@ pub async fn ready(
     Ok(axum::Json(
         serde_json::json!({"status":"ok","postgres":"ok","redis":"ok"}),
     ))
+}
+
+/// Add admission control after attaching shared state.
+pub fn protect(router: Router, state: AppState) -> Router {
+    router.layer(axum::middleware::from_fn_with_state(state, guard::guard))
 }

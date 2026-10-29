@@ -5,6 +5,7 @@ import { root, run } from "./run";
 const files = [
   "package.json",
   "apps/hiveway/package.json",
+  "packages/local/package.json",
   "apps/nectar/package.json",
   "Cargo.toml",
   "lerna.json",

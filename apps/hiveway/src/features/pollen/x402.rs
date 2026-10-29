@@ -104,7 +104,7 @@ pub fn validate(
         .valid_before
         .parse::<i64>()
         .map_err(|_| ApiError::bad("invalid_payment_time"))?;
-    if after > at || before <= at || before > expires + 30 {
+    if after > at || before <= at || before > expires.saturating_add(30) {
         return Err(ApiError::bad("payment_authorization_expired_or_too_long"));
     }
     let nonce = hex::decode(
@@ -278,4 +278,51 @@ pub async fn confirm(
         payer: Some(identity::wallet(&payload.payload.authorization.from)?),
         error_reason: None,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode, validate};
+    use crate::features::common::model::{
+        ASSET, NETWORK, PaymentPayload, PaymentRequirements, Resource,
+    };
+    use serde_json::json;
+    #[test]
+    fn attacker_cannot_change_quote_or_authorization() -> Result<(), Box<dyn std::error::Error>> {
+        let payer = "0x1111111111111111111111111111111111111111";
+        let receiver = "0x2222222222222222222222222222222222222222";
+        let requirements: PaymentRequirements = serde_json::from_value(
+            json!({"scheme":"exact","network":NETWORK,"amount":"10000","asset":ASSET,"payTo":receiver,"maxTimeoutSeconds":120,"extra":{"name":"USDC","version":"2"}}),
+        )?;
+        let resource: Resource = serde_json::from_value(
+            json!({"url":"http://127.0.0.1:3001/v1/invocations/fixture","description":"fixture","mimeType":"application/json"}),
+        )?;
+        let original = json!({"x402Version":2,"accepted":requirements,"resource":resource,"payload":{"signature":format!("0x{}","00".repeat(65)),"authorization":{"from":payer,"to":receiver,"value":"10000","validAfter":"90","validBefore":"200","nonce":format!("0x{}","11".repeat(32))}}});
+        // This checks structure and binding only; cryptographic verification is a separate facilitator operation.
+        let payload: PaymentPayload = serde_json::from_value(original.clone())?;
+        validate(&payload, &requirements, &resource, payer, 220, 100)?;
+        for (path, value) in [
+            ("/accepted/amount", json!("1")),
+            ("/accepted/network", json!("eip155:1")),
+            ("/resource/url", json!("https://evil.example")),
+            ("/payload/authorization/from", json!(receiver)),
+            ("/payload/authorization/to", json!(payer)),
+            ("/payload/authorization/value", json!("999999")),
+            ("/payload/authorization/validBefore", json!("999999")),
+            ("/payload/authorization/validAfter", json!("999999")),
+            ("/payload/authorization/nonce", json!("0x11")),
+            ("/payload/signature", json!("0x11")),
+        ] {
+            let mut modified = original.clone();
+            *modified.pointer_mut(path).ok_or("missing fixture path")? = value;
+            let payload = serde_json::from_value(modified)?;
+            assert!(
+                validate(&payload, &requirements, &resource, payer, 220, 100).is_err(),
+                "accepted tampering: {path}"
+            );
+        }
+        assert!(decode("invalid base64!").is_err());
+        assert!(decode(&"A".repeat(20_000)).is_err());
+        Ok(())
+    }
 }

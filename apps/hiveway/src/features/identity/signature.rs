@@ -59,8 +59,11 @@ pub fn digest(message: &str) -> [u8; 32] {
 /// # Errors
 /// Rejects malformed signatures, unsupported recovery IDs, and invalid recovery.
 pub fn recover(message: &str, signature: &str) -> ApiResult<String> {
-    let bytes = hex::decode(signature.strip_prefix("0x").unwrap_or(signature))
-        .map_err(|_| ApiError::bad("invalid_signature"))?;
+    let raw = signature.strip_prefix("0x").unwrap_or(signature);
+    if raw.len() != 130 {
+        return Err(ApiError::bad("invalid_signature"));
+    }
+    let bytes = hex::decode(raw).map_err(|_| ApiError::bad("invalid_signature"))?;
     if bytes.len() != 65 {
         return Err(ApiError::bad("invalid_signature"));
     }

@@ -35,10 +35,13 @@ async fn serve() -> anyhow::Result<()> {
     );
     let result = axum::serve(
         listener,
-        hiveway::observe(hiveway::router().merge(hiveway::api::router()))
-            .layer(hiveway::api::cors(&state.settings.auth_uri)?)
-            .with_state(state.clone())
-            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        hiveway::api::protect(
+            hiveway::observe(hiveway::router().merge(hiveway::api::router()))
+                .with_state(state.clone()),
+            state.clone(),
+        )
+        .layer(hiveway::api::cors(&state.settings.auth_uri)?)
+        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown())
     .await;
