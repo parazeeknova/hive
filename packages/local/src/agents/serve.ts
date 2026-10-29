@@ -8,7 +8,11 @@ const env = {
   ...process.env,
   BASE_SEPOLIA_RPC_URL:
     process.env.HIVE_LOCAL_RPC_URL ?? "http://127.0.0.1:8545",
+  DODO_PAYMENTS_API_KEY: "",
+  DODO_PAYMENTS_PRODUCT_ID: "",
+  DODO_PAYMENTS_WEBHOOK_SECRET: "",
   HIVE_CONFIG_FILE: `${root}/.hive/local/hiveway.toml`,
+  OPENAI_API_KEY: "",
   X402_FACILITATOR_URL: "http://127.0.0.1:4022",
 };
 // Local acceptance never loads live payment credentials from .env.local.

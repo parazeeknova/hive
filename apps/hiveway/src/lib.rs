@@ -51,6 +51,7 @@ pub struct Health {
         features::pollen::get_receipt,
         features::pollen::reconcile,
         features::pollen::dodo::checkout,
+        features::pollen::dodo::recovery::recover,
         features::pollen::dodo::webhook,
         features::waggle::sales
     ),

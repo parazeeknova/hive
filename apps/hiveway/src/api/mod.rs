@@ -33,6 +33,10 @@ pub fn router() -> Router<AppState> {
             post(pollen::dodo::checkout),
         )
         .route("/v1/webhooks/dodo", post(pollen::dodo::webhook))
+        .route(
+            "/v1/invocations/{id}/checkout/recover",
+            post(pollen::dodo::recover),
+        )
         .route("/v1/sales", get(waggle::sales))
         .layer(DefaultBodyLimit::disable())
 }

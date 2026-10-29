@@ -1,4 +1,6 @@
 #![cfg(not(miri))]
+#[path = "security/dodo.rs"]
+mod dodo;
 #[path = "security/recovery.rs"]
 mod recovery;
 use axum::{
@@ -279,9 +281,14 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let fixture_status = provider_status.clone();
     let chain = Arc::new(recovery::ChainFixture::default());
     let fixture_chain = chain.clone();
+    let provider = Arc::new(dodo::ProviderFixture::default());
+    let payment_provider = provider.clone();
+    let session_provider = provider.clone();
     settings.rpc_url = settings.facilitator_url.clone();
     let facilitator = tokio::spawn(async move {
         let router = Router::new()
+            .route("/payments/{id}", axum::routing::get(dodo::payment).with_state(payment_provider))
+            .route("/checkouts/{id}", axum::routing::get(dodo::session).with_state(session_provider))
             .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
             .route("/supported", axum::routing::get(|| async {
                 axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))
@@ -309,6 +316,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         probe_checkout_rejections(app.clone(), &db, a, id, &token_a, &provider_status).await;
     let recovery_result = async {
         recovery::checkout_queue(&state, id, a).await?;
+        dodo::exercise(app.clone(), &state, &provider, id, (&token_a, &token_b)).await?;
         recovery::expiry(&state, &chain, a, cap).await
     }
     .await;
