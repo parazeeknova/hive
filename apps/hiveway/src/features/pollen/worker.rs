@@ -1,5 +1,9 @@
 //! Durable recovery and bounded workers for read-only capability execution.
 use super::{dodo, invocation, reconcile_inner};
+use crate::entities::creator_sales::Column as CreatorSalesColumn;
+use crate::entities::creator_sales::Entity as CreatorSalesEntity;
+use crate::entities::invocations::Column as InvocationsColumn;
+use crate::entities::invocations::Entity as InvocationsEntity;
 use crate::{
     features::{
         cell,
@@ -10,16 +14,28 @@ use crate::{
     },
     state::AppState,
 };
-use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::sea_query::{Expr, ExprTrait, Func, OnConflict, Order, Query as SqlQuery};
+use sea_orm::{
+    ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+};
 use serde_json::json;
 use std::time::Instant;
 
-fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {
-    Statement::from_sql_and_values(DbBackend::Postgres, sql, values)
-}
 async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
     let lease = now();
-    let claimed=state.postgres.execute_raw(statement("UPDATE invocations SET state='executing',started_at=$1,worker_started_at=$1,updated_at=$1 WHERE id=$2 AND state='paid'",vec![lease.into(),inv.id.into()])).await?.rows_affected();
+    let claimed = InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("executing"))
+        .col_expr(InvocationsColumn::StartedAt, Expr::val(lease))
+        .col_expr(InvocationsColumn::WorkerStartedAt, Expr::val(lease))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(lease))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(inv.id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("paid"))),
+        )
+        .exec(&state.postgres)
+        .await?
+        .rows_affected;
     if claimed != 1 {
         return Ok(());
     }
@@ -37,10 +53,36 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
                 Ok(Err(error)) => error.code,
                 _ => "execution_timeout",
             };
-            state.postgres.execute_raw(statement("UPDATE invocations SET state='execution_failed',error_code=$1,payment_issue='refund_required',completed_at=$2,updated_at=$2 WHERE id=$3 AND state='executing' AND payment_method='dodo' AND worker_started_at=$4",vec![code.into(),now().into(),inv.id.into(),lease.into()])).await?;
+            InvocationsEntity::update_many()
+                .col_expr(InvocationsColumn::State, Expr::val("execution_failed"))
+                .col_expr(InvocationsColumn::ErrorCode, Expr::val(code))
+                .col_expr(
+                    InvocationsColumn::PaymentIssue,
+                    Expr::val("refund_required"),
+                )
+                .col_expr(InvocationsColumn::CompletedAt, Expr::val(now()))
+                .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+                .filter(
+                    Expr::col(InvocationsColumn::Id)
+                        .eq(Expr::val(inv.id))
+                        .and(Expr::col(InvocationsColumn::State).eq(Expr::val("executing")))
+                        .and(Expr::col(InvocationsColumn::PaymentMethod).eq(Expr::val("dodo")))
+                        .and(Expr::col(InvocationsColumn::WorkerStartedAt).eq(Expr::val(lease))),
+                )
+                .exec(&state.postgres)
+                .await?;
             return Ok(());
         }
     };
+    complete_paid(state, inv, lease, start, result).await
+}
+async fn complete_paid(
+    state: &AppState,
+    inv: Invocation,
+    lease: i64,
+    start: Instant,
+    result: serde_json::Value,
+) -> ApiResult<()> {
     let elapsed = i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX);
     let bytes = i64::try_from(serde_json::to_vec(&result)?.len()).unwrap_or(i64::MAX);
     let payment_id = inv
@@ -48,14 +90,9 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
         .as_deref()
         .ok_or_else(|| ApiError::bad("missing_provider_payment"))?;
     let tx = state.postgres.begin().await?;
-    let credential = tx
-        .query_one_raw(statement(
-            "SELECT wallet FROM agent_credentials WHERE id=$1 FOR UPDATE",
-            vec![inv.credential_id.into()],
-        ))
+    let wallet = crate::database::lock_credential(&tx, inv.credential_id)
         .await?
-        .ok_or_else(|| ApiError::bad("missing_credential"))?;
-    let wallet: String = credential.try_get("", "wallet")?;
+        .wallet;
     let current = invocation(&tx, inv.id, inv.credential_id).await?;
     if current.state != "executing" || current.worker_started_at != Some(lease) {
         tx.commit().await?;
@@ -68,16 +105,60 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
         payer: Some(wallet.clone()),
         error_reason: None,
     };
-    tx.execute_raw(statement("UPDATE invocations SET state='settled',result=$1,settlement=$2,execution_ms=$3,result_bytes=$4,completed_at=$5,updated_at=$5 WHERE id=$6",vec![result.into(),serde_json::to_value(settlement)?.into(),elapsed.into(),bytes.into(),now().into(),inv.id.into()])).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("settled"))
+        .col_expr(InvocationsColumn::Result, Expr::val((result).clone()))
+        .col_expr(
+            InvocationsColumn::Settlement,
+            Expr::val((serde_json::to_value(settlement)?).clone()),
+        )
+        .col_expr(InvocationsColumn::ExecutionMs, Expr::val(elapsed))
+        .col_expr(InvocationsColumn::ResultBytes, Expr::val(bytes))
+        .col_expr(InvocationsColumn::CompletedAt, Expr::val(now()))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+        .exec(&tx)
+        .await?;
     let creator: String = tx
-        .query_one_raw(statement(
-            "SELECT creator_wallet FROM invocations WHERE id=$1",
-            vec![inv.id.into()],
-        ))
+        .query_one(
+            &SqlQuery::select()
+                .from(InvocationsEntity)
+                .column(InvocationsColumn::CreatorWallet)
+                .and_where(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                .to_owned(),
+        )
         .await?
         .ok_or_else(|| ApiError::bad("missing_creator"))?
         .try_get("", "creator_wallet")?;
-    tx.execute_raw(statement("INSERT INTO creator_sales(invocation_id,creator_wallet,payer_wallet,amount,network,transaction_hash,created_at) VALUES($1,$2,$3,$4,'dodo:test',$5,$6) ON CONFLICT(invocation_id) DO NOTHING",vec![inv.id.into(),creator.into(),wallet.into(),inv.price.into(),payment_id.into(),now().into()])).await?;
+    tx.execute(
+        &SqlQuery::insert()
+            .into_table(CreatorSalesEntity)
+            .columns([
+                CreatorSalesColumn::InvocationId,
+                CreatorSalesColumn::CreatorWallet,
+                CreatorSalesColumn::PayerWallet,
+                CreatorSalesColumn::Amount,
+                CreatorSalesColumn::Network,
+                CreatorSalesColumn::TransactionHash,
+                CreatorSalesColumn::CreatedAt,
+            ])
+            .values_panic([
+                Expr::val(inv.id),
+                Expr::val((creator).clone()),
+                Expr::val((wallet).clone()),
+                Expr::val(inv.price),
+                Expr::val("dodo:test"),
+                Expr::val(payment_id),
+                Expr::val(now()),
+            ])
+            .on_conflict(
+                OnConflict::columns([CreatorSalesColumn::InvocationId])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .to_owned(),
+    )
+    .await?;
     tx.commit().await?;
     tracing::info!(invocation_id=%inv.id,execution_ms=elapsed,result_bytes=bytes,"Capability delivered after Dodo payment");
     Ok(())
@@ -92,16 +173,55 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         tracing::warn!(error = error.code, "Dodo webhook processing pending");
     }
     // Recover read-only Dodo executions after a crash. Payment was already booked.
-    state.postgres.execute_raw(statement("UPDATE invocations SET state='paid',updated_at=$1 WHERE payment_method='dodo' AND state='executing' AND updated_at<$2",vec![now().into(),(now()-state.settings.runtime.worker.stale_after_seconds).into()])).await?;
-    let rows=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE state IN ('paid','settling','settlement_unknown','checkout_pending') ORDER BY CASE WHEN state='paid' THEN 0 ELSE 1 END,COALESCE(worker_started_at,0) LIMIT $1",vec![state.settings.runtime.worker.batch_size.into()])).all(&state.postgres).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("paid"))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::PaymentMethod)
+                .eq(Expr::val("dodo"))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("executing")))
+                .and(Expr::col(InvocationsColumn::UpdatedAt).lt(Expr::val(
+                    now() - state.settings.runtime.worker.stale_after_seconds,
+                ))),
+        )
+        .exec(&state.postgres)
+        .await?;
+    let rows = InvocationsEntity::find()
+        .filter(Expr::col(InvocationsColumn::State).is_in([
+            "paid",
+            "settling",
+            "settlement_unknown",
+            "checkout_pending",
+        ]))
+        .order_by(
+            Expr::expr(
+                Expr::case(
+                    Expr::col(InvocationsColumn::State).eq(Expr::val("paid")),
+                    Expr::val(0_i64),
+                )
+                .finally(Expr::val(1_i64)),
+            ),
+            Order::Asc,
+        )
+        .order_by(
+            Expr::expr(Func::coalesce([
+                Expr::col(InvocationsColumn::WorkerStartedAt),
+                Expr::val(0_i64),
+            ])),
+            Order::Asc,
+        )
+        .limit(crate::database::limit(
+            state.settings.runtime.worker.batch_size,
+        )?)
+        .into_model::<Invocation>()
+        .all(&state.postgres)
+        .await?;
     for inv in rows {
         if inv.state != "paid" {
-            state
-                .postgres
-                .execute_raw(statement(
-                    "UPDATE invocations SET worker_started_at=$1 WHERE id=$2",
-                    vec![now().into(), inv.id.into()],
-                ))
+            InvocationsEntity::update_many()
+                .col_expr(InvocationsColumn::WorkerStartedAt, Expr::val(now()))
+                .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                .exec(&state.postgres)
                 .await?;
         }
 
@@ -122,7 +242,21 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     }
     // Release abandoned pre-settlement x402 executions only after the request's
     // bounded execution window. A state CAS in the request prevents later settlement.
-    let abandoned=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE payment_method='x402' AND state IN ('verifying','executing') AND updated_at<$1 LIMIT $2",vec![(now()-state.settings.runtime.worker.stale_after_seconds).into(),state.settings.runtime.worker.batch_size.into()])).all(&state.postgres).await?;
+    let abandoned = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::PaymentMethod)
+                .eq(Expr::val("x402"))
+                .and(Expr::col(InvocationsColumn::State).is_in(["verifying", "executing"]))
+                .and(Expr::col(InvocationsColumn::UpdatedAt).lt(Expr::val(
+                    now() - state.settings.runtime.worker.stale_after_seconds,
+                ))),
+        )
+        .limit(crate::database::limit(
+            state.settings.runtime.worker.batch_size,
+        )?)
+        .into_model::<Invocation>()
+        .all(&state.postgres)
+        .await?;
     for inv in abandoned {
         super::fail(state, inv.id, inv.credential_id, "execution_interrupted").await?;
     }

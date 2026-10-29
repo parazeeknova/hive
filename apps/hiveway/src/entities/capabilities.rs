@@ -11,8 +11,10 @@ pub struct Model {
     pub version: String,
     pub runtime: String,
     pub price: i64,
+    #[sea_orm(default_value = true)]
     pub active: bool,
     pub created_at: i64,
+    #[sea_orm(default_value = "{}")]
     pub definition: Json,
 }
 

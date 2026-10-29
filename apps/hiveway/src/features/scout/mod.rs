@@ -1,3 +1,5 @@
+use crate::entities::capabilities::Column as CapabilitiesColumn;
+use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::{
     features::{
         common::{
@@ -13,7 +15,8 @@ use axum::{
     extract::{Query, State},
     http::HeaderMap,
 };
-use sea_orm::FromQueryResult;
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, Order};
+use sea_orm::{EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde::Deserialize;
 #[derive(Deserialize, utoipa::IntoParams)]
 pub struct Search {
@@ -32,6 +35,26 @@ pub async fn discover(
     if query.len() > 200 {
         return Err(ApiError::bad("search_too_long"));
     }
-    let values=Capability::find_by_statement(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "SELECT * FROM capabilities WHERE active AND (strpos(lower(name),lower($1))>0 OR strpos(lower(description),lower($1))>0) ORDER BY created_at DESC,id LIMIT 50", vec![(query).into()])).all(&state.postgres).await?;
+    let values = CapabilitiesEntity::find()
+        .filter(
+            Expr::col(CapabilitiesColumn::Active).and(
+                Expr::expr(Func::cust(Alias::new("strpos")).args([
+                    Expr::expr(Func::lower(Expr::col(CapabilitiesColumn::Name))),
+                    Expr::expr(Func::lower(Expr::val((query).clone()))),
+                ]))
+                .gt(Expr::val(0_i64))
+                .or(Expr::expr(Func::cust(Alias::new("strpos")).args([
+                    Expr::expr(Func::lower(Expr::col(CapabilitiesColumn::Description))),
+                    Expr::expr(Func::lower(Expr::val((query).clone()))),
+                ]))
+                .gt(Expr::val(0_i64))),
+            ),
+        )
+        .order_by(Expr::col(CapabilitiesColumn::CreatedAt), Order::Desc)
+        .order_by(Expr::col(CapabilitiesColumn::Id), Order::Asc)
+        .limit(50_u64)
+        .into_model::<Capability>()
+        .all(&state.postgres)
+        .await?;
     Ok(Json(values))
 }

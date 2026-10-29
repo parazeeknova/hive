@@ -9,6 +9,7 @@ pub struct Model {
     pub payment_id: Option<String>,
     pub received_at: i64,
     pub processed_at: Option<i64>,
+    #[sea_orm(default_value = 0)]
     pub attempts: i32,
     pub last_error: Option<String>,
 }

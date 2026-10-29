@@ -11,7 +11,9 @@ pub struct Model {
     pub scopes: Vec<String>,
     pub per_call_limit: i64,
     pub total_limit: i64,
+    #[sea_orm(default_value = 0)]
     pub spent: i64,
+    #[sea_orm(default_value = 0)]
     pub reserved: i64,
     pub expires_at: i64,
     pub revoked_at: Option<i64>,

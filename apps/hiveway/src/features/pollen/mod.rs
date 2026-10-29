@@ -1,6 +1,16 @@
+use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
+use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
+use crate::entities::capabilities::Column as CapabilitiesColumn;
+use crate::entities::capabilities::Entity as CapabilitiesEntity;
+use crate::entities::creator_sales::Column as CreatorSalesColumn;
+use crate::entities::creator_sales::Entity as CreatorSalesEntity;
+use crate::entities::invocations::Column as InvocationsColumn;
+use crate::entities::invocations::Entity as InvocationsEntity;
+use sea_orm::ActiveModelTrait;
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query as SqlQuery};
+use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 pub mod dodo;
 pub mod worker;
-use sea_orm::{ConnectionTrait, FromQueryResult, TransactionTrait};
 pub mod x402;
 
 use crate::{
@@ -30,58 +40,50 @@ use uuid::Uuid;
 
 type Tx = DatabaseTransaction;
 pub(super) async fn locked_credential(tx: &Tx, id: Uuid, scope: &str) -> ApiResult<Credential> {
-    let c = Credential::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM agent_credentials WHERE id=$1 FOR UPDATE",
-        vec![(id).into()],
-    ))
-    .one(tx)
-    .await?
-    .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+    let c = AgentCredentialsEntity::find()
+        .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(id)))
+        .lock_exclusive()
+        .into_model::<Credential>()
+        .one(tx)
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
     identity::authorize(&c, scope)?;
     Ok(c)
 }
 pub(super) async fn invocation(tx: &Tx, id: Uuid, credential: Uuid) -> ApiResult<Invocation> {
-    Invocation::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM invocations WHERE id=$1 AND credential_id=$2 FOR UPDATE",
-        vec![(id).into(), (credential).into()],
-    ))
-    .one(tx)
-    .await?
-    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))
+    InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(credential))),
+        )
+        .lock_exclusive()
+        .into_model::<Invocation>()
+        .one(tx)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))
 }
 async fn release(tx: &Tx, inv: &Invocation, state: &str, error: &str) -> ApiResult<()> {
-    (*tx)
-        .execute_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DbBackend::Postgres,
-            "UPDATE invocations SET state=$1,error_code=$2,updated_at=$3 WHERE id=$4",
-            vec![
-                (state).into(),
-                (error).into(),
-                (now()).into(),
-                (inv.id).into(),
-            ],
-        ))
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val(state))
+        .col_expr(InvocationsColumn::ErrorCode, Expr::val(error))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+        .exec(tx)
         .await?;
-    (*tx)
-        .execute_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DbBackend::Postgres,
-            "UPDATE agent_credentials SET reserved=reserved-$1 WHERE id=$2",
-            vec![(inv.price).into(), (inv.credential_id).into()],
-        ))
+    AgentCredentialsEntity::update_many()
+        .col_expr(
+            AgentCredentialsColumn::Reserved,
+            Expr::col(AgentCredentialsColumn::Reserved).sub(Expr::val(inv.price)),
+        )
+        .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(inv.credential_id)))
+        .exec(tx)
         .await?;
     Ok(())
 }
 async fn fail(state: &AppState, id: Uuid, credential: Uuid, code: &str) -> ApiResult<()> {
     let tx = state.postgres.begin().await?;
-    tx.query_one_raw(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT id FROM agent_credentials WHERE id=$1 FOR UPDATE",
-        vec![(credential).into()],
-    ))
-    .await?
-    .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+    crate::database::lock_credential(&tx, credential).await?;
     let inv = invocation(&tx, id, credential).await?;
     if matches!(inv.state.as_str(), "verifying" | "executing") {
         release(&tx, &inv, "failed", code).await?;
@@ -149,43 +151,71 @@ pub(super) fn receipt(inv: Invocation) -> ApiResult<Response> {
     Ok(response)
 }
 
-#[utoipa::path(post,path="/v1/quotes",request_body=QuoteRequest,responses((status=201,body=QuoteResponse)))]
-/// # Errors
-/// Rejects invalid credentials or input, conflicting idempotency keys, insufficient budgets, and unavailable payment infrastructure.
-pub async fn quote(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<QuoteRequest>,
-) -> ApiResult<Response> {
-    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
-    if headers.get_all("idempotency-key").iter().count() != 1 {
-        return Err(ApiError::bad("uuid_idempotency_key_required"));
+async fn release_expired(tx: &Tx, credential: Uuid) -> ApiResult<()> {
+    use crate::entities::invocations::{Column as InvocationColumn, Entity as Invocations};
+    use sea_orm::{ColumnTrait, QuerySelect};
+    let condition = InvocationColumn::CredentialId
+        .eq(credential)
+        .and(InvocationColumn::State.eq("quoted"))
+        .and(InvocationColumn::ExpiresAt.lte(now()));
+    let released = Invocations::find()
+        .select_only()
+        .column_as(
+            Expr::col(InvocationColumn::Price)
+                .sum()
+                .cast_as(Alias::new("bigint")),
+            "amount",
+        )
+        .filter(condition.clone())
+        .into_tuple::<Option<i64>>()
+        .one(tx)
+        .await?
+        .flatten()
+        .unwrap_or(0);
+    if released > 0 {
+        Invocations::update_many()
+            .col_expr(InvocationColumn::State, Expr::val("expired"))
+            .col_expr(InvocationColumn::ErrorCode, Expr::val("quote_expired"))
+            .col_expr(InvocationColumn::UpdatedAt, Expr::val(now()))
+            .filter(condition)
+            .exec(tx)
+            .await?;
+        AgentCredentialsEntity::update_many()
+            .col_expr(
+                AgentCredentialsColumn::Reserved,
+                Expr::col(AgentCredentialsColumn::Reserved).sub(released),
+            )
+            .filter(AgentCredentialsColumn::Id.eq(credential))
+            .exec(tx)
+            .await?;
     }
-    let key = headers
-        .get("idempotency-key")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse::<Uuid>().ok())
-        .ok_or_else(|| ApiError::bad("uuid_idempotency_key_required"))?;
-    cell::validate(&request.input)?;
-    // Do remote I/O before acquiring a credential row lock or a pool transaction.
-    x402::supported(&state).await?;
-    let fingerprint = identity::hash(&serde_json::to_vec(&request)?);
-    let tx = state.postgres.begin().await?;
-    let c = locked_credential(&tx, c.id, "repository:analyze").await?;
-    let existing = Invocation::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM invocations WHERE credential_id=$1 AND idempotency_key=$2",
-        vec![(c.id).into(), (key).into()],
-    ))
-    .one(&tx)
-    .await?;
+    Ok(())
+}
+
+async fn existing_quote(
+    tx: &Tx,
+    credential: Uuid,
+    key: Uuid,
+    fingerprint: &[u8],
+) -> ApiResult<Option<QuoteResponse>> {
+    let existing = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::CredentialId)
+                .eq(Expr::val(credential))
+                .and(Expr::col(InvocationsColumn::IdempotencyKey).eq(Expr::val(key))),
+        )
+        .into_model::<Invocation>()
+        .one(tx)
+        .await?;
     if let Some(inv) = existing {
         let original: Vec<u8> = tx
-            .query_one_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DbBackend::Postgres,
-                "SELECT request_hash FROM invocations WHERE id=$1",
-                vec![(inv.id).into()],
-            ))
+            .query_one(
+                &SqlQuery::select()
+                    .from(InvocationsEntity)
+                    .column(InvocationsColumn::RequestHash)
+                    .and_where(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                    .to_owned(),
+            )
             .await?
             .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?
             .try_get_by_index(0)?;
@@ -200,28 +230,72 @@ pub async fn quote(
             expires_at: inv.expires_at,
             payment: required(&inv)?,
         };
+        return Ok(Some(result));
+    }
+    Ok(None)
+}
+
+fn idempotency_key(headers: &HeaderMap) -> ApiResult<Uuid> {
+    if headers.get_all("idempotency-key").iter().count() != 1 {
+        return Err(ApiError::bad("uuid_idempotency_key_required"));
+    }
+    headers
+        .get("idempotency-key")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| ApiError::bad("uuid_idempotency_key_required"))
+}
+
+#[utoipa::path(post,path="/v1/quotes",request_body=QuoteRequest,responses((status=201,body=QuoteResponse)))]
+/// # Errors
+/// Rejects invalid credentials or input, conflicting idempotency keys, insufficient budgets, and unavailable payment infrastructure.
+pub async fn quote(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<QuoteRequest>,
+) -> ApiResult<Response> {
+    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    let key = idempotency_key(&headers)?;
+    cell::validate(&request.input)?;
+    // Do remote I/O before acquiring a credential row lock or a pool transaction.
+    x402::supported(&state).await?;
+    let fingerprint = identity::hash(&serde_json::to_vec(&request)?);
+    let tx = state.postgres.begin().await?;
+    let c = locked_credential(&tx, c.id, "repository:analyze").await?;
+    if let Some(result) = existing_quote(&tx, c.id, key, &fingerprint).await? {
         tx.commit().await?;
         return Ok((StatusCode::OK, Json(result)).into_response());
     }
-    // Only unused quotes expire automatically. Uncertain settlements keep their reservations.
-    let released:i64=tx.query_one_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "WITH expired AS (UPDATE invocations SET state='expired',error_code='quote_expired',updated_at=$1 WHERE credential_id=$2 AND state='quoted' AND expires_at<=$1 RETURNING price) SELECT COALESCE(sum(price),0)::bigint FROM expired", vec![(now()).into(), (c.id).into()])).await?.ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?.try_get_by_index(0)?;
-    if released > 0 {
-        tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DbBackend::Postgres,
-            "UPDATE agent_credentials SET reserved=reserved-$1 WHERE id=$2",
-            vec![(released).into(), (c.id).into()],
-        ))
-        .await?;
-    }
-    let cap = Capability::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM capabilities WHERE id=$1 AND active",
-        vec![(request.capability_id).into()],
-    ))
-    .one(&tx)
-    .await?
-    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
-    let reserved=tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE agent_credentials SET reserved=reserved+$1 WHERE id=$2 AND $1<=per_call_limit AND spent+reserved+$1<=total_limit", vec![(cap.price).into(), (c.id).into()])).await?.rows_affected();
+    release_expired(&tx, c.id).await?;
+    let cap = CapabilitiesEntity::find()
+        .filter(
+            Expr::col(CapabilitiesColumn::Id)
+                .eq(Expr::val(request.capability_id))
+                .and(Expr::col(CapabilitiesColumn::Active)),
+        )
+        .into_model::<Capability>()
+        .one(&tx)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
+    let reserved = AgentCredentialsEntity::update_many()
+        .col_expr(
+            AgentCredentialsColumn::Reserved,
+            Expr::col(AgentCredentialsColumn::Reserved).add(Expr::val(cap.price)),
+        )
+        .filter(
+            Expr::col(AgentCredentialsColumn::Id)
+                .eq(Expr::val(c.id))
+                .and(Expr::val(cap.price).lte(Expr::col(AgentCredentialsColumn::PerCallLimit)))
+                .and(
+                    Expr::col(AgentCredentialsColumn::Spent)
+                        .add(Expr::col(AgentCredentialsColumn::Reserved))
+                        .add(Expr::val(cap.price))
+                        .lte(Expr::col(AgentCredentialsColumn::TotalLimit)),
+                ),
+        )
+        .exec(&tx)
+        .await?
+        .rows_affected;
     if reserved != 1 {
         return Err(ApiError::forbidden());
     }
@@ -242,7 +316,25 @@ pub async fn quote(
         description: cap.description,
         mime_type: "application/json".into(),
     };
-    tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO invocations(id,credential_id,capability_id,idempotency_key,request_hash,input,requirements,resource,state,price,expires_at,created_at,updated_at,creator_wallet) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'quoted',$9,$10,$11,$11,$12)", vec![(id).into(), (c.id).into(), (cap.id).into(), (key).into(), (fingerprint).into(), (serde_json::to_value(request.input)?).into(), (serde_json::to_value(&requirements)?).into(), (serde_json::to_value(&resource)?).into(), (cap.price).into(), (expires_at).into(), (at).into(), (requirements.pay_to.clone()).into()])).await?;
+    crate::entities::invocations::ActiveModel {
+        id: sea_orm::Set(id),
+        credential_id: sea_orm::Set(c.id),
+        capability_id: sea_orm::Set(cap.id),
+        idempotency_key: sea_orm::Set(key),
+        request_hash: sea_orm::Set(fingerprint),
+        input: sea_orm::Set(serde_json::to_value(request.input)?),
+        requirements: sea_orm::Set(serde_json::to_value(&requirements)?),
+        resource: sea_orm::Set(serde_json::to_value(&resource)?),
+        state: sea_orm::Set("quoted".into()),
+        price: sea_orm::Set(cap.price),
+        expires_at: sea_orm::Set(expires_at),
+        created_at: sea_orm::Set(at),
+        updated_at: sea_orm::Set(at),
+        creator_wallet: sea_orm::Set(requirements.pay_to.clone()),
+        ..Default::default()
+    }
+    .insert(&tx)
+    .await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -309,7 +401,18 @@ pub async fn invoke(
         inv.expires_at,
         now(),
     )?;
-    let update=tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='verifying',payment_method='x402',payment_nonce=$1,payment_payload=$2,updated_at=$3 WHERE id=$4", vec![(nonce).into(), (serde_json::to_value(&payload)?).into(), (now()).into(), (id).into()])).await;
+    let update = InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("verifying"))
+        .col_expr(InvocationsColumn::PaymentMethod, Expr::val("x402"))
+        .col_expr(InvocationsColumn::PaymentNonce, Expr::val((nonce).clone()))
+        .col_expr(
+            InvocationsColumn::PaymentPayload,
+            Expr::val((serde_json::to_value(&payload)?).clone()),
+        )
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+        .exec(&tx)
+        .await;
     if update.as_ref().err().is_some_and(|e| {
         matches!(
             e.sql_err(),
@@ -338,7 +441,18 @@ async fn execute_and_settle(
     payload: PaymentPayload,
     requirements: PaymentRequirements,
 ) -> ApiResult<Response> {
-    let changed=state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='executing',started_at=$1,updated_at=$1 WHERE id=$2 AND state='verifying'", vec![(now()).into(), (id).into()])).await?.rows_affected();
+    let changed = InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("executing"))
+        .col_expr(InvocationsColumn::StartedAt, Expr::val(now()))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("verifying"))),
+        )
+        .exec(&state.postgres)
+        .await?
+        .rows_affected;
     if changed != 1 {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
@@ -365,7 +479,17 @@ async fn execute_and_settle(
     };
     let execution_ms = i64::try_from(execution_started.elapsed().as_millis()).unwrap_or(i64::MAX);
     let result_bytes = i64::try_from(serde_json::to_vec(&result)?.len()).unwrap_or(i64::MAX);
-    state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,"UPDATE invocations SET execution_ms=$1,result_bytes=$2,completed_at=$3 WHERE id=$4 AND state='executing'",[execution_ms.into(),result_bytes.into(),now().into(),id.into()])).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::ExecutionMs, Expr::val(execution_ms))
+        .col_expr(InvocationsColumn::ResultBytes, Expr::val(result_bytes))
+        .col_expr(InvocationsColumn::CompletedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("executing"))),
+        )
+        .exec(&state.postgres)
+        .await?;
     // Persist both output and the recovery scan boundary before any settlement request.
     let block = match x402::block_number(state).await {
         Ok(block) => block,
@@ -374,7 +498,22 @@ async fn execute_and_settle(
             return Err(e);
         }
     };
-    let changed=state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='settling',result=$1,settlement_block=$2,updated_at=$3 WHERE id=$4 AND state='executing'", vec![(result).into(), (block).into(), (now()).into(), (id).into()])).await?.rows_affected();
+    let changed = InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("settling"))
+        .col_expr(InvocationsColumn::Result, Expr::val((result).clone()))
+        .col_expr(
+            InvocationsColumn::SettlementBlock,
+            Expr::val((block).clone()),
+        )
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("executing"))),
+        )
+        .exec(&state.postgres)
+        .await?
+        .rows_affected;
     if changed != 1 {
         return Err(ApiError::new(
             StatusCode::CONFLICT,
@@ -384,7 +523,17 @@ async fn execute_and_settle(
     let settled = x402::settle(state, &payload, &requirements).await;
     // A timeout or provider error does not prove that funds did not move.
     let response = settled.ok().map(serde_json::to_value).transpose()?;
-    state.postgres.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "UPDATE invocations SET state='settlement_unknown',settlement=$1,updated_at=$2 WHERE id=$3 AND state='settling'", vec![(response).into(), (now()).into(), (id).into()])).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("settlement_unknown"))
+        .col_expr(InvocationsColumn::Settlement, Expr::val((response).clone()))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("settling"))),
+        )
+        .exec(&state.postgres)
+        .await?;
     reconcile_inner(state, id, credential_id).await
 }
 
@@ -395,14 +544,16 @@ pub async fn reconcile_inner(
     id: Uuid,
     credential_id: Uuid,
 ) -> ApiResult<Response> {
-    let inv = Invocation::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM invocations WHERE id=$1 AND credential_id=$2",
-        vec![(id).into(), (credential_id).into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
+    let inv = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(credential_id))),
+        )
+        .into_model::<Invocation>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
     if inv.payment_method.as_deref() == Some("dodo") {
         return dodo::reconcile(state, id, credential_id).await;
     }
@@ -425,43 +576,68 @@ pub async fn reconcile_inner(
     if let Some(settlement) = confirmed {
         let tx = state.postgres.begin().await?;
         // Settlement is finalized even if the credential expired or was revoked meanwhile.
-        tx.query_one_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DbBackend::Postgres,
-            "SELECT id FROM agent_credentials WHERE id=$1 FOR UPDATE",
-            vec![(credential_id).into()],
-        ))
-        .await?
-        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+        crate::database::lock_credential(&tx, credential_id).await?;
         let inv = invocation(&tx, id, credential_id).await?;
         if inv.state != "settled" {
-            tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DbBackend::Postgres,
-                "UPDATE invocations SET state='settled',settlement=$1,updated_at=$2 WHERE id=$3",
-                vec![
-                    (serde_json::to_value(&settlement)?).into(),
-                    (now()).into(),
-                    (id).into(),
-                ],
-            ))
+            InvocationsEntity::update_many()
+                .col_expr(InvocationsColumn::State, Expr::val("settled"))
+                .col_expr(
+                    InvocationsColumn::Settlement,
+                    Expr::val((serde_json::to_value(&settlement)?).clone()),
+                )
+                .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+                .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+                .exec(&tx)
+                .await?;
+            AgentCredentialsEntity::update_many()
+                .col_expr(
+                    AgentCredentialsColumn::Reserved,
+                    Expr::col(AgentCredentialsColumn::Reserved).sub(Expr::val(inv.price)),
+                )
+                .col_expr(
+                    AgentCredentialsColumn::Spent,
+                    Expr::col(AgentCredentialsColumn::Spent).add(Expr::val(inv.price)),
+                )
+                .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(credential_id)))
+                .exec(&tx)
+                .await?;
+            tx.execute(
+                &SqlQuery::insert()
+                    .into_table(CreatorSalesEntity)
+                    .columns([
+                        CreatorSalesColumn::InvocationId,
+                        CreatorSalesColumn::CreatorWallet,
+                        CreatorSalesColumn::PayerWallet,
+                        CreatorSalesColumn::Amount,
+                        CreatorSalesColumn::Network,
+                        CreatorSalesColumn::TransactionHash,
+                        CreatorSalesColumn::CreatedAt,
+                    ])
+                    .values_panic([
+                        Expr::val(id),
+                        Expr::val((identity::wallet(&requirements.pay_to)?).clone()),
+                        Expr::val((identity::wallet(&payload.payload.authorization.from)?).clone()),
+                        Expr::val(inv.price),
+                        Expr::val((state.settings.runtime.payment.network()).clone()),
+                        Expr::val(settlement.transaction.clone()),
+                        Expr::val(now()),
+                    ])
+                    .to_owned(),
+            )
             .await?;
-            tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DbBackend::Postgres,
-                "UPDATE agent_credentials SET reserved=reserved-$1,spent=spent+$1 WHERE id=$2",
-                vec![(inv.price).into(), (credential_id).into()],
-            ))
-            .await?;
-            tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO creator_sales(invocation_id,creator_wallet,payer_wallet,amount,network,transaction_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", vec![(id).into(), (identity::wallet(&requirements.pay_to)?).into(), (identity::wallet(&payload.payload.authorization.from)?).into(), (inv.price).into(), state.settings.runtime.payment.network().into(), (&settlement.transaction).into(), (now()).into()])).await?;
         }
         tx.commit().await?;
     }
-    let current = Invocation::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM invocations WHERE id=$1 AND credential_id=$2",
-        vec![(id).into(), (credential_id).into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+    let current = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(credential_id))),
+        )
+        .into_model::<Invocation>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
     receipt(current)
 }
 #[utoipa::path(post,path="/v1/invocations/{id}/reconcile",params(("id"=Uuid,Path)),responses((status=200,body=Receipt),(status=202,body=Receipt)))]
@@ -484,13 +660,15 @@ pub async fn get_receipt(
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let c = identity::authenticate(&state, &headers, "receipts:read").await?;
-    let inv = Invocation::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM invocations WHERE id=$1 AND credential_id=$2",
-        vec![(id).into(), (c.id).into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
+    let inv = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(c.id))),
+        )
+        .into_model::<Invocation>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
     receipt(inv)
 }

@@ -1,3 +1,7 @@
+use crate::entities::creator_sales::Column as CreatorSalesColumn;
+use crate::entities::creator_sales::Entity as CreatorSalesEntity;
+use crate::entities::invocations::Column as InvocationsColumn;
+use crate::entities::invocations::Entity as InvocationsEntity;
 use crate::{
     features::{
         common::{error::ApiResult, model::Sale},
@@ -15,10 +19,10 @@ pub async fn sales(
     headers: HeaderMap,
 ) -> ApiResult<Json<Vec<Sale>>> {
     let creator = identity::authenticate(&state, &headers, "sales:read").await?;
-    let values = crate::entities::creator_sales::Entity::find()
-        .filter(crate::entities::creator_sales::Column::CreatorWallet.eq(creator.wallet))
-        .order_by_desc(crate::entities::creator_sales::Column::CreatedAt)
-        .order_by_desc(crate::entities::creator_sales::Column::InvocationId)
+    let values = CreatorSalesEntity::find()
+        .filter(CreatorSalesColumn::CreatorWallet.eq(creator.wallet))
+        .order_by_desc(CreatorSalesColumn::CreatedAt)
+        .order_by_desc(CreatorSalesColumn::InvocationId)
         .limit(100)
         .into_model::<Sale>()
         .all(&state.postgres)
@@ -35,9 +39,9 @@ pub async fn activity(
     headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
     let agent = identity::authenticate(&state, &headers, "receipts:read").await?;
-    let records = crate::entities::invocations::Entity::find()
-        .filter(crate::entities::invocations::Column::CredentialId.eq(agent.id))
-        .order_by_desc(crate::entities::invocations::Column::CreatedAt)
+    let records = InvocationsEntity::find()
+        .filter(InvocationsColumn::CredentialId.eq(agent.id))
+        .order_by_desc(InvocationsColumn::CreatedAt)
         .limit(100)
         .all(&state.postgres)
         .await?;

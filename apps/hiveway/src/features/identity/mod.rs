@@ -1,3 +1,9 @@
+use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
+use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
+use crate::entities::wallet_challenges::Column as WalletChallengesColumn;
+use crate::entities::wallet_challenges::Entity as WalletChallengesEntity;
+use sea_orm::sea_query::{Alias, Asterisk, Expr, ExprTrait, Func, Query as SqlQuery};
+use sea_orm::{ActiveModelTrait, QuerySelect};
 pub mod signature;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use sea_orm::{ConnectionTrait, TransactionTrait};
@@ -104,19 +110,37 @@ pub async fn challenge(
     let tx = state.postgres.begin().await?;
     // Serialize challenge issuance per socket peer so concurrent requests cannot bypass the limit.
     let ip = peer.ip().to_string();
-    tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-        vec![(&ip).into()],
-    ))
-    .await?;
-    tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT pg_advisory_xact_lock(hashtextextended('hive:wallet:' || $1,0))",
-        [address.clone().into()],
-    ))
-    .await?;
-    let count: i64=tx.query_one_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "SELECT count(*) FROM wallet_challenges WHERE (wallet=$1 OR peer_ip=$2) AND created_at>$3", vec![(&address).into(), (&ip).into(), (at-60).into()])).await?.ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?.try_get_by_index(0)?;
+    for resource in [format!("hive:ip:{ip}"), format!("hive:wallet:{address}")] {
+        use sha2::Digest;
+        let digest = sha2::Sha256::digest(resource.as_bytes());
+        let key = i64::from_be_bytes(
+            digest[..8]
+                .try_into()
+                .map_err(|_| ApiError::bad("invalid_lock_key"))?,
+        );
+        tx.query_one(
+            &SqlQuery::select()
+                .expr(Func::cust(Alias::new("pg_advisory_xact_lock")).arg(key))
+                .to_owned(),
+        )
+        .await?;
+    }
+    let count: i64 = tx
+        .query_one(
+            &SqlQuery::select()
+                .from(WalletChallengesEntity)
+                .expr(Expr::col(Asterisk).count())
+                .and_where(
+                    Expr::col(WalletChallengesColumn::Wallet)
+                        .eq(Expr::val(address.clone()))
+                        .or(Expr::col(WalletChallengesColumn::PeerIp).eq(Expr::val(ip.clone())))
+                        .and(Expr::col(WalletChallengesColumn::CreatedAt).gt(Expr::val(at - 60))),
+                )
+                .to_owned(),
+        )
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?
+        .try_get_by_index(0)?;
     if count >= 10 {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -141,7 +165,30 @@ pub async fn challenge(
         }
     };
     let message = signature::message(&state.settings, &address, &statement, id, at, expires)?;
-    tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO wallet_challenges(id,wallet,peer_ip,message,action,expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", vec![(id).into(), (address).into(), (ip).into(), (&message).into(), (serde_json::to_value(request.action)?).into(), (expires).into(), (at).into()])).await?;
+    tx.execute(
+        &SqlQuery::insert()
+            .into_table(WalletChallengesEntity)
+            .columns([
+                WalletChallengesColumn::Id,
+                WalletChallengesColumn::Wallet,
+                WalletChallengesColumn::PeerIp,
+                WalletChallengesColumn::Message,
+                WalletChallengesColumn::Action,
+                WalletChallengesColumn::ExpiresAt,
+                WalletChallengesColumn::CreatedAt,
+            ])
+            .values_panic([
+                Expr::val(id),
+                Expr::val((address).clone()),
+                Expr::val((ip).clone()),
+                Expr::val(message.clone()),
+                Expr::val((serde_json::to_value(request.action)?).clone()),
+                Expr::val(expires),
+                Expr::val(at),
+            ])
+            .to_owned(),
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(ChallengeResponse {
         id,
@@ -159,25 +206,40 @@ pub async fn verify(
 ) -> ApiResult<Json<AuthResponse>> {
     let tx = state.postgres.begin().await?;
     let at = now();
-    let row=tx.query_one_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "SELECT wallet,message,action,expires_at,consumed_at FROM wallet_challenges WHERE id=$1 FOR UPDATE", vec![(request.challenge_id).into()])).await?.ok_or_else(||ApiError::bad("unknown_challenge"))?;
-    if row.try_get::<Option<i64>>("", "consumed_at")?.is_some()
-        || row.try_get::<i64>("", "expires_at")? <= at
-    {
+    let row = WalletChallengesEntity::find_by_id(request.challenge_id)
+        .lock_exclusive()
+        .one(&tx)
+        .await?
+        .ok_or_else(|| ApiError::bad("unknown_challenge"))?;
+    if row.consumed_at.is_some() || row.expires_at <= at {
         return Err(ApiError::bad("challenge_expired_or_used"));
     }
-    let text: String = row.try_get("", "message")?;
-    let owner: String = row.try_get("", "wallet")?;
+    let text: String = row.message.clone();
+    let owner: String = row.wallet.clone();
     let recovered = signature::recover(&text, &request.signature)?;
     if recovered != owner {
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "invalid_signature"));
     }
-    let action: WalletAction = serde_json::from_value(row.try_get("", "action")?)?;
+    let action: WalletAction = serde_json::from_value(row.action.clone())?;
     let response = match action {
         WalletAction::Issue { policy } => {
             validate_policy(&policy, at)?;
             let token = format!("hwa_{}", hex::encode(random::<[u8; 32]>()));
             let id = Uuid::new_v4();
-            tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO agent_credentials(id,wallet,name,token_hash,scopes,per_call_limit,total_limit,expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)", vec![(id).into(), (owner).into(), (policy.name).into(), (hash(token.as_bytes())).into(), (policy.scopes).into(), (amount(&policy.per_call_limit)?).into(), (amount(&policy.total_limit)?).into(), (policy.expires_at).into(), (at).into()])).await?;
+            crate::entities::agent_credentials::ActiveModel {
+                id: sea_orm::Set(id),
+                wallet: sea_orm::Set(owner),
+                name: sea_orm::Set(policy.name),
+                token_hash: sea_orm::Set(hash(token.as_bytes())),
+                scopes: sea_orm::Set(policy.scopes),
+                per_call_limit: sea_orm::Set(amount(&policy.per_call_limit)?),
+                total_limit: sea_orm::Set(amount(&policy.total_limit)?),
+                expires_at: sea_orm::Set(policy.expires_at),
+                created_at: sea_orm::Set(at),
+                ..Default::default()
+            }
+            .insert(&tx)
+            .await?;
             AuthResponse {
                 credential_id: id,
                 token: Some(token),
@@ -185,14 +247,19 @@ pub async fn verify(
             }
         }
         WalletAction::Revoke { credential_id } => {
-            let count = tx
-                .execute_raw(sea_orm::Statement::from_sql_and_values(
-                    sea_orm::DbBackend::Postgres,
-                    "UPDATE agent_credentials SET revoked_at=$1 WHERE id=$2 AND wallet=$3",
-                    vec![(at).into(), (credential_id).into(), (owner).into()],
-                ))
+            let count = AgentCredentialsEntity::update_many()
+                .col_expr(AgentCredentialsColumn::RevokedAt, Expr::val(at))
+                .filter(
+                    Expr::col(AgentCredentialsColumn::Id)
+                        .eq(Expr::val(credential_id))
+                        .and(
+                            Expr::col(AgentCredentialsColumn::Wallet)
+                                .eq(Expr::val((owner).clone())),
+                        ),
+                )
+                .exec(&tx)
                 .await?
-                .rows_affected();
+                .rows_affected;
             if count != 1 {
                 return Err(ApiError::new(StatusCode::NOT_FOUND, "credential_not_found"));
             }
@@ -203,12 +270,11 @@ pub async fn verify(
             }
         }
     };
-    tx.execute_raw(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "UPDATE wallet_challenges SET consumed_at=$1 WHERE id=$2",
-        vec![(at).into(), (request.challenge_id).into()],
-    ))
-    .await?;
+    WalletChallengesEntity::update_many()
+        .col_expr(WalletChallengesColumn::ConsumedAt, Expr::val(at))
+        .filter(Expr::col(WalletChallengesColumn::Id).eq(Expr::val(request.challenge_id)))
+        .exec(&tx)
+        .await?;
     tx.commit().await?;
     Ok(Json(response))
 }
@@ -232,8 +298,8 @@ pub async fn authenticate(
         .and_then(|v| v.strip_prefix("Bearer "))
         .filter(|v| v.len() == 68 && v.starts_with("hwa_"))
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "credential_required"))?;
-    let credential = crate::entities::agent_credentials::Entity::find()
-        .filter(crate::entities::agent_credentials::Column::TokenHash.eq(hash(raw.as_bytes())))
+    let credential = AgentCredentialsEntity::find()
+        .filter(AgentCredentialsColumn::TokenHash.eq(hash(raw.as_bytes())))
         .into_model::<Credential>()
         .one(&state.postgres)
         .await?

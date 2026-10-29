@@ -1,9 +1,9 @@
 {
   "name": "@hive/hiveway",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "private": true,
   "scripts": {
-    "dev": "cargo watch --watch config.toml --watch migrations --watch src --watch Cargo.toml --watch ../../Cargo.toml --watch ../../Cargo.lock -x \"run --locked --package hiveway\"",
+    "dev": "cargo watch --watch config.toml --watch src --watch Cargo.toml --watch ../../Cargo.toml --watch ../../Cargo.lock -x \"run --locked --package hiveway\"",
     "check": "bun ../../scripts/verify.ts hiveway check",
     "check-types": "bun ../../scripts/verify.ts hiveway check-types"
   }

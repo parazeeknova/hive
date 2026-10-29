@@ -5,11 +5,12 @@ use axum::{
     extract::ConnectInfo,
     http::{HeaderValue, Request, StatusCode},
 };
+use hiveway::entities::agent_credentials;
 use hiveway::{
     features::{common::settings::Settings, identity},
     state::AppState,
 };
-use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, Database, EntityTrait, PaginatorTrait, Set};
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceExt;
@@ -172,6 +173,7 @@ async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
         status.is_client_error(),
         "a publisher cannot assign another creator wallet"
     );
+    probe_quotes(app.clone(), bearer_a).await?;
     let (status, _) = attack(
         app,
         "POST",
@@ -181,6 +183,38 @@ async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
     )
     .await?;
     assert!(status.is_client_error());
+    Ok(())
+}
+async fn probe_quotes(app: Router, bearer: &str) -> Result {
+    // Scout finds the owned fixture capability without embedding database IDs in the API.
+    let (status, caps) = attack(
+        app.clone(),
+        "GET",
+        "/v1/capabilities",
+        String::new(),
+        &[("authorization", bearer)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let cap = caps
+        .as_array()
+        .and_then(|values| values.first())
+        .ok_or("missing capability")?;
+    let key = Uuid::new_v4().to_string();
+    let body=json!({"capability_id":cap["id"],"input":{"repository_url":"https://github.com/a/b","revision":"1".repeat(40)}}).to_string();
+    let headers = [("authorization", bearer), ("idempotency-key", key.as_str())];
+    let (status, first) = attack(app.clone(), "POST", "/v1/quotes", body.clone(), &headers).await?;
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "native quote reservation failed: {first}"
+    );
+    let (status, retry) = attack(app.clone(), "POST", "/v1/quotes", body, &headers).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["id"], retry["id"]);
+    let altered=json!({"capability_id":cap["id"],"input":{"repository_url":"https://github.com/a/b","revision":"2".repeat(40)}}).to_string();
+    let (status, _) = attack(app, "POST", "/v1/quotes", altered, &headers).await?;
+    assert_eq!(status, StatusCode::CONFLICT);
     Ok(())
 }
 async fn live_socket_probe(app: Router) -> Result {
@@ -229,15 +263,13 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let id = Uuid::new_v4();
     let token_a = format!("hwa_{}", "a".repeat(64));
     let token_b = format!("hwa_{}", "b".repeat(64));
-    for (credential, token, wallet) in [
-        (a, &token_a, "0x1111111111111111111111111111111111111111"),
-        (b, &token_b, "0x2222222222222222222222222222222222222222"),
-    ] {
-        db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,"INSERT INTO agent_credentials(id,wallet,name,token_hash,scopes,per_call_limit,total_limit,expires_at,created_at) VALUES($1,$2,'fixture',$3,ARRAY['repository:analyze','receipts:read','capabilities:read','capabilities:publish'],100,100,$4,0)",[credential.into(),wallet.into(),identity::hash(token.as_bytes()).into(),i64::MAX.into()])).await?;
-    }
-    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,"INSERT INTO capabilities(id,creator_wallet,name,description,version,runtime,price,created_at) VALUES($1,'0x1111111111111111111111111111111111111111','fixture','security fixture','1','repository_stack',1,0)",[cap.into()])).await?;
-    db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,"INSERT INTO invocations(id,credential_id,capability_id,idempotency_key,request_hash,input,requirements,resource,state,price,expires_at,created_at,updated_at,creator_wallet) VALUES($1,$2,$3,$4,'x','{}','{}','{}','quoted',1,$5,0,0,'0x1111111111111111111111111111111111111111')",[id.into(),a.into(),cap.into(),Uuid::new_v4().into(),i64::MAX.into()])).await?;
+    seed(&db, a, b, cap, id, &token_a, &token_b).await?;
     let mut settings = Settings::from_env()?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    settings.facilitator_url = format!("http://{}", listener.local_addr()?);
+    let facilitator = tokio::spawn(async move {
+        axum::serve(listener,Router::new().route("/supported",axum::routing::get(||async{axum::Json(json!({"kinds":[{"x402Version":2,"scheme":"exact","network":"eip155:84532"}]}))}))).await
+    });
     settings.dodo_webhook_secret = Some("AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=".into());
     let state = AppState {
         postgres: db.clone(),
@@ -249,14 +281,11 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let app = hiveway::api::protect(hiveway::api::router().with_state(state.clone()), state);
     let outcome = probe(app.clone(), id, &token_a, &token_b).await;
     let socket_result = live_socket_probe(app).await;
-    let inbox = db
-        .query_one_raw(Statement::from_string(
-            DbBackend::Postgres,
-            "SELECT count(*) AS count FROM payment_webhook_inbox",
-        ))
-        .await?
-        .ok_or("missing count")?
-        .try_get::<i64>("", "count")?;
+    facilitator.abort();
+    let _ = facilitator.await;
+    let inbox = hiveway::entities::payment_webhook_inbox::Entity::find()
+        .count(&db)
+        .await?;
     assert_eq!(inbox, 0, "forged payments must never enter the inbox");
     db.close().await?;
     admin
@@ -265,4 +294,74 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     admin.close().await?;
     outcome?;
     socket_result
+}
+
+async fn seed(
+    db: &sea_orm::DatabaseConnection,
+    a: Uuid,
+    b: Uuid,
+    cap: Uuid,
+    id: Uuid,
+    token_a: &str,
+    token_b: &str,
+) -> Result {
+    for (credential, token, wallet) in [
+        (a, &token_a, "0x1111111111111111111111111111111111111111"),
+        (b, &token_b, "0x2222222222222222222222222222222222222222"),
+    ] {
+        agent_credentials::ActiveModel {
+            id: Set(credential),
+            wallet: Set(wallet.into()),
+            name: Set("fixture".into()),
+            token_hash: Set(identity::hash(token.as_bytes())),
+            scopes: Set(vec![
+                "repository:analyze".into(),
+                "receipts:read".into(),
+                "capabilities:read".into(),
+                "capabilities:publish".into(),
+            ]),
+            per_call_limit: Set(100),
+            total_limit: Set(100),
+            reserved: Set(i64::from(credential == a)),
+            expires_at: Set(i64::MAX),
+            created_at: Set(0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await?;
+    }
+    hiveway::entities::capabilities::ActiveModel {
+        id: Set(cap),
+        creator_wallet: Set("0x1111111111111111111111111111111111111111".into()),
+        name: Set("fixture".into()),
+        description: Set("security fixture".into()),
+        version: Set("1".into()),
+        runtime: Set("repository_stack".into()),
+        price: Set(1),
+        created_at: Set(0),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?;
+    hiveway::entities::invocations::ActiveModel {
+        id: Set(id),
+        credential_id: Set(a),
+        capability_id: Set(cap),
+        idempotency_key: Set(Uuid::new_v4()),
+        request_hash: Set(vec![0; 32]),
+        input: Set(json!({})),
+        requirements: Set(json!({})),
+        resource: Set(json!({})),
+        state: Set("quoted".into()),
+        price: Set(1),
+        expires_at: Set(0),
+        created_at: Set(0),
+        updated_at: Set(0),
+        creator_wallet: Set("0x1111111111111111111111111111111111111111".into()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await?;
+
+    Ok(())
 }

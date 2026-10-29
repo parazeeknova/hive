@@ -1,6 +1,12 @@
 //! Dodo test checkout and authenticated webhook inbox. Canonical provider reads
 //! establish payment status; neither redirects nor client-supplied receipts do.
 use super::{invocation, locked_credential, receipt, x402};
+use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
+use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
+use crate::entities::invocations::Column as InvocationsColumn;
+use crate::entities::invocations::Entity as InvocationsEntity;
+use crate::entities::payment_webhook_inbox::Column as PaymentWebhookInboxColumn;
+use crate::entities::payment_webhook_inbox::Entity as PaymentWebhookInboxEntity;
 use crate::{
     features::{
         common::{
@@ -18,13 +24,12 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::sea_query::{Expr, ExprTrait, OnConflict, Query as SqlQuery};
+use sea_orm::{ColumnTrait, QueryOrder, QuerySelect};
+use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-fn statement(sql: &str, values: Vec<sea_orm::Value>) -> Statement {
-    Statement::from_sql_and_values(DbBackend::Postgres, sql, values)
-}
 async fn request(
     state: &AppState,
     method: reqwest::Method,
@@ -96,7 +101,13 @@ pub async fn checkout(
     }
     // Claim before the provider call. Uncertain checkout creation is never retried
     // automatically, since a lost response could otherwise create duplicate carts.
-    tx.execute_raw(statement("UPDATE invocations SET payment_method='dodo',state='checkout_creating',updated_at=$1 WHERE id=$2",vec![now().into(),id.into()])).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::PaymentMethod, Expr::val("dodo"))
+        .col_expr(InvocationsColumn::State, Expr::val("checkout_creating"))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+        .exec(&tx)
+        .await?;
     tx.commit().await?;
     let response=request(&state,reqwest::Method::POST,"/checkouts",Some(json!({"product_cart":[{"product_id":product,"quantity":1,"amount":inv.price/10_000}],"metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":c.wallet},"feature_flags":{"allow_currency_selection":false,"allow_discount_code":false}}))).await?;
     let session = response["session_id"]
@@ -115,7 +126,18 @@ pub async fn checkout(
     {
         return Err(ApiError::unavailable("invalid_dodo_checkout_url"));
     }
-    state.postgres.execute_raw(statement("UPDATE invocations SET state='checkout_pending',checkout_id=$1,checkout_url=$2,updated_at=$3 WHERE id=$4 AND state='checkout_creating'",vec![session.into(),url.into(),now().into(),id.into()])).await?;
+    InvocationsEntity::update_many()
+        .col_expr(InvocationsColumn::State, Expr::val("checkout_pending"))
+        .col_expr(InvocationsColumn::CheckoutId, Expr::val(session))
+        .col_expr(InvocationsColumn::CheckoutUrl, Expr::val(url))
+        .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::State).eq(Expr::val("checkout_creating"))),
+        )
+        .exec(&state.postgres)
+        .await?;
     Ok(Json(
         json!({"invocation_id":id,"state":"checkout_pending","checkout_id":session,"checkout_url":url}),
     ))
@@ -160,7 +182,31 @@ pub async fn webhook(
         .as_str()
         .map(identifier)
         .transpose()?;
-    state.postgres.execute_raw(statement("INSERT INTO payment_webhook_inbox(event_id,event_type,payment_id,received_at) VALUES($1,$2,$3,$4) ON CONFLICT(event_id) DO NOTHING",vec![id.into(),kind.into(),payment.into(),now().into()])).await?;
+    state
+        .postgres
+        .execute(
+            &SqlQuery::insert()
+                .into_table(PaymentWebhookInboxEntity)
+                .columns([
+                    PaymentWebhookInboxColumn::EventId,
+                    PaymentWebhookInboxColumn::EventType,
+                    PaymentWebhookInboxColumn::PaymentId,
+                    PaymentWebhookInboxColumn::ReceivedAt,
+                ])
+                .values_panic([
+                    Expr::val(id),
+                    Expr::val(kind),
+                    Expr::val(payment),
+                    Expr::val(now()),
+                ])
+                .on_conflict(
+                    OnConflict::columns([PaymentWebhookInboxColumn::EventId])
+                        .do_nothing()
+                        .to_owned(),
+                )
+                .to_owned(),
+        )
+        .await?;
     Ok(StatusCode::OK)
 }
 fn matches_payment(payment: &Value, session: &Value, inv: &Invocation, product: &str) -> bool {
@@ -184,13 +230,16 @@ fn matches_payment(payment: &Value, session: &Value, inv: &Invocation, product: 
 /// # Errors
 /// Returns provider, ownership, payment binding, or database errors.
 pub async fn reconcile(state: &AppState, id: Uuid, credential: Uuid) -> ApiResult<Response> {
-    let inv = Invocation::find_by_statement(statement(
-        "SELECT * FROM invocations WHERE id=$1 AND credential_id=$2",
-        vec![id.into(), credential.into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
+    let inv = InvocationsEntity::find()
+        .filter(
+            Expr::col(InvocationsColumn::Id)
+                .eq(Expr::val(id))
+                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(credential))),
+        )
+        .into_model::<Invocation>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "invocation_not_found"))?;
     if inv.payment_method.as_deref() != Some("dodo") || inv.state != "checkout_pending" {
         return receipt(inv);
     }
@@ -228,75 +277,129 @@ pub async fn reconcile(state: &AppState, id: Uuid, credential: Uuid) -> ApiResul
     if !matches_payment(&payment, &session, &inv, product) {
         return Err(ApiError::bad("dodo_payment_binding_mismatch"));
     }
-    let credential_wallet = state
-        .postgres
-        .query_one_raw(statement(
-            "SELECT wallet FROM agent_credentials WHERE id=$1",
-            vec![credential.into()],
-        ))
-        .await?
-        .ok_or_else(|| ApiError::bad("missing_credential"))?
-        .try_get::<String>("", "wallet")?;
-    if payment["metadata"]["hive_wallet"] != credential_wallet {
+    let tx = state.postgres.begin().await?;
+    let owner = crate::database::lock_credential(&tx, credential).await?;
+    if payment["metadata"]["hive_wallet"] != owner.wallet {
         return Err(ApiError::bad("dodo_payment_binding_mismatch"));
     }
-    let tx = state.postgres.begin().await?;
-    tx.execute_raw(statement(
-        "SELECT id FROM agent_credentials WHERE id=$1 FOR UPDATE",
-        vec![credential.into()],
-    ))
-    .await?;
     let current = invocation(&tx, id, credential).await?;
     if current.state == "checkout_pending" {
         // The merchant receives USD. This ledger entry is not an on-chain transfer
         // to the creator and creator payouts require merchant payout operations.
-        tx.execute_raw(statement(
-            "UPDATE agent_credentials SET reserved=reserved-$1,spent=spent+$1 WHERE id=$2",
-            vec![inv.price.into(), credential.into()],
-        ))
-        .await?;
-        tx.execute_raw(statement(
-            "UPDATE invocations SET state='paid',provider_payment_id=$1,updated_at=$2 WHERE id=$3",
-            vec![payment_id.into(), now().into(), id.into()],
-        ))
-        .await?;
+        AgentCredentialsEntity::update_many()
+            .col_expr(
+                AgentCredentialsColumn::Reserved,
+                Expr::col(AgentCredentialsColumn::Reserved).sub(Expr::val(inv.price)),
+            )
+            .col_expr(
+                AgentCredentialsColumn::Spent,
+                Expr::col(AgentCredentialsColumn::Spent).add(Expr::val(inv.price)),
+            )
+            .filter(Expr::col(AgentCredentialsColumn::Id).eq(Expr::val(credential)))
+            .exec(&tx)
+            .await?;
+        InvocationsEntity::update_many()
+            .col_expr(InvocationsColumn::State, Expr::val("paid"))
+            .col_expr(InvocationsColumn::ProviderPaymentId, Expr::val(payment_id))
+            .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+            .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+            .exec(&tx)
+            .await?;
     }
     tx.commit().await?;
-    let current = Invocation::find_by_statement(statement(
-        "SELECT * FROM invocations WHERE id=$1",
-        vec![id.into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| ApiError::bad("invocation_not_found"))?;
+    let current = InvocationsEntity::find()
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+        .into_model::<Invocation>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::bad("invocation_not_found"))?;
     receipt(current)
 }
 /// Process one stored event using canonical provider reads.
 /// # Errors
 /// Returns database or provider failures; events remain retryable.
 pub async fn process_events(state: &AppState) -> ApiResult<()> {
-    let events=state.postgres.query_all_raw(statement("SELECT event_id,payment_id,event_type FROM payment_webhook_inbox WHERE processed_at IS NULL AND attempts<$1 ORDER BY received_at LIMIT $2",vec![state.settings.runtime.worker.webhook_max_attempts.into(),state.settings.runtime.worker.batch_size.into()])).await?;
+    let events = PaymentWebhookInboxEntity::find()
+        .filter(PaymentWebhookInboxColumn::ProcessedAt.is_null())
+        .filter(
+            PaymentWebhookInboxColumn::Attempts.lt(state
+                .settings
+                .runtime
+                .worker
+                .webhook_max_attempts),
+        )
+        .order_by_asc(PaymentWebhookInboxColumn::ReceivedAt)
+        .limit(crate::database::limit(
+            state.settings.runtime.worker.batch_size,
+        )?)
+        .all(&state.postgres)
+        .await?;
     for event in events {
-        let id: String = event.try_get("", "event_id")?;
-        let payment: Option<String> = event.try_get("", "payment_id")?;
-        let kind: String = event.try_get("", "event_type")?;
-        let result=async {
-            if let Some(payment_id)=payment {
+        let id = event.event_id;
+        let payment = event.payment_id;
+        let kind = event.event_type;
+        let result = async {
+            if let Some(payment_id) = payment {
                 identifier(&payment_id)?;
-                let payment=request(state,reqwest::Method::GET,&format!("/payments/{payment_id}"),None).await?;
-                if let Some(invocation_id)=payment["metadata"]["hive_invocation_id"].as_str().and_then(|v|v.parse::<Uuid>().ok()){
-                    let inv=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE id=$1 AND payment_method='dodo'",vec![invocation_id.into()])).one(&state.postgres).await?;
-                    if let Some(inv)=inv{
-                        if kind=="payment.succeeded"{reconcile(state,inv.id,inv.credential_id).await?;}
-                        else if kind.contains("refund")||kind.contains("dispute"){
-                            state.postgres.execute_raw(statement("UPDATE invocations SET payment_issue=$1,updated_at=$2 WHERE id=$3",vec![kind.clone().into(),now().into(),inv.id.into()])).await?;
+                let payment = request(
+                    state,
+                    reqwest::Method::GET,
+                    &format!("/payments/{payment_id}"),
+                    None,
+                )
+                .await?;
+                if let Some(invocation_id) = payment["metadata"]["hive_invocation_id"]
+                    .as_str()
+                    .and_then(|v| v.parse::<Uuid>().ok())
+                {
+                    let inv = InvocationsEntity::find()
+                        .filter(
+                            Expr::col(InvocationsColumn::Id)
+                                .eq(Expr::val(invocation_id))
+                                .and(
+                                    Expr::col(InvocationsColumn::PaymentMethod)
+                                        .eq(Expr::val("dodo")),
+                                ),
+                        )
+                        .into_model::<Invocation>()
+                        .one(&state.postgres)
+                        .await?;
+                    if let Some(inv) = inv {
+                        if kind == "payment.succeeded" {
+                            reconcile(state, inv.id, inv.credential_id).await?;
+                        } else if kind.contains("refund") || kind.contains("dispute") {
+                            InvocationsEntity::update_many()
+                                .col_expr(
+                                    InvocationsColumn::PaymentIssue,
+                                    Expr::val((kind.clone()).clone()),
+                                )
+                                .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
+                                .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                                .exec(&state.postgres)
+                                .await?;
                         }
                     }
                 }
             }
-            Ok::<(),ApiError>(())
-        }.await;
-        state.postgres.execute_raw(statement("UPDATE payment_webhook_inbox SET attempts=attempts+1,processed_at=$1,last_error=$2 WHERE event_id=$3",vec![result.as_ref().ok().map(|()|now()).into(),result.err().map(|e|e.code.to_owned()).into(),id.into()])).await?;
+            Ok::<(), ApiError>(())
+        }
+        .await;
+        PaymentWebhookInboxEntity::update_many()
+            .col_expr(
+                PaymentWebhookInboxColumn::Attempts,
+                Expr::col(PaymentWebhookInboxColumn::Attempts).add(Expr::val(1_i64)),
+            )
+            .col_expr(
+                PaymentWebhookInboxColumn::ProcessedAt,
+                Expr::val(result.as_ref().ok().map(|()| now())),
+            )
+            .col_expr(
+                PaymentWebhookInboxColumn::LastError,
+                Expr::val((result.err().map(|e| e.code.to_owned())).clone()),
+            )
+            .filter(Expr::col(PaymentWebhookInboxColumn::EventId).eq(Expr::val((id).clone())))
+            .exec(&state.postgres)
+            .await?;
     }
     Ok(())
 }

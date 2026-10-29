@@ -1,4 +1,6 @@
 //! Hiveway's stateless MCP gateway, with 2026 metadata and 2025 client compatibility.
+use crate::entities::capabilities::Column as CapabilitiesColumn;
+use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::{
     features::{
         comb,
@@ -117,9 +119,9 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
     if c.scopes.iter().any(|s| s == "repository:analyze") {
         tools.push(tool("invoke_capability","Invoke a quote. An unsigned request returns x402 payment requirements; use a client wallet to sign. Never provide private keys.",json!({"invocation_id":{"type":"string","format":"uuid"},"payment_signature":{"type":"string"}}),json!(["invocation_id"]),false));
         tools.push(tool("dodo_checkout","Create a hosted Dodo test checkout for a quoted invocation. Requires a human card checkout.",json!({"invocation_id":{"type":"string","format":"uuid"}}),json!(["invocation_id"]),false));
-        let caps = crate::entities::capabilities::Entity::find()
-            .filter(crate::entities::capabilities::Column::Active.eq(true))
-            .order_by_asc(crate::entities::capabilities::Column::Id)
+        let caps = CapabilitiesEntity::find()
+            .filter(CapabilitiesColumn::Active.eq(true))
+            .order_by_asc(CapabilitiesColumn::Id)
             .limit(100)
             .all(&state.postgres)
             .await?;
@@ -338,7 +340,7 @@ pub async fn gateway(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            let result = call(state, headers, name, args).await;
+            let result = Box::pin(call(state, headers, name, args)).await;
             let (value, failed) = match result {
                 Ok(value) => (value, false),
                 Err(error) => (json!({"error":error.code}), true),

@@ -1,3 +1,5 @@
+use crate::entities::capabilities::Column as CapabilitiesColumn;
+use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::{
     features::common::{
         error::{ApiError, ApiResult},
@@ -6,7 +8,8 @@ use crate::{
     state::AppState,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use sea_orm::FromQueryResult;
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, Func, Query as SqlQuery};
+use sea_orm::{EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -316,27 +319,32 @@ pub async fn execute_capability(
     input: &RepositoryInput,
 ) -> ApiResult<Value> {
     use crate::features::common::model::Capability;
-    let capability = Capability::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DbBackend::Postgres,
-        "SELECT * FROM capabilities WHERE id=$1",
-        vec![(id).into()],
-    ))
-    .one(&state.postgres)
-    .await?
-    .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+    let capability = CapabilitiesEntity::find()
+        .filter(Expr::col(CapabilitiesColumn::Id).eq(Expr::val(id)))
+        .into_model::<Capability>()
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
     let report = execute(state, input).await?;
     match capability.runtime.as_str() {
         "repository_stack" | "dependency_inventory" => output(&capability.runtime, &report),
         "workflow" => {
             let ids: Vec<uuid::Uuid> =
                 serde_json::from_value(capability.definition["steps"].clone())?;
-            let steps = Capability::find_by_statement(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DbBackend::Postgres,
-                "SELECT * FROM capabilities WHERE id=ANY($1)",
-                vec![ids.clone().into()],
-            ))
-            .all(&state.postgres)
-            .await?;
+            let steps = CapabilitiesEntity::find()
+                .filter(
+                    Expr::col(CapabilitiesColumn::Id).in_subquery(
+                        SqlQuery::select()
+                            .expr(
+                                Func::cust(Alias::new("unnest"))
+                                    .arg(Expr::val((ids.clone()).clone())),
+                            )
+                            .to_owned(),
+                    ),
+                )
+                .into_model::<Capability>()
+                .all(&state.postgres)
+                .await?;
             if steps.len() != ids.len()
                 || steps.iter().any(|s| {
                     s.creator_wallet != capability.creator_wallet || s.runtime == "workflow"
