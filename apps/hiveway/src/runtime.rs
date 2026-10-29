@@ -14,6 +14,7 @@ pub struct RuntimeConfig {
     pub infrastructure: Infrastructure,
     pub worker: Worker,
     pub payment: Payment,
+    pub sandbox: SandboxLimits,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,7 +46,36 @@ pub struct Worker {
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SandboxLimits {
+    pub concurrency: usize,
+    pub artifact_bytes: usize,
+    pub input_bytes: usize,
+    pub output_bytes: usize,
+    pub schema_bytes: usize,
+    pub memory_bytes: usize,
+    pub fuel: u64,
+    pub artifacts_per_wallet: u64,
+}
+impl SandboxLimits {
+    fn validate(&self) -> anyhow::Result<()> {
+        if !(1..=16).contains(&self.concurrency)
+            || !(8..=1_048_576).contains(&self.artifact_bytes)
+            || !(1024..=262_144).contains(&self.input_bytes)
+            || !(1024..=262_144).contains(&self.output_bytes)
+            || !(256..=16_384).contains(&self.schema_bytes)
+            || !(65_536..=67_108_864).contains(&self.memory_bytes)
+            || !(100..=10_000_000).contains(&self.fuel)
+            || !(1..=1000).contains(&self.artifacts_per_wallet)
+        {
+            bail!("invalid sandbox resource limits");
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Payment {
+    pub decimals: u8,
     pub settlement_finality: SettlementFinality,
     pub reorg_margin_seconds: u64,
     pub chain_id: u64,
@@ -106,6 +136,7 @@ impl RuntimeConfig {
     /// # Errors
     /// Rejects zero, excessive, or inconsistent limits and malformed payment assets.
     pub fn validate(&self) -> anyhow::Result<()> {
+        self.sandbox.validate()?;
         let h = &self.http;
         let i = &self.infrastructure;
         let w = &self.worker;
@@ -133,7 +164,8 @@ impl RuntimeConfig {
         {
             bail!("invalid or inconsistent Hiveway resource limits");
         }
-        if !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
+        if self.payment.decimals != 6
+            || !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
             || self.payment.chain_id == 0
             || self.payment.name.is_empty()
             || self.payment.name.len() > 80

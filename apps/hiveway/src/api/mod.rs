@@ -1,3 +1,4 @@
+pub mod config;
 mod guard;
 use crate::{
     features::{comb, hiveway, identity, pollen, scout, waggle, wax},
@@ -15,7 +16,10 @@ use tower_http::cors::CorsLayer;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/mcp", post(hiveway::gateway))
+        .route("/v1/artifacts", post(wax::artifacts::upload))
+        .route("/v1/artifacts/{id}", get(wax::artifacts::metadata))
         .route("/api/ready", get(ready))
+        .route("/api/config", get(config::configuration))
         .route("/v1/workflows", post(comb::compose))
         .route("/v1/activity", get(waggle::activity))
         .route("/v1/auth/challenges", post(identity::challenge))

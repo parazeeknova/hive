@@ -1,16 +1,9 @@
-import { x402Client } from "@x402/core/client";
 import type { PaymentRequired } from "@x402/core/types";
-import { toClientEvmSigner } from "@x402/evm";
-import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { erc20Abi, isAddress } from "viem";
 
-import {
-  assertLocalChain,
-  chain,
-  localAccount,
-  publicClient,
-} from "../config/chain";
+import { assertLocalChain, localAccount, publicClient } from "../config/chain";
 import { HiveAgent } from "./client";
+import { localPaymentClient } from "./payments";
 
 await assertLocalChain();
 const state: { asset: string } = await Bun.file(
@@ -57,22 +50,7 @@ const quote = await buyer.json<{ id: string; payment: PaymentRequired }>(
   },
   { "idempotency-key": crypto.randomUUID() }
 );
-const paymentClient = new x402Client()
-  .setSpendControls({
-    allowedAssets: [
-      {
-        asset: state.asset,
-        maxAmountPerPayment: "10000",
-        network: `eip155:${chain.id}`,
-      },
-    ],
-  })
-  .register(
-    `eip155:${chain.id}`,
-    new ExactEvmScheme(toClientEvmSigner(buyerAccount, publicClient), {
-      rpcUrl: publicClient.transport.url,
-    })
-  );
+const paymentClient = localPaymentClient(state.asset, buyerAccount);
 const balance = () =>
   publicClient.readContract({
     abi: erc20Abi,

@@ -1,4 +1,6 @@
 #![cfg(not(miri))]
+#[path = "security/artifacts.rs"]
+mod artifacts;
 #[path = "security/dodo.rs"]
 mod dodo;
 #[path = "security/recovery.rs"]
@@ -305,6 +307,9 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     });
     settings.dodo_webhook_secret = Some("AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=".into());
     let state = AppState {
+        sandbox: Arc::new(hiveway::features::cell::runtime::Sandbox::new(
+            hiveway::runtime::RuntimeConfig::load()?.sandbox,
+        )),
         postgres: db.clone(),
         settings: Arc::new(settings),
         redis: fred::prelude::Builder::default_centralized().build()?,
@@ -333,6 +338,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         recovery::settlement_finality(&state, &chain, a, cap).await
     }
     .await;
+    let artifacts_result = artifacts::exercise(app.clone(), &state, (&token_a, &token_b)).await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -348,6 +354,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     outcome?;
     payment_result?;
     recovery_result?;
+    artifacts_result?;
     socket_result
 }
 
@@ -370,7 +377,12 @@ async fn seed(
             name: Set("fixture".into()),
             token_hash: Set(identity::hash(token.as_bytes())),
             scopes: Set(vec![
-                "repository:analyze".into(),
+                if credential == a {
+                    "capabilities:invoke"
+                } else {
+                    "repository:analyze"
+                }
+                .into(),
                 "receipts:read".into(),
                 "capabilities:read".into(),
                 "capabilities:publish".into(),

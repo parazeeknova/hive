@@ -20,8 +20,8 @@ use crate::{
             error::{ApiError, ApiResult},
             model::{
                 Capability, Credential, Invocation, PaymentPayload, PaymentRequired,
-                PaymentRequirements, QuoteRequest, QuoteResponse, Receipt, RepositoryInput,
-                Resource, Settlement, now,
+                PaymentRequirements, QuoteRequest, QuoteResponse, Receipt, Resource, Settlement,
+                now,
             },
         },
         identity,
@@ -254,14 +254,14 @@ pub async fn quote(
     headers: HeaderMap,
     Json(request): Json<QuoteRequest>,
 ) -> ApiResult<Response> {
-    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    let c = identity::authenticate_invoker(&state, &headers).await?;
     let key = idempotency_key(&headers)?;
-    cell::validate(&request.input)?;
+    cell::validate_input(&state, request.capability_id, &request.input).await?;
     // Do remote I/O before acquiring a credential row lock or a pool transaction.
     x402::supported(&state).await?;
     let fingerprint = identity::hash(&serde_json::to_vec(&request)?);
     let tx = state.postgres.begin().await?;
-    let c = locked_credential(&tx, c.id, "repository:analyze").await?;
+    let c = locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
     if let Some(result) = existing_quote(&tx, c.id, key, &fingerprint).await? {
         tx.commit().await?;
         return Ok((StatusCode::OK, Json(result)).into_response());
@@ -277,6 +277,9 @@ pub async fn quote(
         .one(&tx)
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if cap.runtime == "wasm" && identity::invocation_scope(&c)? != "capabilities:invoke" {
+        return Err(ApiError::forbidden());
+    }
     let reserved = AgentCredentialsEntity::update_many()
         .col_expr(
             AgentCredentialsColumn::Reserved,
@@ -359,9 +362,9 @@ pub async fn invoke(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Response> {
-    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    let c = identity::authenticate_invoker(&state, &headers).await?;
     let tx = state.postgres.begin().await?;
-    let c = locked_credential(&tx, c.id, "repository:analyze").await?;
+    let c = locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
     let inv = invocation(&tx, id, c.id).await?;
     if inv.payment_method.as_deref() == Some("dodo") {
         let response = receipt(inv)?;
@@ -473,7 +476,7 @@ async fn execute_and_settle(
         ));
     }
     let execution_started = std::time::Instant::now();
-    let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
+    let input = inv.input.clone();
     let result = match tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
         cell::execute_capability(state, inv.capability_id, &input),

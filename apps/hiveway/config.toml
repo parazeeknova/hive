@@ -30,9 +30,20 @@ execution_timeout_seconds = 60
 stale_after_seconds = 180
 
 [payment]
+decimals = 6
 settlement_finality = "finalized"
 reorg_margin_seconds = 60
 chain_id = 84532
 asset = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 name = "USDC"
 version = "2"
+
+[sandbox]
+concurrency = 4
+artifact_bytes = 65536
+input_bytes = 65536
+output_bytes = 131072
+schema_bytes = 4096
+memory_bytes = 16777216
+fuel = 2000000
+artifacts_per_wallet = 100

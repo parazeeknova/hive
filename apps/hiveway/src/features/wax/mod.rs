@@ -1,3 +1,4 @@
+pub mod artifacts;
 use crate::{
     features::{
         common::{
@@ -27,11 +28,23 @@ pub async fn publish(
         || request.description.len() > 1000
         || !matches!(
             request.runtime.as_str(),
-            "repository_stack" | "dependency_inventory"
+            "repository_stack" | "dependency_inventory" | "wasm"
         )
     {
         return Err(ApiError::bad("invalid_capability"));
     }
+    let definition = if request.runtime == "wasm" {
+        let artifact_id = request
+            .artifact_id
+            .ok_or_else(|| ApiError::bad("artifact_id_required"))?;
+        artifacts::owned(&state, artifact_id, &owner.wallet).await?;
+        serde_json::json!({"artifact_id":artifact_id,"abi_version":1})
+    } else {
+        if request.artifact_id.is_some() {
+            return Err(ApiError::bad("artifact_not_supported_for_builtin"));
+        }
+        serde_json::json!({})
+    };
     let capability = crate::entities::capabilities::ActiveModel {
         id: Set(Uuid::new_v4()),
         creator_wallet: Set(owner.wallet),
@@ -42,7 +55,7 @@ pub async fn publish(
         price: Set(identity::amount(&request.price)?),
         active: Set(true),
         created_at: Set(now()),
-        definition: Set(serde_json::json!({})),
+        definition: Set(definition),
     }
     .insert(&state.postgres)
     .await?;

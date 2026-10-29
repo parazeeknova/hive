@@ -10,6 +10,7 @@ pub const ASSET: &str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 pub const SCOPES: &[&str] = &[
     "capabilities:read",
     "capabilities:publish",
+    "capabilities:invoke",
     "repository:analyze",
     "receipts:read",
     "sales:read",
@@ -113,8 +114,9 @@ pub struct PublishCapability {
     pub name: String,
     pub description: String,
     /// Supports `repository_stack` and `dependency_inventory`.
-    /// Publish workflow capabilities through `/v1/workflows`.
+    /// Publish workflow capabilities through `/v1/workflows`; `wasm` requires an owned artifact.
     pub runtime: String,
+    pub artifact_id: Option<Uuid>,
     pub price: String,
 }
 #[derive(Serialize, Deserialize, FromQueryResult, ToSchema)]
@@ -156,7 +158,7 @@ pub struct RepositoryInput {
 #[serde(deny_unknown_fields)]
 pub struct QuoteRequest {
     pub capability_id: Uuid,
-    pub input: RepositoryInput,
+    pub input: serde_json::Value,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq, ToSchema)]

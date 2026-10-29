@@ -1,3 +1,4 @@
+pub mod runtime;
 use crate::entities::capabilities::Column as CapabilitiesColumn;
 use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::{
@@ -313,7 +314,7 @@ pub async fn execute(state: &AppState, input: &RepositoryInput) -> ApiResult<Val
 
 /// # Errors
 /// Rejects invalid runtimes and workflow definitions and propagates database or repository failures.
-pub async fn execute_capability(
+async fn execute_repository_capability(
     state: &AppState,
     id: uuid::Uuid,
     input: &RepositoryInput,
@@ -367,6 +368,70 @@ pub async fn execute_capability(
         _ => Err(ApiError::bad("unsupported_runtime")),
     }
 }
+/// Validate inputs against the immutable capability before reserving its budget.
+/// # Errors
+/// Rejects missing capabilities, invalid schemas and malformed repository inputs.
+pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> ApiResult<()> {
+    let capability = CapabilitiesEntity::find_by_id(id)
+        .filter(Expr::col(CapabilitiesColumn::Active).eq(true))
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "wasm" {
+        let artifact = artifact_for(state, &capability).await?;
+        if serde_json::to_vec(input)?.len() > state.settings.runtime.sandbox.input_bytes
+            || !runtime::schemas::compile(&artifact.input_schema, &state.settings.runtime.sandbox)?
+                .is_valid(input)
+        {
+            return Err(ApiError::bad("capability_input_schema_mismatch"));
+        }
+    } else {
+        let input: RepositoryInput = serde_json::from_value(input.clone())
+            .map_err(|_| ApiError::bad("invalid_repository_input"))?;
+        validate(&input)?;
+    }
+    Ok(())
+}
+async fn artifact_for(
+    state: &AppState,
+    capability: &crate::entities::capabilities::Model,
+) -> ApiResult<crate::entities::wasm_artifacts::Model> {
+    let id = capability.definition["artifact_id"]
+        .as_str()
+        .and_then(|id| id.parse().ok())
+        .ok_or_else(|| ApiError::bad("invalid_artifact_reference"))?;
+    crate::features::wax::artifacts::owned(state, id, &capability.creator_wallet).await
+}
+/// Execute a pinned built-in runtime or immutable Wasm artifact.
+/// # Errors
+/// Rejects malformed inputs, traps, missing artifacts and invalid outputs.
+pub async fn execute_capability(
+    state: &AppState,
+    id: uuid::Uuid,
+    input: &Value,
+) -> ApiResult<Value> {
+    let capability = CapabilitiesEntity::find_by_id(id)
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "wasm" {
+        let artifact = artifact_for(state, &capability).await?;
+        if !runtime::schemas::compile(&artifact.input_schema, &state.settings.runtime.sandbox)?
+            .is_valid(input)
+        {
+            return Err(ApiError::bad("capability_input_schema_mismatch"));
+        }
+        state
+            .sandbox
+            .execute(artifact.wasm, input.clone(), artifact.output_schema)
+            .await
+    } else {
+        let input: RepositoryInput = serde_json::from_value(input.clone())
+            .map_err(|_| ApiError::bad("invalid_repository_input"))?;
+        execute_repository_capability(state, id, &input).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

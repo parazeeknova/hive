@@ -9,7 +9,7 @@ use crate::{
         cell,
         common::{
             error::{ApiError, ApiResult},
-            model::{Invocation, RepositoryInput, Settlement, now},
+            model::{Invocation, Settlement, now},
         },
     },
     state::AppState,
@@ -40,7 +40,7 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
         return Ok(());
     }
     let start = Instant::now();
-    let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
+    let input = inv.input.clone();
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
         cell::execute_capability(state, inv.capability_id, &input),

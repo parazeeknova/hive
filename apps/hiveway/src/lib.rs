@@ -39,6 +39,7 @@ pub struct Health {
     paths(
         health,
         api::ready,
+        api::config::configuration,
         features::comb::compose,
         features::waggle::activity,
         features::identity::challenge,
@@ -46,6 +47,8 @@ pub struct Health {
         features::identity::me,
         features::scout::discover,
         features::wax::publish,
+        features::wax::artifacts::upload,
+        features::wax::artifacts::metadata,
         features::pollen::quote,
         features::pollen::invoke,
         features::pollen::get_receipt,

@@ -142,7 +142,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        4
+        5
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {

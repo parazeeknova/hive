@@ -73,6 +73,7 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:3001/api/ready
           HIVE_DEMO_REVISION="$GITHUB_SHA" devenv shell -- bun packages/local/src/agents/demo.ts
+          devenv shell -- bun packages/local/src/agents/hosted-demo.ts
       - name: Collect diagnostics on failure
         if: failure()
         run: |

@@ -5,6 +5,7 @@ mod m20261029_000001_create_hiveway;
 mod m20261029_000002_creator_sales_read_index;
 mod m20261030_000003_payment_recovery_constraints;
 mod m20261030_000004_refund_operations;
+mod m20261030_000005_wasm_artifacts;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -14,6 +15,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261029_000002_creator_sales_read_index::Migration),
             Box::new(m20261030_000003_payment_recovery_constraints::Migration),
             Box::new(m20261030_000004_refund_operations::Migration),
+            Box::new(m20261030_000005_wasm_artifacts::Migration),
         ]
     }
 }

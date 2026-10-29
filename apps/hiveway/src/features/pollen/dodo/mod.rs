@@ -84,7 +84,7 @@ pub async fn checkout(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> ApiResult<Json<Value>> {
-    let c = identity::authenticate(&state, &headers, "repository:analyze").await?;
+    let c = identity::authenticate_invoker(&state, &headers).await?;
     let product = state
         .settings
         .dodo_product_id
@@ -96,7 +96,7 @@ pub async fn checkout(
     }
     queue_stale_checkouts(&state).await?;
     let tx = state.postgres.begin().await?;
-    locked_credential(&tx, c.id, "repository:analyze").await?;
+    locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
     let inv = invocation(&tx, id, c.id).await?;
     if inv.payment_method.as_deref() == Some("dodo") {
         let response = json!({"invocation_id":id,"state":inv.state,"checkout_id":inv.checkout_id,"checkout_url":inv.checkout_url});

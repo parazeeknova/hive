@@ -6,3 +6,4 @@ pub mod invocations;
 pub mod payment_webhook_inbox;
 pub mod refund_operations;
 pub mod wallet_challenges;
+pub mod wasm_artifacts;
