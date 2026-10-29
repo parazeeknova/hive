@@ -1,6 +1,6 @@
 {
   "name": "@hive/hiveway",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "scripts": {
     "dev": "cargo watch --watch src --watch Cargo.toml --watch ../../Cargo.toml --watch ../../Cargo.lock -x \"run --locked --package hiveway\"",
