@@ -1,0 +1,31 @@
+{
+  "name": "hive",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hive: an agent-native capability network. Hiveway API and Nectar web app.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "check": "bun scripts/check.ts",
+    "check-types": "bun scripts/check-types.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "@types/node": "^24.19.2",
+    "lerna": "^10.1.1",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "sherif": "^1.13.0",
+    "typescript": "^7.0.2",
+    "ultracite": "^8.1.0"
+  },
+  "engines": {
+    "bun": ">=1.4.4",
+    "node": ">=24.15.0 <25"
+  },
+  "packageManager": "bun@1.4.4"
+}

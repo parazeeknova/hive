@@ -1,0 +1,91 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "neverConnectToCloud": true,
+  "namedInputs": {
+    "shared": [
+      "{workspaceRoot}/README.md",
+      "{workspaceRoot}/.vscode/**/*",
+      "{workspaceRoot}/.gitattributes",
+      "{workspaceRoot}/.envrc",
+      "{workspaceRoot}/apps/hiveway/package.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/bun.lock",
+      "{workspaceRoot}/bunfig.toml",
+      "{workspaceRoot}/lerna.json",
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/tsconfig.json",
+      "{workspaceRoot}/oxlint.config.ts",
+      "{workspaceRoot}/oxfmt.config.ts",
+      "{workspaceRoot}/scripts/**/*.ts",
+      "{workspaceRoot}/Cargo.toml",
+      "{workspaceRoot}/Cargo.lock",
+      "{workspaceRoot}/rust-toolchain.toml",
+      "{workspaceRoot}/rustfmt.toml",
+      "{workspaceRoot}/deny.toml",
+      "{workspaceRoot}/devenv.nix",
+      "{workspaceRoot}/devenv.yaml",
+      "{workspaceRoot}/devenv.lock",
+      "{workspaceRoot}/.editorconfig",
+      "{workspaceRoot}/.gitignore",
+      {
+        "runtime": "bun --version"
+      },
+      {
+        "runtime": "node --version"
+      },
+      {
+        "runtime": "rustc -Vv"
+      },
+      {
+        "runtime": "cargo clippy --version"
+      },
+      {
+        "runtime": "cargo machete --version"
+      },
+      {
+        "runtime": "cargo miri --version"
+      },
+      {
+        "env": "RUSTFLAGS"
+      },
+      {
+        "env": "MIRIFLAGS"
+      },
+      "{workspaceRoot}/compose.yaml",
+      "{workspaceRoot}/.env.example",
+      "{workspaceRoot}/.cargo/**/*",
+      {
+        "env": "CARGO_BUILD_TARGET"
+      },
+      {
+        "env": "CARGO_ENCODED_RUSTFLAGS"
+      },
+      {
+        "env": "RUSTDOCFLAGS"
+      }
+    ],
+    "default": [
+      "{projectRoot}/**/*",
+      "!{projectRoot}/node_modules/**/*",
+      "!{projectRoot}/.next/**/*",
+      "!{projectRoot}/next-env.d.ts",
+      "!{projectRoot}/**/*.tsbuildinfo",
+      "shared"
+    ]
+  },
+  "targetDefaults": {
+    "dev": {
+      "cache": false
+    },
+    "check": {
+      "cache": true,
+      "inputs": ["default"],
+      "outputs": []
+    },
+    "check-types": {
+      "cache": true,
+      "inputs": ["default"],
+      "outputs": ["{projectRoot}/.next/types", "{projectRoot}/next-env.d.ts"]
+    }
+  }
+}

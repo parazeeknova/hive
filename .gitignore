@@ -1,0 +1,32 @@
+# Dependencies and generated output
+node_modules/
+.next/
+out/
+dist/
+build/
+/target/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local task caches and development shells
+.nx/
+.devenv/
+.devenv.*
+.direnv/
+.envrc.local
+result
+result-*
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+
+# Logs, coverage, and editor/OS state
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
