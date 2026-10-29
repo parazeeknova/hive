@@ -25,7 +25,7 @@ const Home = () =>
         throw new Error("Hiveway returned an invalid health response");
       }
       logger.info("Hiveway health request completed");
-      return <main>{health.status}</main>;
+      return <main className="p-4">{health.status}</main>;
     } finally {
       span.end();
     }
