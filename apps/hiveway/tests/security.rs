@@ -3,6 +3,8 @@
 mod dodo;
 #[path = "security/recovery.rs"]
 mod recovery;
+#[path = "security/refunds.rs"]
+mod refunds;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -282,11 +284,13 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let chain = Arc::new(recovery::ChainFixture::default());
     let fixture_chain = chain.clone();
     let provider = Arc::new(dodo::ProviderFixture::default());
+    let refund_fixture = Arc::new(refunds::Fixture::new(provider.clone()));
+    let server_refunds = refund_fixture.clone();
     let payment_provider = provider.clone();
     let session_provider = provider.clone();
     settings.rpc_url = settings.facilitator_url.clone();
     let facilitator = tokio::spawn(async move {
-        let router = Router::new()
+        let router = Router::new().merge(refunds::router(server_refunds))
             .route("/payments/{id}", axum::routing::get(dodo::payment).with_state(payment_provider))
             .route("/checkouts/{id}", axum::routing::get(dodo::session).with_state(session_provider))
             .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
@@ -317,6 +321,14 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let recovery_result = async {
         recovery::checkout_queue(&state, id, a).await?;
         dodo::exercise(app.clone(), &state, &provider, id, (&token_a, &token_b)).await?;
+        refunds::exercise(
+            app.clone(),
+            &state,
+            &refund_fixture,
+            id,
+            (&token_a, &token_b),
+        )
+        .await?;
         recovery::expiry(&state, &chain, a, cap).await
     }
     .await;

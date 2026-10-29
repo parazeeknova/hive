@@ -170,6 +170,11 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     crate::features::identity::cleanup_challenges(state).await?;
     dodo::queue_stale_checkouts(state).await?;
     if state.settings.dodo_api_key.is_some()
+        && let Err(error) = dodo::refunds::tick(state).await
+    {
+        tracing::warn!(error = error.code, "Refund recovery pending");
+    }
+    if state.settings.dodo_api_key.is_some()
         && let Err(error) = dodo::process_events(state).await
     {
         tracing::warn!(error = error.code, "Dodo webhook processing pending");

@@ -2,6 +2,7 @@
 //! establish payment status; neither redirects nor client-supplied receipts do.
 mod provider;
 pub mod recovery;
+pub mod refunds;
 use super::{invocation, locked_credential, receipt};
 use crate::entities::agent_credentials::Column as AgentCredentialsColumn;
 use crate::entities::agent_credentials::Entity as AgentCredentialsEntity;
@@ -230,6 +231,8 @@ pub async fn webhook(
 }
 fn matches_payment(payment: &Value, session: &Value, inv: &Invocation, product: &str) -> bool {
     payment["status"] == "succeeded"
+        && payment.get("refund_status").is_none_or(Value::is_null)
+        && payment["refunds"].as_array().is_some_and(Vec::is_empty)
         && payment["currency"] == "USD"
         && payment["total_amount"]
             .as_i64()
@@ -401,6 +404,11 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
                                 )
                                 .col_expr(InvocationsColumn::UpdatedAt, Expr::val(now()))
                                 .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(inv.id)))
+                                .filter(
+                                    InvocationsColumn::PaymentIssue
+                                        .is_null()
+                                        .or(InvocationsColumn::PaymentIssue.ne("refunded")),
+                                )
                                 .exec(&state.postgres)
                                 .await?;
                         }
@@ -482,12 +490,14 @@ mod tests {
             payment_issue: None,
         };
         let session = json!({"id":"cks_1","payment_id":"pay_1"});
-        let original = json!({"status":"succeeded","currency":"USD","total_amount":100,"payment_id":"pay_1","checkout_session_id":"cks_1","metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":"0x1111111111111111111111111111111111111111"},"product_cart":[{"product_id":"prod_1","quantity":1}]});
+        let original = json!({"status":"succeeded","refunds":[],"refund_status":null,"currency":"USD","total_amount":100,"payment_id":"pay_1","checkout_session_id":"cks_1","metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":"0x1111111111111111111111111111111111111111"},"product_cart":[{"product_id":"prod_1","quantity":1}]});
         assert!(super::matches_payment(&original, &session, &inv, "prod_1"));
         for (path, value) in [
             ("/total_amount", json!(99)),
             ("/total_amount", json!(200)),
             ("/currency", json!("EUR")),
+            ("/refund_status", json!("full")),
+            ("/refunds", json!([{"refund_id":"ref_1"}])),
             ("/checkout_session_id", json!("cks_other")),
             ("/payment_id", json!("pay_other")),
             ("/product_cart/0/product_id", json!("prod_other")),

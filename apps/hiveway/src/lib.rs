@@ -53,6 +53,8 @@ pub struct Health {
         features::pollen::dodo::checkout,
         features::pollen::dodo::recovery::recover,
         features::pollen::dodo::webhook,
+        features::pollen::dodo::refunds::refund,
+        features::pollen::dodo::refunds::status,
         features::waggle::sales
     ),
     components(schemas(Health))

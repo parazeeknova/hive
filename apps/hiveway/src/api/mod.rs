@@ -37,6 +37,10 @@ pub fn router() -> Router<AppState> {
             "/v1/invocations/{id}/checkout/recover",
             post(pollen::dodo::recover),
         )
+        .route(
+            "/v1/invocations/{id}/refund",
+            get(pollen::dodo::refunds::status).post(pollen::dodo::refunds::refund),
+        )
         .route("/v1/sales", get(waggle::sales))
         .layer(DefaultBodyLimit::disable())
 }

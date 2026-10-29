@@ -132,6 +132,7 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
     }
     if c.scopes.iter().any(|s| s == "receipts:read") {
         tools.push(tool("get_receipt","Read or reconcile an invocation owned by this agent credential.",json!({"invocation_id":{"type":"string","format":"uuid"},"reconcile":{"type":"boolean"}}),json!(["invocation_id"]),true));
+        tools.push(tool("refund_operation","Read a refund operation for an owned invocation. Set request=true to request/reconcile the full Dodo test refund for a failed paid execution; successful invocations cannot be refunded here.",json!({"invocation_id":{"type":"string","format":"uuid"},"request":{"type":"boolean"}}),json!(["invocation_id"]),false));
     }
     if c.scopes.iter().any(|s| s == "capabilities:publish") {
         tools.push(tool("publish_capability","Publish an immutable bounded runtime capability. Code execution is restricted to the advertised runtimes.",json!({"name":{"type":"string"},"description":{"type":"string"},"runtime":{"enum":["repository_stack","dependency_inventory"]},"price":{"type":"string"}}),json!(["name","description","runtime","price"]),false));
@@ -221,6 +222,15 @@ async fn call(state: AppState, headers: HeaderMap, name: &str, args: Value) -> A
                 pollen::get_receipt(State(state), Path(id), headers).await?
             };
             result(response).await
+        }
+        "refund_operation" => {
+            let id = uuid(&args, "invocation_id")?;
+            let Json(refund) = if args["request"] == true {
+                pollen::dodo::refunds::refund(State(state), Path(id), headers).await?
+            } else {
+                pollen::dodo::refunds::status(State(state), Path(id), headers).await?
+            };
+            Ok(serde_json::to_value(refund)?)
         }
         "dodo_checkout" => {
             let id = uuid(&args, "invocation_id")?;

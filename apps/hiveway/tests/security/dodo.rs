@@ -42,7 +42,7 @@ pub(super) async fn exercise(
         .one(&state.postgres)
         .await?
         .ok_or("missing credential")?;
-    let canonical = json!({"status":"succeeded","currency":"USD","total_amount":inv.price/10_000,
+    let canonical = json!({"status":"succeeded","refunds":[],"refund_status":null,"currency":"USD","total_amount":inv.price/10_000,
         "payment_id":"pay_recovered","checkout_session_id":"cks_recovered",
         "metadata":{"hive_invocation_id":id.to_string(),"hive_wallet":owner.wallet},
         "product_cart":[{"product_id":"pdt_fixture","quantity":1}]});
