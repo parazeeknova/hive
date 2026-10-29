@@ -8,7 +8,12 @@ export const run = async (command: string[], cwd = root, required = true) => {
   console.log(`\n$ ${command.join(" ")}`);
   const child = Bun.spawn(command, {
     cwd,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NX_DAEMON: "false" },
+    env: {
+      ...process.env,
+      NEXT_TELEMETRY_DISABLED: "1",
+      NX_DAEMON: "false",
+      PATH: `${root}/node_modules/.bin:${process.env.PATH ?? ""}`,
+    },
     stderr: "inherit",
     stdin: "inherit",
     stdout: "inherit",

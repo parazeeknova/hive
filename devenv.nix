@@ -20,6 +20,9 @@
   };
 
   enterShell = ''
+    if [ -x node_modules/.bin/lefthook ] && [ -d .git ]; then
+      node_modules/.bin/lefthook install
+    fi
     if [ -z "''${DOCKER_HOST:-}" ] && [ ! -S /var/run/docker.sock ]; then
       for hive_socket in /run/podman/podman.sock "''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"; do
         if [ -S "$hive_socket" ] && [ -r "$hive_socket" ] && [ -w "$hive_socket" ]; then

@@ -5,6 +5,8 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 
+import { version } from "../package.json";
+
 let sdk: NodeSDK | undefined;
 
 export const startTelemetry = () => {
@@ -19,7 +21,7 @@ export const startTelemetry = () => {
     resource: resourceFromAttributes({
       "service.name": "nectar",
       "service.namespace": "hive",
-      "service.version": "0.0.0",
+      "service.version": version,
     }),
     traceExporter: new OTLPTraceExporter(),
   });

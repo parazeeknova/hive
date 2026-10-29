@@ -62,7 +62,8 @@
       },
       {
         "env": "RUSTDOCFLAGS"
-      }
+      },
+      "{workspaceRoot}/lefthook.yml"
     ],
     "default": [
       "{projectRoot}/**/*",

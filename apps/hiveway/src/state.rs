@@ -36,7 +36,7 @@ impl AppState {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(30))
-            .user_agent("hiveway/0.0.0")
+            .user_agent(concat!("hiveway/", env!("CARGO_PKG_VERSION")))
             .build()?;
         let rig = config
             .openai_api_key
