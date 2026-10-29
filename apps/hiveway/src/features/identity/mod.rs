@@ -128,7 +128,7 @@ pub async fn challenge(
     let policy_hash = hex::encode(hash(&serde_json::to_vec(&request.action)?));
     let statement = match &request.action {
         WalletAction::Issue { policy } => format!(
-            "Issue Hiveway credential for {}. Scopes: {}. Per-call limit: {} microUSDC. Total limit: {} microUSDC. Credential expires: {}. Policy SHA256: {}.",
+            "Issue Hiveway credential for {}. Scopes: {}. Per-call limit: {} atomic payment units. Total limit: {} atomic payment units. Credential expires: {}. Policy SHA256: {}.",
             policy.name,
             policy.scopes.join(","),
             policy.per_call_limit,
@@ -140,15 +140,7 @@ pub async fn challenge(
             format!("Revoke Hiveway credential {credential_id}. Policy SHA256: {policy_hash}.")
         }
     };
-    let message = signature::message(
-        &state.settings.auth_domain,
-        &state.settings.auth_uri,
-        &address,
-        &statement,
-        id,
-        at,
-        expires,
-    )?;
+    let message = signature::message(&state.settings, &address, &statement, id, at, expires)?;
     tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO wallet_challenges(id,wallet,peer_ip,message,action,expires_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", vec![(id).into(), (address).into(), (ip).into(), (&message).into(), (serde_json::to_value(request.action)?).into(), (expires).into(), (at).into()])).await?;
     tx.commit().await?;
     Ok(Json(ChallengeResponse {

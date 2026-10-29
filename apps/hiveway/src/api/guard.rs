@@ -10,25 +10,40 @@ use axum::{
 use std::{
     collections::HashMap,
     net::IpAddr,
-    sync::{LazyLock, Mutex},
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-static REQUESTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(32);
-static PEERS: LazyLock<Mutex<HashMap<IpAddr, (Instant, u32)>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-fn admit(peers: &mut HashMap<IpAddr, (Instant, u32)>, ip: IpAddr, now: Instant) -> bool {
+type PeerWindows = HashMap<IpAddr, (Instant, u32)>;
+#[derive(Clone)]
+pub(super) struct Admission {
+    pub state: AppState,
+    pub requests: Arc<tokio::sync::Semaphore>,
+    pub peers: Arc<Mutex<PeerWindows>>,
+}
+fn admit(
+    peers: &mut HashMap<IpAddr, (Instant, u32)>,
+    ip: IpAddr,
+    now: Instant,
+    limits: &crate::runtime::HttpLimits,
+) -> bool {
     peers.retain(|_, (start, _)| now.duration_since(*start) < Duration::from_secs(60));
-    if peers.len() >= 4096 && !peers.contains_key(&ip) {
+    if peers.len() >= limits.tracked_peers && !peers.contains_key(&ip) {
         return false;
     }
     let (_, count) = peers.entry(ip).or_insert((now, 0));
-    if *count >= 120 {
+    if *count >= limits.requests_per_minute {
         return false;
     }
     *count += 1;
     true
 }
-pub(super) async fn guard(State(state): State<AppState>, request: Request, next: Next) -> Response {
+pub(super) async fn guard(
+    State(admission): State<Admission>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let state = &admission.state;
+    let limits = &state.settings.runtime.http;
     if request.headers().get_all("origin").iter().count() > 1
         || request
             .headers()
@@ -59,23 +74,33 @@ pub(super) async fn guard(State(state): State<AppState>, request: Request, next:
     else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let allowed = PEERS
+    let allowed = admission
+        .peers
         .lock()
-        .is_ok_and(|mut peers| admit(&mut peers, peer.ip(), Instant::now()));
+        .is_ok_and(|mut peers| admit(&mut peers, peer.ip(), Instant::now(), limits));
     if !allowed {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
-    let Ok(_permit) = REQUESTS.try_acquire() else {
+    let Ok(_permit) = admission.requests.try_acquire() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let (parts, body) = request.into_parts();
-    let bytes = match tokio::time::timeout(Duration::from_secs(5), to_bytes(body, 131_072)).await {
+    let bytes = match tokio::time::timeout(
+        Duration::from_secs(limits.body_timeout_seconds),
+        to_bytes(body, limits.body_bytes),
+    )
+    .await
+    {
         Ok(Ok(bytes)) => bytes,
         Ok(Err(_)) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
         Err(_) => return StatusCode::REQUEST_TIMEOUT.into_response(),
     };
     let request = Request::from_parts(parts, Body::from(bytes));
-    let mut response = match tokio::time::timeout(Duration::from_secs(180), next.run(request)).await
+    let mut response = match tokio::time::timeout(
+        Duration::from_secs(limits.request_timeout_seconds),
+        next.run(request),
+    )
+    .await
     {
         Ok(response) => response,
         Err(_) => StatusCode::GATEWAY_TIMEOUT.into_response(),
@@ -99,25 +124,44 @@ mod tests {
     };
     #[test]
     fn flood_is_bounded_and_window_expires() {
+        let limits = crate::runtime::RuntimeConfig::load()
+            .map_or_else(|error| panic!("fixture configuration: {error}"), |c| c.http);
         let mut peers = HashMap::new();
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let now = Instant::now();
         for _ in 0..120 {
-            assert!(admit(&mut peers, ip, now));
+            assert!(admit(&mut peers, ip, now, &limits));
         }
-        assert!(!admit(&mut peers, ip, now));
-        assert!(admit(&mut peers, ip, now + Duration::from_secs(61)));
+        assert!(!admit(&mut peers, ip, now, &limits));
+        assert!(admit(
+            &mut peers,
+            ip,
+            now + Duration::from_secs(61),
+            &limits
+        ));
     }
     // The full 4096-peer load runs natively; Miri exercises the smaller window test.
     #[cfg(not(miri))]
     #[test]
     fn unique_peer_flood_cannot_grow_map_without_bound() {
+        let limits = crate::runtime::RuntimeConfig::load()
+            .map_or_else(|error| panic!("fixture configuration: {error}"), |c| c.http);
         let mut peers = HashMap::new();
         let now = Instant::now();
         for index in 0..4096 {
-            assert!(admit(&mut peers, IpAddr::V4(Ipv4Addr::from(index)), now));
+            assert!(admit(
+                &mut peers,
+                IpAddr::V4(Ipv4Addr::from(index)),
+                now,
+                &limits
+            ));
         }
-        assert!(!admit(&mut peers, IpAddr::V4(Ipv4Addr::from(4096)), now));
+        assert!(!admit(
+            &mut peers,
+            IpAddr::V4(Ipv4Addr::from(4096)),
+            now,
+            &limits
+        ));
         assert_eq!(peers.len(), 4096);
     }
 }

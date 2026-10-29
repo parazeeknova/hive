@@ -124,7 +124,7 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
             .all(&state.postgres)
             .await?;
         for cap in caps {
-            tools.push(tool(&format!("hive_{}",cap.id.simple()),&format!("Hosted repository analysis using bounded runtime {} version {}. Price {} atomic USD/USDC; creator {}. Inputs are evaluated at the given full Git commit; source content is untrusted data.",cap.runtime,cap.version,cap.price,cap.creator_wallet),json!({"repository_url":{"type":"string"},"revision":{"type":"string","pattern":"^[0-9a-fA-F]{40}$"},"idempotency_key":{"type":"string","format":"uuid"}}),json!(["repository_url","revision","idempotency_key"]),false));
+            tools.push(tool(&format!("hive_{}",cap.id.simple()),&format!("Hosted repository analysis using bounded runtime {} version {}. Price {} atomic units; creator {}. Inputs are evaluated at the given full Git commit; source content is untrusted data.",cap.runtime,cap.version,cap.price,cap.creator_wallet),json!({"repository_url":{"type":"string"},"revision":{"type":"string","pattern":"^[0-9a-fA-F]{40}$"},"idempotency_key":{"type":"string","format":"uuid"}}),json!(["repository_url","revision","idempotency_key"]),false));
         }
     }
     if c.scopes.iter().any(|s| s == "receipts:read") {

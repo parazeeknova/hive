@@ -25,9 +25,13 @@ impl AppState {
         let settings = Arc::new(crate::features::common::settings::Settings::from_env()?);
         let mut options = ConnectOptions::new(config.database_url.clone());
         options
-            .max_connections(5)
-            .connect_timeout(Duration::from_secs(5))
-            .acquire_timeout(Duration::from_secs(5))
+            .max_connections(settings.runtime.infrastructure.postgres_connections)
+            .connect_timeout(Duration::from_secs(
+                settings.runtime.infrastructure.connection_timeout_seconds,
+            ))
+            .acquire_timeout(Duration::from_secs(
+                settings.runtime.infrastructure.connection_timeout_seconds,
+            ))
             .sqlx_logging(false);
         let postgres = Database::connect(options)
             .await
@@ -37,13 +41,18 @@ impl AppState {
             .context("applying Hiveway migrations")?;
         let redis = Builder::from_config(RedisConfig::from_url(&config.redis_url)?)
             .with_connection_config(|config| {
-                config.connection_timeout = Duration::from_secs(5);
+                config.connection_timeout =
+                    Duration::from_secs(settings.runtime.infrastructure.connection_timeout_seconds);
             })
             .build()?;
         redis.init().await.context("connecting Hiveway to Redis")?;
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(
+                settings.runtime.infrastructure.connection_timeout_seconds,
+            ))
+            .timeout(Duration::from_secs(
+                settings.runtime.infrastructure.outbound_timeout_seconds,
+            ))
             .redirect(reqwest::redirect::Policy::none())
             .user_agent(concat!("hiveway/", env!("CARGO_PKG_VERSION")))
             .build()?;

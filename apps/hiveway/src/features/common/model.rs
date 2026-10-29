@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+#[cfg(test)]
 pub const NETWORK: &str = "eip155:84532";
-pub const CHAIN_ID: u64 = 84532;
+#[cfg(test)]
 pub const ASSET: &str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 pub const SCOPES: &[&str] = &[
     "capabilities:read",

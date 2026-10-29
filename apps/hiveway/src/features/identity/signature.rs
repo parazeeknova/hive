@@ -1,10 +1,7 @@
 //! EIP-191 verification for server-issued EIP-4361 challenges. The client can
 //! submit only a challenge ID and signature, never a replacement message.
 use super::wallet;
-use crate::features::common::{
-    error::{ApiError, ApiResult},
-    model::CHAIN_ID,
-};
+use crate::features::common::error::{ApiError, ApiResult};
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 use sha3::{Digest, Keccak256};
 
@@ -26,14 +23,16 @@ pub(super) fn checksum(address: &str) -> ApiResult<String> {
     Ok(format!("0x{chars}"))
 }
 pub(super) fn message(
-    domain: &str,
-    origin: &str,
+    settings: &crate::features::common::settings::Settings,
     address: &str,
     statement: &str,
     id: uuid::Uuid,
     at: i64,
     expires: i64,
 ) -> ApiResult<String> {
+    let domain = &settings.auth_domain;
+    let origin = &settings.auth_uri;
+    let chain_id = settings.runtime.payment.chain_id;
     let date = |t| {
         time::OffsetDateTime::from_unix_timestamp(t)
             .map_err(|_| ApiError::bad("invalid_timestamp"))?
@@ -41,7 +40,7 @@ pub(super) fn message(
             .map_err(|_| ApiError::bad("invalid_timestamp"))
     };
     Ok(format!(
-        "{domain} wants you to sign in with your Ethereum account:\n{}\n\n{statement}\n\nURI: {origin}\nVersion: 1\nChain ID: {CHAIN_ID}\nNonce: {}\nIssued At: {}\nExpiration Time: {}\nRequest ID: {id}",
+        "{domain} wants you to sign in with your Ethereum account:\n{}\n\n{statement}\n\nURI: {origin}\nVersion: 1\nChain ID: {chain_id}\nNonce: {}\nIssued At: {}\nExpiration Time: {}\nRequest ID: {id}",
         checksum(address)?,
         id.simple(),
         date(at)?,

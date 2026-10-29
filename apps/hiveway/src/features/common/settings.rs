@@ -2,6 +2,7 @@ use anyhow::{Context, bail};
 use std::env;
 
 pub struct Settings {
+    pub runtime: crate::runtime::RuntimeConfig,
     pub public_url: String,
     pub auth_domain: String,
     pub auth_uri: String,
@@ -16,10 +17,9 @@ impl Settings {
     /// # Errors
     /// Rejects malformed endpoint URLs and insecure nonlocal endpoints.
     pub fn from_env() -> anyhow::Result<Self> {
-        let public_url =
-            env::var("HIVE_PUBLIC_URL").unwrap_or_else(|_| "http://127.0.0.1:3001".into());
-        let auth_uri =
-            env::var("HIVE_AUTH_ORIGIN").unwrap_or_else(|_| "http://127.0.0.1:3000".into());
+        let runtime = crate::runtime::RuntimeConfig::load()?;
+        let public_url = env::var("HIVE_PUBLIC_URL").unwrap_or_else(|_| runtime.public_url.clone());
+        let auth_uri = env::var("HIVE_AUTH_ORIGIN").unwrap_or_else(|_| runtime.auth_origin.clone());
         let public_url = validate_url(&public_url)?;
         let auth_uri = validate_url(&auth_uri)?;
         if reqwest::Url::parse(&auth_uri)?.path() != "/" {
@@ -31,11 +31,10 @@ impl Settings {
             .1
             .to_owned();
         let facilitator_url = validate_url(
-            &env::var("X402_FACILITATOR_URL")
-                .unwrap_or_else(|_| "https://x402.org/facilitator".into()),
+            &env::var("X402_FACILITATOR_URL").unwrap_or_else(|_| runtime.facilitator_url.clone()),
         )?;
         let rpc_url = validate_url(
-            &env::var("BASE_SEPOLIA_RPC_URL").unwrap_or_else(|_| "https://sepolia.base.org".into()),
+            &env::var("BASE_SEPOLIA_RPC_URL").unwrap_or_else(|_| runtime.rpc_url.clone()),
         )?;
         let optional = |key| env::var(key).ok().filter(|s| !s.is_empty());
         Ok(Self {
@@ -47,7 +46,7 @@ impl Settings {
             dodo_api_url: {
                 let value = validate_url(
                     &env::var("DODO_PAYMENTS_API_URL")
-                        .unwrap_or_else(|_| "https://test.dodopayments.com".into()),
+                        .unwrap_or_else(|_| runtime.dodo_api_url.clone()),
                 )?;
                 let url = reqwest::Url::parse(&value)?;
                 if !matches!(
@@ -61,6 +60,7 @@ impl Settings {
             dodo_api_key: optional("DODO_PAYMENTS_API_KEY"),
             dodo_webhook_secret: optional("DODO_PAYMENTS_WEBHOOK_SECRET"),
             dodo_product_id: optional("DODO_PAYMENTS_PRODUCT_ID"),
+            runtime,
         })
     }
 }

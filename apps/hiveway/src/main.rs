@@ -19,7 +19,9 @@ async fn serve() -> anyhow::Result<()> {
     let state = AppState::connect(&config).await?;
     let worker_state = state.clone();
     let worker = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+            worker_state.settings.runtime.worker.interval_seconds,
+        ));
         loop {
             interval.tick().await;
             if let Err(error) = hiveway::features::pollen::worker::tick(&worker_state).await {

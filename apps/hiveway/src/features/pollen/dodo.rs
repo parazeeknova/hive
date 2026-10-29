@@ -275,7 +275,7 @@ pub async fn reconcile(state: &AppState, id: Uuid, credential: Uuid) -> ApiResul
 /// # Errors
 /// Returns database or provider failures; events remain retryable.
 pub async fn process_events(state: &AppState) -> ApiResult<()> {
-    let events=state.postgres.query_all_raw(statement("SELECT event_id,payment_id,event_type FROM payment_webhook_inbox WHERE processed_at IS NULL AND attempts<20 ORDER BY received_at LIMIT 20",vec![])).await?;
+    let events=state.postgres.query_all_raw(statement("SELECT event_id,payment_id,event_type FROM payment_webhook_inbox WHERE processed_at IS NULL AND attempts<$1 ORDER BY received_at LIMIT $2",vec![state.settings.runtime.worker.webhook_max_attempts.into(),state.settings.runtime.worker.batch_size.into()])).await?;
     for event in events {
         let id: String = event.try_get("", "event_id")?;
         let payment: Option<String> = event.try_get("", "payment_id")?;
@@ -304,6 +304,7 @@ pub async fn process_events(state: &AppState) -> ApiResult<()> {
 #[cfg(test)]
 mod tests {
     use super::identifier;
+    #[cfg(not(miri))]
     use axum::http::{HeaderMap, HeaderValue};
     #[test]
     fn canonical_checkout_rejects_amount_and_session_tampering()
@@ -365,6 +366,8 @@ mod tests {
         }
         assert!(identifier("pay_abc123").is_ok());
     }
+    // The upstream verifier requires a real wall clock; native HTTP tests cover it.
+    #[cfg(not(miri))]
     #[test]
     fn signatures_bind_raw_payload_and_timestamp() -> Result<(), Box<dyn std::error::Error>> {
         use base64::Engine;

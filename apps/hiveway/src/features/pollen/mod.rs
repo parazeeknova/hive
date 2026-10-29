@@ -9,9 +9,9 @@ use crate::{
         common::{
             error::{ApiError, ApiResult},
             model::{
-                ASSET, Capability, Credential, Invocation, NETWORK, PaymentPayload,
-                PaymentRequired, PaymentRequirements, QuoteRequest, QuoteResponse, Receipt,
-                RepositoryInput, Resource, Settlement, now,
+                Capability, Credential, Invocation, PaymentPayload, PaymentRequired,
+                PaymentRequirements, QuoteRequest, QuoteResponse, Receipt, RepositoryInput,
+                Resource, Settlement, now,
             },
         },
         identity,
@@ -230,12 +230,12 @@ pub async fn quote(
     let expires_at = at + 120;
     let requirements = PaymentRequirements {
         scheme: "exact".into(),
-        network: NETWORK.into(),
+        network: state.settings.runtime.payment.network(),
         amount: cap.price.to_string(),
-        asset: ASSET.into(),
+        asset: state.settings.runtime.payment.asset.clone(),
         pay_to: cap.creator_wallet,
         max_timeout_seconds: 120,
-        extra: json!({"name":"USDC","version":"2"}),
+        extra: json!({"name":state.settings.runtime.payment.name,"version":state.settings.runtime.payment.version}),
     };
     let resource = Resource {
         url: format!("{}/v1/invocations/{id}", state.settings.public_url),
@@ -348,7 +348,7 @@ async fn execute_and_settle(
     let execution_started = std::time::Instant::now();
     let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
     let result = match tokio::time::timeout(
-        std::time::Duration::from_secs(60),
+        std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
         cell::execute_capability(state, inv.capability_id, &input),
     )
     .await
@@ -450,7 +450,7 @@ pub async fn reconcile_inner(
                 vec![(inv.price).into(), (credential_id).into()],
             ))
             .await?;
-            tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO creator_sales(invocation_id,creator_wallet,payer_wallet,amount,network,transaction_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", vec![(id).into(), (identity::wallet(&requirements.pay_to)?).into(), (identity::wallet(&payload.payload.authorization.from)?).into(), (inv.price).into(), (NETWORK).into(), (&settlement.transaction).into(), (now()).into()])).await?;
+            tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres, "INSERT INTO creator_sales(invocation_id,creator_wallet,payer_wallet,amount,network,transaction_hash,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", vec![(id).into(), (identity::wallet(&requirements.pay_to)?).into(), (identity::wallet(&payload.payload.authorization.from)?).into(), (inv.price).into(), state.settings.runtime.payment.network().into(), (&settlement.transaction).into(), (now()).into()])).await?;
         }
         tx.commit().await?;
     }

@@ -1,0 +1,34 @@
+# Public operational defaults. Override this file with HIVE_CONFIG_FILE, and URLs
+# or secrets with environment variables. Changes take effect on process restart.
+listen_address = "127.0.0.1:3001"
+public_url = "http://127.0.0.1:3001"
+auth_origin = "http://127.0.0.1:3000"
+facilitator_url = "https://x402.org/facilitator"
+rpc_url = "https://sepolia.base.org"
+dodo_api_url = "https://test.dodopayments.com"
+
+[http]
+concurrency = 32
+requests_per_minute = 120
+tracked_peers = 4096
+body_bytes = 131072
+body_timeout_seconds = 5
+request_timeout_seconds = 180
+
+[infrastructure]
+postgres_connections = 5
+connection_timeout_seconds = 5
+outbound_timeout_seconds = 30
+
+[worker]
+interval_seconds = 5
+batch_size = 20
+webhook_max_attempts = 20
+execution_timeout_seconds = 60
+stale_after_seconds = 180
+
+[payment]
+chain_id = 84532
+asset = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+name = "USDC"
+version = "2"

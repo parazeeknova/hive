@@ -6,6 +6,8 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("HIVE_BIND_ADDRESS must be a socket address")]
     InvalidBindAddress,
+    #[error("invalid Hiveway operational configuration")]
+    InvalidRuntimeConfiguration,
 }
 
 pub struct Config {
@@ -21,6 +23,8 @@ impl Config {
     /// # Errors
     /// Returns an error when a required connection URL is absent.
     pub fn from_env() -> Result<Self, ConfigError> {
+        let runtime = crate::runtime::RuntimeConfig::load()
+            .map_err(|_| ConfigError::InvalidRuntimeConfiguration)?;
         let required = |name| {
             env::var(name)
                 .ok()
@@ -29,7 +33,7 @@ impl Config {
         };
         Ok(Self {
             bind_address: env::var("HIVE_BIND_ADDRESS")
-                .unwrap_or_else(|_| "127.0.0.1:3001".into())
+                .unwrap_or_else(|_| runtime.listen_address.to_string())
                 .parse()
                 .map_err(|_| ConfigError::InvalidBindAddress)?,
             database_url: required("DATABASE_URL")?,

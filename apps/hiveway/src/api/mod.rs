@@ -33,7 +33,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/webhooks/dodo", post(pollen::dodo::webhook))
         .route("/v1/sales", get(waggle::sales))
-        .layer(DefaultBodyLimit::max(131_072))
+        .layer(DefaultBodyLimit::disable())
 }
 /// # Errors
 /// Rejects an origin that cannot be represented as an HTTP header.
@@ -84,5 +84,15 @@ pub async fn ready(
 
 /// Add admission control after attaching shared state.
 pub fn protect(router: Router, state: AppState) -> Router {
-    router.layer(axum::middleware::from_fn_with_state(state, guard::guard))
+    let admission = guard::Admission {
+        requests: std::sync::Arc::new(tokio::sync::Semaphore::new(
+            state.settings.runtime.http.concurrency,
+        )),
+        peers: std::sync::Arc::default(),
+        state,
+    };
+    router.layer(axum::middleware::from_fn_with_state(
+        admission,
+        guard::guard,
+    ))
 }

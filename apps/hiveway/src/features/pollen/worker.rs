@@ -26,7 +26,7 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
     let start = Instant::now();
     let input: RepositoryInput = serde_json::from_value(inv.input.clone())?;
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(60),
+        std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
         cell::execute_capability(state, inv.capability_id, &input),
     )
     .await;
@@ -92,8 +92,8 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
         tracing::warn!(error = error.code, "Dodo webhook processing pending");
     }
     // Recover read-only Dodo executions after a crash. Payment was already booked.
-    state.postgres.execute_raw(statement("UPDATE invocations SET state='paid',updated_at=$1 WHERE payment_method='dodo' AND state='executing' AND updated_at<$2",vec![now().into(),(now()-180).into()])).await?;
-    let rows=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE state IN ('paid','settling','settlement_unknown','checkout_pending') ORDER BY CASE WHEN state='paid' THEN 0 ELSE 1 END,COALESCE(worker_started_at,0) LIMIT 20",vec![])).all(&state.postgres).await?;
+    state.postgres.execute_raw(statement("UPDATE invocations SET state='paid',updated_at=$1 WHERE payment_method='dodo' AND state='executing' AND updated_at<$2",vec![now().into(),(now()-state.settings.runtime.worker.stale_after_seconds).into()])).await?;
+    let rows=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE state IN ('paid','settling','settlement_unknown','checkout_pending') ORDER BY CASE WHEN state='paid' THEN 0 ELSE 1 END,COALESCE(worker_started_at,0) LIMIT $1",vec![state.settings.runtime.worker.batch_size.into()])).all(&state.postgres).await?;
     for inv in rows {
         if inv.state != "paid" {
             state
@@ -122,7 +122,7 @@ pub async fn tick(state: &AppState) -> ApiResult<()> {
     }
     // Release abandoned pre-settlement x402 executions only after the request's
     // bounded execution window. A state CAS in the request prevents later settlement.
-    let abandoned=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE payment_method='x402' AND state IN ('verifying','executing') AND updated_at<$1 LIMIT 20",vec![(now()-180).into()])).all(&state.postgres).await?;
+    let abandoned=Invocation::find_by_statement(statement("SELECT * FROM invocations WHERE payment_method='x402' AND state IN ('verifying','executing') AND updated_at<$1 LIMIT $2",vec![(now()-state.settings.runtime.worker.stale_after_seconds).into(),state.settings.runtime.worker.batch_size.into()])).all(&state.postgres).await?;
     for inv in abandoned {
         super::fail(state, inv.id, inv.credential_id, "execution_interrupted").await?;
     }

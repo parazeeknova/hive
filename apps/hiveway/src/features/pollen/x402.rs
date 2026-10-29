@@ -2,10 +2,7 @@ use crate::{
     features::{
         common::{
             error::{ApiError, ApiResult},
-            model::{
-                ASSET, CHAIN_ID, Invocation, NETWORK, PaymentPayload, PaymentRequirements,
-                Resource, Settlement,
-            },
+            model::{Invocation, PaymentPayload, PaymentRequirements, Resource, Settlement},
         },
         identity,
     },
@@ -47,12 +44,14 @@ pub async fn supported(state: &AppState) -> ApiResult<()> {
         .map_err(|_| ApiError::unavailable("facilitator_unavailable"))?;
     let data: Value = json_response(response).await?;
     if !data["kinds"].as_array().is_some_and(|kinds| {
-        kinds
-            .iter()
-            .any(|k| k["x402Version"] == 2 && k["scheme"] == "exact" && k["network"] == NETWORK)
+        kinds.iter().any(|k| {
+            k["x402Version"] == 2
+                && k["scheme"] == "exact"
+                && k["network"] == state.settings.runtime.payment.network()
+        })
     }) {
         return Err(ApiError::unavailable(
-            "facilitator_does_not_support_base_sepolia_exact_v2",
+            "facilitator_does_not_support_configured_network",
         ));
     }
     Ok(())
@@ -127,7 +126,11 @@ pub fn validate(
     if signature.len() != 65 {
         return Err(ApiError::bad("eoa_payment_signature_required"));
     }
-    Ok(format!("{NETWORK}:{payer}:{}", hex::encode(nonce)))
+    Ok(format!(
+        "{}:{payer}:{}",
+        requirements.network,
+        hex::encode(nonce)
+    ))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,7 +203,7 @@ pub async fn block_number(state: &AppState) -> ApiResult<String> {
     if chain
         .as_str()
         .and_then(|n| u64::from_str_radix(n.trim_start_matches("0x"), 16).ok())
-        != Some(CHAIN_ID)
+        != Some(state.settings.runtime.payment.chain_id)
     {
         return Err(ApiError::unavailable("wrong_payment_network"));
     }
@@ -234,7 +237,7 @@ pub async fn confirm(
         return Ok(None);
     };
     let nonce = payload.payload.authorization.nonce.to_lowercase();
-    let logs=rpc(state,"eth_getLogs",json!([{"address":ASSET,"fromBlock":from_block,"toBlock":"latest","topics":[topic("AuthorizationUsed(address,bytes32)"),address_topic(&payload.payload.authorization.from)?,nonce]}])).await?;
+    let logs=rpc(state,"eth_getLogs",json!([{"address":state.settings.runtime.payment.asset,"fromBlock":from_block,"toBlock":"latest","topics":[topic("AuthorizationUsed(address,bytes32)"),address_topic(&payload.payload.authorization.from)?,nonce]}])).await?;
     let Some(log) = logs
         .as_array()
         .and_then(|l| l.iter().find(|l| l["removed"] != true))
@@ -258,7 +261,7 @@ pub async fn confirm(
         logs.iter().any(|l| {
             l["address"]
                 .as_str()
-                .is_some_and(|a| a.eq_ignore_ascii_case(ASSET))
+                .is_some_and(|a| a.eq_ignore_ascii_case(&state.settings.runtime.payment.asset))
                 && l["topics"][0] == transfer
                 && l["topics"][1] == from
                 && l["topics"][2] == to
@@ -274,7 +277,7 @@ pub async fn confirm(
     Ok(Some(Settlement {
         success: true,
         transaction: tx_hash.to_owned(),
-        network: NETWORK.into(),
+        network: state.settings.runtime.payment.network(),
         payer: Some(identity::wallet(&payload.payload.authorization.from)?),
         error_reason: None,
     }))

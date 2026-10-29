@@ -3,6 +3,7 @@ pub mod config;
 pub mod database;
 pub mod entities;
 pub mod features;
+pub mod runtime;
 pub mod state;
 pub mod telemetry;
 
