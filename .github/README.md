@@ -204,3 +204,17 @@ Matching tool outputs does not establish equivalent model capability or task suc
 - **Creator economics:** development, deployment, maintenance, and profit are not measured here. A lower customer cost does not establish lower total network cost or positive creator margins.
 
 </details>
+
+## Run the Hiveway payment demo locally
+
+Enter the Nix environment with `devenv shell`, then run `bun install --frozen-lockfile`.
+
+- `HIVE_LOCAL_PAYMENTS=1 bun run dev` starts the ordinary development stack plus an isolated Anvil chain, deploys/funds a local test token, starts the Docker x402 facilitator, and runs Hiveway with generated payment configuration. It also starts Nectar.
+- For backend-only work, start PostgreSQL/Redis with `docker compose up -d --wait postgres redis`, run `bun packages/local/src/chain/start.ts`, then `bun packages/local/src/agents/serve.ts` in a separate terminal.
+- Run `HIVE_DEMO_REVISION=<full-commit-sha> bun packages/local/src/agents/demo.ts`. Set `HIVE_DEMO_REPOSITORY` to analyze a different public GitHub repository.
+
+The demo uses independent creator/buyer wallets and scoped credentials, publishes and discovers a built-in repository-analysis capability, settles a signed x402 transfer, verifies the creator's token balance and sales entry, and checks that replaying the invocation does not charge twice. These are API clients, not autonomous model agents; this demo does not measure token savings. The chain is isolated, its accounts are public fixtures, and its tokens have no value. No public-chain funds are required. Generated configuration stays under ignored `.hive/local/`.
+
+Local tooling is grouped under `packages/local/src/chain`, `config`, `payments`, and `agents`. The backend-only demo launcher explicitly clears Dodo and model-provider keys so local acceptance does not use external payment credentials.
+
+For an uncertain Dodo checkout whose payment later succeeded, the owning credential can submit `{"payment_id":"pay_..."}` to `POST /v1/invocations/{id}/checkout/recover`. Hiveway re-reads the provider payment/session and verifies every binding before accounting for the payment. Signed successful-payment webhooks also attempt this recovery. Unverifiable payments remain in review with their reservations held.
