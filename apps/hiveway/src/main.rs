@@ -15,7 +15,8 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn serve() -> anyhow::Result<()> {
-    let state = AppState::connect(&Config::from_env()?).await?;
+    let config = Config::from_env()?;
+    let state = AppState::connect(&config).await?;
     let worker_state = state.clone();
     let worker = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
@@ -26,10 +27,10 @@ async fn serve() -> anyhow::Result<()> {
             }
         }
     });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3001").await?;
+    let listener = tokio::net::TcpListener::bind(config.bind_address).await?;
     tracing::info!(
         service = "hiveway",
-        address = "127.0.0.1:3001",
+        address = %config.bind_address,
         "Hiveway ready"
     );
     let result = axum::serve(

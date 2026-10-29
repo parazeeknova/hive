@@ -1,5 +1,5 @@
 use crate::{
-    features::{identity, pollen, scout, waggle, wax},
+    features::{comb, hiveway, identity, pollen, scout, waggle, wax},
     state::AppState,
 };
 use axum::{
@@ -12,6 +12,10 @@ use tower_http::cors::CorsLayer;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/mcp", post(hiveway::gateway))
+        .route("/api/ready", get(ready))
+        .route("/v1/workflows", post(comb::compose))
+        .route("/v1/activity", get(waggle::activity))
         .route("/v1/auth/challenges", post(identity::challenge))
         .route("/v1/auth/verify", post(identity::verify))
         .route("/v1/credentials/me", get(identity::me))
@@ -41,9 +45,38 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
             header::CONTENT_TYPE,
             header::HeaderName::from_static("idempotency-key"),
             header::HeaderName::from_static("payment-signature"),
+            header::HeaderName::from_static("mcp-protocol-version"),
+            header::HeaderName::from_static("mcp-method"),
+            header::HeaderName::from_static("mcp-name"),
         ])
         .expose_headers([
             header::HeaderName::from_static("payment-required"),
             header::HeaderName::from_static("payment-response"),
         ]))
+}
+
+/// Infrastructure readiness, separate from process liveness.
+/// # Errors
+/// Returns service-unavailable errors when PostgreSQL or Redis is unavailable.
+#[utoipa::path(get,path="/api/ready",responses((status=200,description="Infrastructure connected")))]
+pub async fn ready(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> crate::features::common::error::ApiResult<axum::Json<serde_json::Value>> {
+    use crate::features::common::error::ApiError;
+    use fred::prelude::ClientLike;
+    state
+        .postgres
+        .ping()
+        .await
+        .map_err(|_| ApiError::unavailable("postgres_unavailable"))?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        state.redis.ping::<String>(None),
+    )
+    .await
+    .map_err(|_| ApiError::unavailable("redis_unavailable"))?
+    .map_err(|_| ApiError::unavailable("redis_unavailable"))?;
+    Ok(axum::Json(
+        serde_json::json!({"status":"ok","postgres":"ok","redis":"ok"}),
+    ))
 }

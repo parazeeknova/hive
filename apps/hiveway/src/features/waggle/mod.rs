@@ -25,3 +25,23 @@ pub async fn sales(
         .await?;
     Ok(Json(values))
 }
+
+/// Read this credential's invocation history without exposing payment signatures.
+/// # Errors
+/// Rejects invalid credentials and returns database failures.
+#[utoipa::path(get,path="/v1/activity",responses((status=200,body=serde_json::Value)))]
+pub async fn activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    let agent = identity::authenticate(&state, &headers, "receipts:read").await?;
+    let records = crate::entities::invocations::Entity::find()
+        .filter(crate::entities::invocations::Column::CredentialId.eq(agent.id))
+        .order_by_desc(crate::entities::invocations::Column::CreatedAt)
+        .limit(100)
+        .all(&state.postgres)
+        .await?;
+    Ok(Json(
+        serde_json::json!({"invocations":records.into_iter().map(|r|serde_json::json!({"id":r.id,"capability_id":r.capability_id,"state":r.state,"price":r.price.to_string(),"payment_method":r.payment_method,"payment_issue":r.payment_issue,"execution_ms":r.execution_ms,"result_bytes":r.result_bytes,"created_at":r.created_at,"completed_at":r.completed_at})).collect::<Vec<_>>(),"budget":{"limit":agent.total_limit.to_string(),"spent":agent.spent.to_string(),"reserved":agent.reserved.to_string()}}),
+    ))
+}

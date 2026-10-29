@@ -36,6 +36,9 @@ pub struct Health {
     ),
     paths(
         health,
+        api::ready,
+        features::comb::compose,
+        features::waggle::activity,
         features::identity::challenge,
         features::identity::verify,
         features::identity::me,
