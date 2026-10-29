@@ -20,11 +20,11 @@
     },
     "apps/hiveway": {
       "name": "@hive/hiveway",
-      "version": "0.0.11",
+      "version": "0.0.12",
     },
     "apps/nectar": {
       "name": "@hive/nectar",
-      "version": "0.0.11",
+      "version": "0.0.12",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "@opentelemetry/exporter-logs-otlp-http": "^0.300.0",
