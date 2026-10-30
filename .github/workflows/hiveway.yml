@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/hiveway/**"
+      - "apps/nectar/**"
       - "packages/**"
       - "scripts/**"
       - "docker/**"
@@ -57,6 +58,10 @@ jobs:
         run: devenv shell -- bun run check --ci
       - name: Types, dependency audit and isolated Miri
         run: devenv shell -- bun run check-types --ci
+      - name: Nectar contract tests and production build
+        run: |
+          devenv shell -- bun test scripts/tests
+          devenv shell -- bun --cwd apps/nectar next build
       - name: PostgreSQL and security integration tests
         run: devenv shell -- cargo test --locked --workspace --all-targets --all-features -- --include-ignored
       - name: Start isolated payment infrastructure

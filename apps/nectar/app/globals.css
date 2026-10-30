@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-display: var(--font-subjectivity), sans-serif;
+  --font-body: var(--font-manrope), sans-serif;
+  --font-ui: var(--font-manrope), sans-serif;
+}
+
+@theme {
+  --shadow-nav:
+    0 1px 2px rgb(0 0 0 / 0.035), 0 6px 18px -12px rgb(0 0 0 / 0.12);
+  --shadow-soft:
+    0 4px 6px -5px rgb(66 69 41 / 0.05), 0 16px 45px -24px rgb(66 69 41 / 0.14);
+  --shadow-peek:
+    0 0 0 6px rgb(255 255 255 / 0.2), 0 20px 60px -22px rgb(97 80 32 / 0.3);
+  --text-hero: clamp(2.25rem, 4.6vw, 4.125rem);
+  --text-hero--line-height: 1.17;
+  --text-hero--letter-spacing: -0.06em;
+  --animate-bee-float: bee-float 11s ease-in-out infinite;
+  --animate-bee-float-slow: bee-float 14s ease-in-out infinite;
+}
+
+/* Broad face lighting and soft inset shading give the capsule a convex shape. */
+@utility surface-light {
+  border: 1px solid transparent;
+  background:
+    radial-gradient(ellipse at 50% 0%, #ffffff99, transparent 70%) padding-box,
+    linear-gradient(
+        180deg,
+        #f9f9f9 0%,
+        #fefefe 20%,
+        #fff 42%,
+        #fcfcfc 72%,
+        #f3f3f3 100%
+      )
+      padding-box,
+    linear-gradient(180deg, #f1f1f1, #dedede) border-box;
+  box-shadow:
+    inset 0 2px 3px rgb(255 255 255 / 0.8),
+    inset 0 -3px 6px rgb(0 0 0 / 0.035),
+    inset 2px 0 4px rgb(255 255 255 / 0.5),
+    inset -2px 0 4px rgb(0 0 0 / 0.01);
+}
+
+@utility surface-dark {
+  border: 1px solid transparent;
+  background:
+    radial-gradient(ellipse at 50% 0%, #ffffff0c, transparent 70%) padding-box,
+    linear-gradient(
+        180deg,
+        #333 0%,
+        #222 24%,
+        #151515 58%,
+        #101010 80%,
+        #1b1b1b 100%
+      )
+      padding-box,
+    linear-gradient(180deg, #505050, #171717 65%, #080808) border-box;
+  box-shadow:
+    inset 0 1px 2px rgb(255 255 255 / 0.2),
+    inset 0 -2px 4px rgb(0 0 0 / 0.4),
+    inset 1px 0 3px rgb(255 255 255 / 0.045);
+}
+
+/* Override only the face so the glass retains the capsule's inset lighting. */
+@utility surface-glass {
+  background: linear-gradient(
+      180deg,
+      rgb(249 249 249 / 0.84) 0%,
+      rgb(254 254 254 / 0.8) 20%,
+      rgb(255 255 255 / 0.78) 42%,
+      rgb(252 252 252 / 0.8) 72%,
+      rgb(243 243 243 / 0.84) 100%
+    )
+    padding-box;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-stone-50);
+    color: var(--color-stone-800);
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button,
+  summary,
+  select {
+    cursor: pointer;
+  }
+
+  button {
+    color: inherit;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  button svg,
+  a svg {
+    flex-shrink: 0;
+  }
+
+  ::selection {
+    background: var(--color-amber-200);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-amber-600);
+    outline-offset: 4px;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bee-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-1deg);
+  }
+  50% {
+    transform: translate3d(5px, -9px, 0) rotate(1deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .entrance {
+    animation: arrive 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .entrance.product-peek {
+    animation-delay: 0.12s;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entrance {
+    animation: none;
+  }
+}
