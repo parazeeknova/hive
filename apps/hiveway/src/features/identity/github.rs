@@ -103,6 +103,8 @@ pub async fn exchange(
         scopes: Set(vec![
             "capabilities:read".into(),
             "capabilities:invoke".into(),
+            "capabilities:publish".into(),
+            "workflows:publish".into(),
             "repository:analyze".into(),
             "receipts:read".into(),
         ]),

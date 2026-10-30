@@ -60,8 +60,8 @@ const Docs = () => (
               Account settings → API keys
             </Link>{" "}
             and sign in with GitHub to create a named, short-lived key for free
-            capabilities. A wallet is optional for free tools; connect one for
-            paid invocations or publishing. Keep the token private and use your
+            capabilities and free publishing. Connect a wallet for paid
+            invocations or paid publishing. Keep the token private and use your
             client’s environment-variable support where available.
           </p>
           <p className="mt-3 leading-7 text-stone-600">

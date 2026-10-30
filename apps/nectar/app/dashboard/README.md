@@ -25,3 +25,5 @@ Free MCP credentials can be created from a GitHub session with `POST /v1/account
 ## API keys
 
 The API keys tab creates named keys, lists metadata, and removes keys by revoking the underlying credential. Full secrets are returned once on creation and stored only as hashes. `GET /v1/account/credentials` excludes browser sessions and token material; `POST /v1/account/credentials/{id}/revoke` checks ownership and immediately invalidates authentication. Only GitHub browser sessions can manage keys. Issued API keys cannot list, create, or revoke other keys. The account permits up to 100 unrevoked keys, including expired keys that can be removed. Existing free-agent credentials are adopted by the metadata migration.
+
+GitHub accounts can upload Wasm artifacts and publish zero-price capabilities and workflows without a wallet. Paid publication requires a payout wallet. Existing browser sessions receive free-publishing permissions automatically; existing API keys retain their original scopes, so issue a new key for agent publication.

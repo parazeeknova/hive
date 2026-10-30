@@ -69,7 +69,8 @@ const ApiKeys = () => {
           <h2 id="api-keys-heading">API keys</h2>
           <p>
             Connect your agents and tools to Hive. A wallet is optional for free
-            capabilities.
+            capabilities and free publishing. Create a new key to grant
+            publishing access to an agent.
           </p>
         </div>
         <button

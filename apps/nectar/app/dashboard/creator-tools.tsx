@@ -87,9 +87,11 @@ const CreatorTools = ({
         </select>
       </label>
       <p>
-        Prices use atomic USDC units (1 USDC = 1000000). Wasm publishing
-        requires runtime “wasm” and an artifact_id from a successful upload.
-        Workflows accept up to four owned repository capability IDs in steps.
+        GitHub accounts can upload and publish free tools with price 0. Connect
+        a wallet to publish paid tools. Prices use atomic USDC units (1 USDC =
+        1000000). Wasm publishing requires runtime “wasm” and an artifact_id
+        from a successful upload. Workflows accept up to four owned repository
+        capability IDs in steps.
       </p>
       <label className="ws-field">
         Definition JSON

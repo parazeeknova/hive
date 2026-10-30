@@ -9,6 +9,8 @@ mod artifacts;
 mod catalog;
 #[path = "security/dodo.rs"]
 mod dodo;
+#[path = "security/free_publishing.rs"]
+mod free_publishing;
 #[path = "security/recovery.rs"]
 mod recovery;
 #[path = "security/refunds.rs"]
@@ -283,6 +285,9 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let token_b = format!("hwa_{}", "b".repeat(64));
     seed(&db, a, b, cap, id, &token_a, &token_b).await?;
     let mut settings = Settings::from_env()?;
+    // This suite exercises many independent authorization scenarios on one test peer.
+    // Rate-limit behavior has dedicated guard tests.
+    settings.runtime.http.requests_per_minute = 1000;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     settings.facilitator_url = format!("http://{}", listener.local_addr()?);
     settings.dodo_api_url = settings.facilitator_url.clone();
@@ -646,8 +651,15 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
     assert_eq!(me["wallet"], "github:123");
     assert_eq!(
         me["scopes"],
-        json!(["capabilities:read", "receipts:read", "capabilities:invoke"])
+        json!([
+            "capabilities:read",
+            "receipts:read",
+            "capabilities:invoke",
+            "capabilities:publish",
+            "workflows:publish"
+        ])
     );
+    free_publishing::exercise(app.clone(), &bearer).await?;
     free_agent_invocation(app.clone(), state, &bearer).await?;
     let (status, _) = attack(
         app.clone(),

@@ -84,7 +84,7 @@ const Home = () => (
           <p className={faqBody}>
             No. Your GitHub account is enough to run free capabilities and
             create API keys for your agents. Connect a wallet when you want to
-            use paid capabilities or publish your own.
+            use paid capabilities or publish paid tools.
           </p>
         </details>
         <details className={faqItem}>
@@ -105,10 +105,10 @@ const Home = () => (
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            Yes. Connect a creator wallet, upload your Wasm artifact, and add a
-            name, description, input and output schemas, and price. Publish it
-            from Account settings or through your agent. You can pause or
-            restore the listing whenever you need to.
+            Yes. Sign in with GitHub, upload your Wasm artifact, and add a name,
+            description, input and output schemas, and price. Publish it from
+            Account settings or through your agent. You can pause or restore the
+            listing whenever you need to.
           </p>
         </details>
         <details className={faqItem}>

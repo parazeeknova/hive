@@ -329,7 +329,8 @@ const AccountSession = ({
       </form>
       <p className="ws-muted">
         Use the MCP endpoint with your agent. Free capabilities work with your
-        GitHub account; publishing and payments use a wallet connection.
+        GitHub account, including publishing free tools. Paid publishing and
+        payments use a wallet connection.
       </p>
       <Json
         value={{
@@ -662,7 +663,7 @@ const AccountPanel = ({
             <p className="ws-fine">
               {credential
                 ? `Showing capabilities owned by ${shortId(credential.wallet)} including inactive listings.`
-                : "Connect your wallet to load your agent’s work."}
+                : "Sign in to load your published capabilities."}
             </p>
           </section>
           {credential?.scopes.includes("capabilities:publish") && (
