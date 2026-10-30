@@ -472,7 +472,6 @@ const AccountPanel = ({
       >
         {profile.data ? (
           <ProfileForm
-            key={profile.data.username}
             profile={profile.data}
             onSave={async (next) => {
               const saved = await hiveway<Profile>("/v1/account", "session", {

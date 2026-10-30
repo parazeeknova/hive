@@ -6,7 +6,6 @@ const robots = (): MetadataRoute.Robots => ({
   rules: indexingEnabled
     ? {
         allow: "/",
-        disallow: ["/api/", "/dashboard", "/sign-in", "/login", "/get-started"],
         userAgent: "*",
       }
     : { disallow: "/", userAgent: "*" },

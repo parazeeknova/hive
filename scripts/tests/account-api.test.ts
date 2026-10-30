@@ -1,7 +1,11 @@
 /// <reference lib="dom" />
 import { afterEach, expect, mock, test } from "bun:test";
 
-import { sendUsdc, transferData } from "../../apps/nectar/lib/account";
+import {
+  sendUsdc,
+  transferData,
+  parseTransferAmount,
+} from "../../apps/nectar/lib/account";
 import type { WalletBalance } from "../../apps/nectar/lib/account";
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -103,4 +107,11 @@ test("a matching wallet reviews the configured token transfer", async () => {
     to: balance.asset,
     value: "0x0",
   });
+});
+
+test("transfer amounts allow balances above capability pricing limits", () => {
+  expect(parseTransferAmount("1001.123456")).toBe("1001123456");
+  for (const value of ["0", "-1", "1.0000001", "1e6", "9".repeat(86)]) {
+    expect(() => parseTransferAmount(value)).toThrow();
+  }
 });

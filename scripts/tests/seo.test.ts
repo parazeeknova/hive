@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import robots from "../../apps/nectar/app/robots";
 import sitemap from "../../apps/nectar/app/sitemap";
 import {
+  indexingEnabled,
   privateMetadata,
   publicMetadata,
   siteUrl,
@@ -19,8 +20,10 @@ describe("public search metadata", () => {
 
   test("sitemap contains content pages only", () => {
     const paths = sitemap().map((entry) => new URL(entry.url).pathname);
-    expect(paths).toEqual(["/", "/docs"]);
-    expect(robots().sitemap).toBe(new URL("/sitemap.xml", siteUrl).href);
+    expect(paths).toEqual(indexingEnabled ? ["/", "/docs"] : []);
+    expect(robots().sitemap).toBe(
+      indexingEnabled ? new URL("/sitemap.xml", siteUrl).href : undefined
+    );
     expect(privateMetadata.robots).toEqual({ follow: false, index: false });
   });
 });

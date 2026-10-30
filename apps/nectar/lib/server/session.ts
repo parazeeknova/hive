@@ -17,7 +17,9 @@ export const session = async () => {
     return null;
   }
   try {
-    return await hiveway<Credential>("/v1/credentials/me", token);
+    return await hiveway<Credential>("/v1/credentials/me", token, {
+      signal: AbortSignal.timeout(5000),
+    });
   } catch {
     return null;
   }

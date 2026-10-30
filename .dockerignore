@@ -8,4 +8,5 @@ target
 .nx
 .hive
 .env*
+**/.env*
 *.log

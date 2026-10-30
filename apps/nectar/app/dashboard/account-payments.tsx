@@ -5,14 +5,8 @@ import type { FormEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import type { WalletBalance } from "../../lib/account";
-import { sendUsdc, networkLabel } from "../../lib/account";
-import {
-  atomicMoney,
-  errorMessage,
-  hiveway,
-  parsePrice,
-  shortId,
-} from "../../lib/hiveway";
+import { sendUsdc, networkLabel, parseTransferAmount } from "../../lib/account";
+import { atomicMoney, errorMessage, hiveway, shortId } from "../../lib/hiveway";
 
 export const SidebarBalance = ({
   token,
@@ -86,7 +80,9 @@ const AccountPaymentDialog = ({
     setBusy(true);
     setMessage("");
     try {
-      setHash(await sendUsdc(balance, recipient.trim(), parsePrice(amount)));
+      setHash(
+        await sendUsdc(balance, recipient.trim(), parseTransferAmount(amount))
+      );
       setMessage(
         "Transaction submitted. Confirm it in your wallet, then refresh the balance after confirmation."
       );

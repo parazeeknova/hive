@@ -28,6 +28,8 @@ use utoipa::{OpenApi, ToSchema};
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct Health {
     pub status: String,
+    pub version: String,
+    pub revision: String,
 }
 
 #[derive(OpenApi)]
@@ -90,6 +92,10 @@ async fn health() -> Json<Health> {
     tracing::info!(service = "hiveway", "Health request");
     Json(Health {
         status: "ok".to_owned(),
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        revision: option_env!("HIVE_BUILD_REVISION")
+            .unwrap_or("development")
+            .to_owned(),
     })
 }
 

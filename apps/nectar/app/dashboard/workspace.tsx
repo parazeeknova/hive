@@ -623,7 +623,7 @@ const Workspace = () => {
             </span>
             <span>
               <strong>
-                {accountProfile.data?.name ??
+                {accountProfile.data?.username ??
                   credential?.name ??
                   "Hive account"}
               </strong>

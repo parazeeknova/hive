@@ -14,6 +14,18 @@ export interface WalletBalance {
   decimals: number;
   dodo_test_checkout: boolean;
 }
+export const parseTransferAmount = (value: string) => {
+  if (!/^\d+(?:\.\d{1,6})?$/u.test(value) || value.length > 85) {
+    throw new Error("Enter a USDC amount with at most six decimal places.");
+  }
+  const [whole = "0", fraction = ""] = value.split(".");
+  const amount = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"));
+  if (amount <= 0n || amount >= 2n ** 256n) {
+    throw new Error("Enter a positive USDC amount within the token limit.");
+  }
+  return amount.toString();
+};
+
 export const transferData = (recipient: string, amount: string) => {
   if (!/^0x[\da-f]{40}$/iu.test(recipient) || /^0x0{40}$/iu.test(recipient)) {
     throw new Error("Enter a valid recipient wallet address.");

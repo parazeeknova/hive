@@ -52,6 +52,7 @@ const CreatorTools = ({
         event.preventDefault();
         setBusy(true);
         setError("");
+        setResult(null);
         try {
           setResult(
             await hiveway(operations[operation].path, token, {

@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -9,6 +11,8 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
       },
     ]),
+  output: "standalone",
+  outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
   poweredByHeader: false,
   serverExternalPackages: [
     "pino",

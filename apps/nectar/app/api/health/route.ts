@@ -31,7 +31,11 @@ export const GET = () =>
         throw new Error("Hiveway returned an invalid health response");
       }
       logger.info("Hiveway health request completed");
-      return Response.json({ hiveway: health, nectar: "ok" });
+      return Response.json({
+        hiveway: health,
+        nectar: "ok",
+        revision: process.env.HIVE_BUILD_REVISION ?? "development",
+      });
     } finally {
       span.end();
     }

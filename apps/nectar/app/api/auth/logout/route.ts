@@ -24,5 +24,5 @@ export const POST = async (request: NextRequest) => {
     }
   }
   jar.delete(sessionCookie);
-  return NextResponse.redirect(`${appOrigin()}/login`, 303);
+  return NextResponse.redirect(`${appOrigin()}/sign-in`, 303);
 };

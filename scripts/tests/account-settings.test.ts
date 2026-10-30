@@ -46,3 +46,10 @@ test("sample input follows published schema examples and nested property types",
     value: "hello",
   });
 });
+
+test("sample strings satisfy bounded minimum lengths", () => {
+  expect(sampleInput({ minLength: 12, type: "string" })).toHaveLength(12);
+  expect(sampleInput({ minLength: 100_000, type: "string" })).toHaveLength(
+    4096
+  );
+});

@@ -2,6 +2,12 @@
 const arrayLength = (value: unknown) =>
   typeof value === "number" ? Math.min(16, Math.max(0, value)) : 1;
 
+const stringSample = (minimum: unknown) =>
+  "sample".padEnd(
+    typeof minimum === "number" ? Math.min(4096, Math.max(0, minimum)) : 0,
+    "a"
+  );
+
 export const sampleInput = (schema: unknown, depth = 0): unknown => {
   if (!schema || typeof schema !== "object" || depth > 8) {
     return null;
@@ -45,7 +51,7 @@ export const sampleInput = (schema: unknown, depth = 0): unknown => {
     return typeof value.minimum === "number" ? value.minimum : 0;
   }
   if (value.type === "string") {
-    return "sample";
+    return stringSample(value.minLength);
   }
   return null;
 };
