@@ -5,7 +5,9 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        db.execute_unprepared("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        // Extension objects must match the qualified operator classes below even
+        // when migrations run with an isolated schema as the search path.
+        db.execute_unprepared("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
             .await?;
         db.execute_unprepared(
             "ALTER TABLE capabilities ADD COLUMN IF NOT EXISTS search_vector tsvector \
