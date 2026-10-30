@@ -67,7 +67,7 @@ pub async fn compose(
         description: Set(request.description),
         version: Set("1".into()),
         runtime: Set("workflow".into()),
-        price: Set(identity::amount(&request.price)?),
+        price: Set(identity::price(&request.price)?),
         active: Set(true),
         created_at: Set(now()),
         definition: Set(serde_json::json!({"steps":request.steps})),

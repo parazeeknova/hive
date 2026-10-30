@@ -42,6 +42,12 @@ pub fn amount(value: &str) -> ApiResult<i64> {
         .filter(|n| (1..=1_000_000_000).contains(n))
         .ok_or_else(|| ApiError::bad("invalid_amount"))
 }
+/// Parse a capability price, including explicitly free tools.
+/// # Errors
+/// Rejects malformed or out-of-range prices.
+pub fn price(value: &str) -> ApiResult<i64> {
+    if value == "0" { Ok(0) } else { amount(value) }
+}
 /// # Errors
 /// Rejects malformed addresses and the zero address.
 pub fn wallet(value: &str) -> ApiResult<String> {

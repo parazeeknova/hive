@@ -53,7 +53,7 @@ pub async fn publish(
         description: Set(request.description),
         version: Set("1".into()),
         runtime: Set(request.runtime),
-        price: Set(identity::amount(&request.price)?),
+        price: Set(identity::price(&request.price)?),
         active: Set(true),
         created_at: Set(now()),
         definition: Set(definition),
