@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import {
-  apiOrigin,
+  publicApiOrigin as apiOrigin,
   atomicMoney,
   errorMessage,
   hiveway,

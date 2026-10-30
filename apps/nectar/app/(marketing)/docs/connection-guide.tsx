@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 
-import { apiOrigin } from "../../../lib/hiveway";
+import { publicApiOrigin as apiOrigin } from "../../../lib/hiveway";
 
 const clients = [
   {

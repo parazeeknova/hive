@@ -9,7 +9,7 @@ import { Icon } from "../../components/icon";
 import type { IconName } from "../../components/icon";
 import type { Profile, WalletBalance } from "../../lib/account";
 import {
-  apiOrigin,
+  publicApiOrigin as apiOrigin,
   atomicMoney,
   errorMessage,
   hiveway,

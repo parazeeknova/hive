@@ -117,10 +117,13 @@ export class HivewayError extends Error {
     this.status = status;
   }
 }
+export const publicApiOrigin = (
+  process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ?? "http://127.0.0.1:3001"
+).replace(/\/$/u, "");
 export const apiOrigin = (
-  process.env.HIVEWAY_ORIGIN ??
-  process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ??
-  "http://127.0.0.1:3001"
+  typeof window === "undefined"
+    ? (process.env.HIVEWAY_ORIGIN ?? publicApiOrigin)
+    : publicApiOrigin
 ).replace(/\/$/u, "");
 const requestUrl = (path: string, token: string) =>
   typeof window !== "undefined" && token === "session"

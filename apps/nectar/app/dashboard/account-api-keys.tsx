@@ -3,7 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Icon } from "../../components/icon";
-import { apiOrigin, errorMessage, hiveway, shortId } from "../../lib/hiveway";
+import {
+  publicApiOrigin as apiOrigin,
+  errorMessage,
+  hiveway,
+  shortId,
+} from "../../lib/hiveway";
 
 interface ApiKey {
   id: string;
