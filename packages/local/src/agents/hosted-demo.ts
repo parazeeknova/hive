@@ -56,12 +56,12 @@ const artifact = await creator.json<{ id: string }>("/v1/artifacts", {
 const capability = await creator.json<{ id: string }>("/v1/capabilities", {
   artifact_id: artifact.id,
   description: "Pure JSON hosted Wasm; dynamically echoes each request",
-  name: `Hosted echo ${crypto.randomUUID()}`,
+  name: "JSON echo",
   price: "10000",
   runtime: "wasm",
 });
 const discovered = await buyer.json<{ id: string }[]>(
-  "/v1/capabilities?q=Hosted%20echo"
+  "/v1/capabilities?q=JSON%20echo"
 );
 if (!discovered.some((item) => item.id === capability.id)) {
   throw new Error("Hosted tool not discovered");

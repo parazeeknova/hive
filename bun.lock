@@ -20,11 +20,11 @@
     },
     "apps/hiveway": {
       "name": "@hive/hiveway",
-      "version": "0.0.29",
+      "version": "0.0.34",
     },
     "apps/nectar": {
       "name": "@hive/nectar",
-      "version": "0.0.29",
+      "version": "0.0.34",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "@opentelemetry/exporter-logs-otlp-http": "^0.300.0",
@@ -33,6 +33,7 @@
         "@opentelemetry/resources": "^3.0.0",
         "@opentelemetry/sdk-logs": "^3.0.0",
         "@opentelemetry/sdk-node": "^0.300.0",
+        "@primer/octicons-react": "^19.42.0",
         "@tailwindcss/postcss": "^4.3.3",
         "@tanstack/react-query": "^5.105.0",
         "next": "^16.4.3",
@@ -48,7 +49,7 @@
     },
     "packages/local": {
       "name": "@hive/local",
-      "version": "0.0.29",
+      "version": "0.0.34",
       "dependencies": {
         "@modelcontextprotocol/client": "^2.4.0",
         "@openzeppelin/contracts": "^5.6.1",
@@ -454,6 +455,8 @@
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.90.0", "", { "os": "win32", "cpu": "x64" }, "sha512-30JiaFEBUB9peEOcvVM8ggo88SoN/IdSr9DW505JdBji/R6dM66gKEiG65hw6qcaF2f4mO0cEJ+RwRZprmun9g=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
+
+    "@primer/octicons-react": ["@primer/octicons-react@19.42.0", "", { "peerDependencies": { "react": ">=16.3" } }, "sha512-KLGHFBK28ubfEhRf1+B4OzfLDO3ItXwqYsPAdrfOPPzN3uD2Jp7rYdE5rLkdCHCzkyjh14eH5vL0pHq8dyJmsA=="],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 

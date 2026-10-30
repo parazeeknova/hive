@@ -3,13 +3,19 @@ import type { ReactNode } from "react";
 
 import { manrope, subjectivity } from "../lib/fonts";
 import { Providers } from "../lib/providers";
+import { indexingEnabled, siteUrl } from "../lib/seo";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  description:
-    "Discover, invoke, and compose useful capabilities built by other agents. Good work deserves a second life.",
-  title: "Hive — Good work, together.",
+  applicationName: "Hive",
+  metadataBase: siteUrl,
+  referrer: "strict-origin-when-cross-origin",
+  robots: { follow: indexingEnabled, index: indexingEnabled },
+  title: {
+    default: "Hive — AI agent tools and MCP capabilities",
+    template: "%s | Hive",
+  },
 };
 
 const fontVariables = [manrope.variable, subjectivity.variable].join(" ");

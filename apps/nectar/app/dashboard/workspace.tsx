@@ -13,14 +13,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Brand } from "../../components/brand";
 import { Icon } from "../../components/icon";
 import type { IconName } from "../../components/icon";
-import {
-  resolveAccountCapability,
-  useAccountPreview,
-} from "../../lib/account-store";
+import type { Profile } from "../../lib/account";
+import { capabilityDisplayName } from "../../lib/capability-name";
 import {
   atomicMoney,
   errorMessage,
-  exampleCapabilities,
   hiveway,
   runtimeLabels,
   shortId,
@@ -127,26 +124,17 @@ const Inspector = ({
         token,
         { signal }
       ),
-    queryKey: ["hive", "artifact", artifactId],
+    queryKey: ["hive", token, "artifact", artifactId],
     staleTime: Infinity,
   });
   const [action, setAction] = useState<"sample" | "invoke" | null>(null);
   const steps = Array.isArray(tool.definition.steps)
     ? tool.definition.steps.filter((id): id is string => typeof id === "string")
     : [];
-  const authorName = shortId(tool.creator_wallet);
-  const initials = tool.creator_wallet.startsWith("0x")
-    ? tool.creator_wallet.slice(2, 4).toUpperCase()
-    : "EC";
   return (
     <>
       <div className="ws-author-row">
-        <span className="ws-author-avatar" aria-hidden="true">
-          {initials}
-        </span>
-        <span className="ws-author-name" title={tool.creator_wallet}>
-          {authorName}
-        </span>
+        <span className="ws-author-name">Capability details</span>
         <button
           className="ws-icon-button ws-detail-close"
           type="button"
@@ -301,20 +289,6 @@ const Inspector = ({
             <p>{limitationDescription}</p>
           </div>
         </details>
-        <details className="ws-detail-section">
-          <summary>
-            <span>Provider</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body">
-            <p>Creator wallet</p>
-            <code className="ws-provider-wallet">{tool.creator_wallet}</code>
-            <p>
-              Version {tool.version}. Author usernames and profile photos are
-              not available from the current API.
-            </p>
-          </div>
-        </details>
       </div>
       <div className="ws-capability-actions">
         <button
@@ -364,14 +338,14 @@ const Workspace = () => {
   });
   const [accountTab, setAccountTab] = useState<AccountTab>(() => {
     const tab = params.get("tab");
-    return tab === "balance" || tab === "capabilities" ? tab : "profile";
+    return tab === "balance" || tab === "capabilities" || tab === "api-keys"
+      ? tab
+      : "profile";
   });
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("newest");
-  const [selectedId, setSelectedId] = useState(
-    params.get("tool") ?? "example-stack"
-  );
+  const [selectedId, setSelectedId] = useState(params.get("tool") ?? "");
   const [detailOpen, setDetailOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -385,8 +359,12 @@ const Workspace = () => {
     queryKey: ["hive", sessionKey, "credential"],
   });
   const credential = me.data ?? session.credential;
-  const accountScope = credential?.wallet.toLowerCase() ?? "preview";
-  const { account, updateAccount } = useAccountPreview(accountScope);
+  const accountProfile = useQuery({
+    queryFn: ({ signal }) =>
+      hiveway<Profile>("/v1/account", "session", { signal }),
+    queryKey: ["hive-account", "profile"],
+  });
+
   const history = useQuery({
     enabled: Boolean(token && credential?.scopes.includes("receipts:read")),
     queryFn: ({ signal }) =>
@@ -425,7 +403,7 @@ const Workspace = () => {
     queryFn: ({ pageParam, signal }) => {
       const search = new URLSearchParams({
         limit: "50",
-        q: ownedView ? "" : debouncedQuery,
+        q: ownedView ? "" : debouncedQuery.trim(),
       });
       if (ownedView) {
         search.set("mine", "true");
@@ -452,8 +430,13 @@ const Workspace = () => {
     ],
   });
   const catalog = token
-    ? (registry.data?.pages.flatMap((page) => page.items) ?? [])
-    : exampleCapabilities;
+    ? (registry.data?.pages.flatMap((page) =>
+        page.items.map((tool) => ({
+          ...tool,
+          name: capabilityDisplayName(tool.name),
+        }))
+      ) ?? [])
+    : [];
   const activity = history.data ?? null;
   const sales = earnings.data ?? [];
   const loading = registry.isFetching;
@@ -465,7 +448,7 @@ const Workspace = () => {
     void client.invalidateQueries({ queryKey: ["hive", sessionKey] });
   }, [client, sessionKey]);
   const disconnect = () => {
-    setToken("");
+    setToken("session");
     setCredential(null);
   };
   const navigate = (next: View, tab?: AccountTab) => {
@@ -526,11 +509,7 @@ const Workspace = () => {
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  const visibleCatalog = token
-    ? catalog
-    : catalog.map((item) =>
-        resolveAccountCapability(item, account.capabilities)
-      );
+  const visibleCatalog = catalog;
   let results = visibleCatalog.filter(
     (item) => item.active && (filter === "all" || item.runtime === filter)
   );
@@ -625,8 +604,8 @@ const Workspace = () => {
         </nav>
         <div className="ws-sidebar-bottom">
           <SidebarBalance
-            balance={account.balance}
-            preview={accountScope === "preview"}
+            token={token}
+            credentialId={credential?.id}
             onOpen={() => navigate("settings", "balance")}
           />
           <Link href="/docs" className="ws-sidebar-link">
@@ -643,7 +622,11 @@ const Workspace = () => {
               <Icon name="wallet" size={16} />
             </span>
             <span>
-              <strong>{account.profile.name}</strong>
+              <strong>
+                {accountProfile.data?.username ??
+                  credential?.name ??
+                  "Hive account"}
+              </strong>
               <small>Account settings</small>
             </span>
             <Icon name="chevron" size={14} />
@@ -853,11 +836,6 @@ const Workspace = () => {
                         </span>
                         <span className="ws-row-meta">
                           <span>{runtimeLabels[tool.runtime]}</span>
-                          <span>
-                            {token
-                              ? shortId(tool.creator_wallet)
-                              : "Example capability"}
-                          </span>
                         </span>
                       </span>
                       <span className="ws-row-price">
@@ -946,27 +924,15 @@ const Workspace = () => {
             />
           ) : (
             <AccountPanel
-              key={accountScope}
-              account={account}
+              credential={credential}
+              capabilities={catalog}
+              token={token}
               tab={accountTab}
               onTabChange={(next) => navigate("settings", next)}
-              scope={accountScope}
-              onUpdate={updateAccount}
-              token={token}
               hasMore={Boolean(registry.hasNextPage)}
               onLoadMore={() => {
                 void registry.fetchNextPage();
               }}
-              credential={credential}
-              capabilities={
-                credential
-                  ? catalog.filter(
-                      (item) =>
-                        item.creator_wallet.toLowerCase() ===
-                        credential.wallet.toLowerCase()
-                    )
-                  : exampleCapabilities
-              }
               loading={loading}
               onRefresh={refreshData}
               onConnect={() => setConnectOpen(true)}

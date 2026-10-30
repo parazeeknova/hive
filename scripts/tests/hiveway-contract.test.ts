@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 
+import { capabilityDisplayName } from "../../apps/nectar/lib/capability-name";
 import {
   atomicMoney,
   hiveway,
@@ -99,4 +100,17 @@ describe("dashboard contract boundaries", () => {
     fetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
     await expect(hiveway("/v1/quotes")).rejects.toThrow("503");
   });
+});
+
+test("legacy demo titles are readable while custom creator names stay unchanged", () => {
+  const id = "54984039-960d-4bf9-be06-f4e69a3b09d4";
+  expect(capabilityDisplayName(`Local repository stack ${id}`)).toBe(
+    "Repository stack report"
+  );
+  expect(capabilityDisplayName(`Hosted echo ${id}`)).toBe("JSON echo");
+  expect(capabilityDisplayName(`Free MCP echo ${id}`)).toBe("Agent echo");
+  expect(capabilityDisplayName(`Custom tool ${id}`)).toBe(`Custom tool ${id}`);
+  expect(capabilityDisplayName("Repository stack report")).toBe(
+    "Repository stack report"
+  );
 });

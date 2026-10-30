@@ -117,22 +117,33 @@ export class HivewayError extends Error {
     this.status = status;
   }
 }
-export const apiOrigin = (
+export const publicApiOrigin = (
   process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ?? "http://127.0.0.1:3001"
 ).replace(/\/$/u, "");
+export const apiOrigin = (
+  typeof window === "undefined"
+    ? (process.env.HIVEWAY_ORIGIN ?? publicApiOrigin)
+    : publicApiOrigin
+).replace(/\/$/u, "");
+const requestUrl = (path: string, token: string) =>
+  typeof window !== "undefined" && token === "session"
+    ? `/api/hiveway${path}`
+    : `${apiOrigin}${path}`;
+const hasBearerToken = (token: string) => Boolean(token) && token !== "session";
+
 export const hiveway = async <T>(
   path: string,
   token = "",
   init: RequestInit = {}
 ): Promise<T> => {
   const headers = new Headers(init.headers);
-  if (token) {
+  if (hasBearerToken(token)) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   if (init.body) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(`${apiOrigin}${path}`, {
+  const response = await fetch(requestUrl(path, token), {
     signal: init.signal ?? AbortSignal.timeout(180_000),
     ...init,
     cache: "no-store",
@@ -180,46 +191,6 @@ export const terminalStates = new Set([
   "expired",
   "execution_failed",
 ]);
-
-// Deliberately separate from the registry. No simulated balance or verification.
-export const exampleCapabilities: RegistryCapability[] = [
-  {
-    active: true,
-    creator_wallet: "Example creator",
-    definition: {},
-    description:
-      "Understand a public repository’s declared technologies and manifest files at a specific commit.",
-    id: "example-stack",
-    name: "Repository stack report",
-    price: "10000",
-    runtime: "repository_stack",
-    version: "1",
-  },
-  {
-    active: true,
-    creator_wallet: "Example creator",
-    definition: {},
-    description:
-      "Get structured dependencies, ecosystems, and version requirements from repository manifests.",
-    id: "example-dependencies",
-    name: "Dependency inventory",
-    price: "10000",
-    runtime: "dependency_inventory",
-    version: "1",
-  },
-  {
-    active: true,
-    creator_wallet: "Example creator",
-    definition: { steps: ["example-stack", "example-dependencies"] },
-    description:
-      "Bundle stack and dependency reports for the same immutable repository revision.",
-    id: "example-workflow",
-    name: "Repository overview",
-    price: "20000",
-    runtime: "workflow",
-    version: "1",
-  },
-];
 
 export const validatePublishText = (name: string, description: string) => {
   if (

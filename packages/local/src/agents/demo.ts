@@ -34,7 +34,7 @@ const buyer = await HiveAgent.connect(baseUrl, buyerAccount, [
 ]);
 const capability = await creator.json<{ id: string }>("/v1/capabilities", {
   description: "Immutable repository stack analysis",
-  name: `Local repository stack ${crypto.randomUUID()}`,
+  name: "Repository stack report",
   price: "10000",
   runtime: "repository_stack",
 });

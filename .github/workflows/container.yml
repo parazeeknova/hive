@@ -1,0 +1,66 @@
+name: Build container
+on:
+  workflow_call:
+    inputs:
+      app:
+        required: true
+        type: string
+    outputs:
+      image:
+        description: Immutable image reference
+        value: ${{ jobs.build.outputs.image }}
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 35
+    outputs:
+      image: ${{ steps.image.outputs.reference }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release metadata
+        id: release
+        env:
+          APP: ${{ inputs.app }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          repository="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hive-${APP}"
+          echo "repository=$repository" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: docker/${{ inputs.app }}/Dockerfile
+          push: true
+          platforms: linux/amd64
+          build-args: HIVE_BUILD_REVISION=${{ github.sha }}
+          tags: |
+            ${{ steps.release.outputs.repository }}:sha-${{ github.sha }}
+            ${{ steps.release.outputs.repository }}:${{ steps.release.outputs.version }}
+            ${{ steps.release.outputs.repository }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=${{ inputs.app }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.app }}
+      - name: Record immutable image
+        id: image
+        env:
+          IMAGE: ${{ steps.release.outputs.repository }}@${{ steps.build.outputs.digest }}
+        run: |
+          echo "reference=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Published $IMAGE" >> "$GITHUB_STEP_SUMMARY"

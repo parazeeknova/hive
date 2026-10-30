@@ -1,51 +1,41 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import type { IconName } from "../../components/icon";
+import type { Profile, WalletBalance } from "../../lib/account";
 import {
-  preferenceFor,
-  resolveAccountCapability,
-} from "../../lib/account-store";
-import type {
-  AccountPreview,
-  CapabilityPreference,
-  Profile,
-} from "../../lib/account-store";
-import {
-  apiOrigin,
+  publicApiOrigin as apiOrigin,
   atomicMoney,
   errorMessage,
   hiveway,
-  parsePrice,
   runtimeLabels,
   shortId,
 } from "../../lib/hiveway";
 import type { Credential, RegistryCapability } from "../../lib/hiveway";
+import ApiKeys from "./account-api-keys";
 import { AccountBalance } from "./account-payments";
+import CreatorTools from "./creator-tools";
 import { EmptyState, Json } from "./workspace-pages";
 
 import "./account.css";
-
-type UpdateAccount = (
-  update: (current: AccountPreview) => AccountPreview
-) => void;
 
 const ProfileForm = ({
   profile,
   onSave,
 }: {
   profile: Profile;
-  onSave: (profile: Profile) => void;
+  onSave: (profile: Profile) => Promise<void>;
 }) => {
   const [changes, setChanges] = useState<Partial<Profile>>({});
   const draft = { ...profile, ...changes };
   const [message, setMessage] = useState("");
-  const file = useRef<HTMLInputElement>(null);
-  const save = (event: FormEvent) => {
+  const [pending, setPending] = useState(false);
+  const save = async (event: FormEvent) => {
     event.preventDefault();
     if (!draft.name.trim() || !/^[a-z\d_-]{3,30}$/u.test(draft.username)) {
       setMessage(
@@ -53,9 +43,16 @@ const ProfileForm = ({
       );
       return;
     }
-    onSave({ ...draft, name: draft.name.trim() });
-    setChanges({});
-    setMessage("Profile saved on this device.");
+    setPending(true);
+    setMessage("");
+    try {
+      await onSave({ ...draft, name: draft.name.trim() });
+      setChanges({});
+      setMessage("Profile saved to your account.");
+    } catch (error) {
+      setMessage(errorMessage(error));
+    }
+    setPending(false);
   };
   return (
     <section className="ws-account-profile" aria-labelledby="profile-heading">
@@ -88,71 +85,14 @@ const ProfileForm = ({
         <div>
           <strong className="ws-profile-name">{profile.name}</strong>
           <p>@{profile.username}</p>
-          <div className="ws-avatar-actions">
-            <button
-              type="button"
-              className="ws-text-button"
-              onClick={() => file.current?.click()}
-            >
-              Change photo
-            </button>
-            {draft.avatar && (
-              <button
-                type="button"
-                className="ws-text-button"
-                onClick={() => setChanges({ ...draft, avatar: "" })}
-              >
-                Remove
-              </button>
-            )}
-          </div>
         </div>
-        <input
-          ref={file}
-          type="file"
-          className="sr-only"
-          tabIndex={-1}
-          aria-label="Upload profile photo"
-          accept="image/png,image/jpeg,image/webp"
-          onChange={(event) => {
-            const image = event.target.files?.[0];
-            event.target.value = "";
-            if (!image) {
-              return;
-            }
-            if (
-              !["image/png", "image/jpeg", "image/webp"].includes(image.type) ||
-              image.size > 1_000_000
-            ) {
-              setMessage(
-                "Choose a PNG, JPEG, or WebP image smaller than 1 MB."
-              );
-              return;
-            }
-            const reader = new FileReader();
-            reader.addEventListener(
-              "load",
-              () => {
-                if (typeof reader.result === "string") {
-                  setChanges((current) => ({
-                    ...current,
-                    avatar: reader.result as string,
-                  }));
-                  setMessage("Photo ready. Save your profile to keep it.");
-                }
-              },
-              { once: true }
-            );
-            reader.addEventListener(
-              "error",
-              () => setMessage("Unable to read that photo. Try another image."),
-              { once: true }
-            );
-            reader.readAsDataURL(image);
-          }}
-        />
       </div>
-      <form onSubmit={save} className="ws-profile-form">
+      <form
+        onSubmit={(event) => {
+          void save(event);
+        }}
+        className="ws-profile-form"
+      >
         <label className="ws-field">
           Name
           <input
@@ -183,9 +123,9 @@ const ProfileForm = ({
           />
         </label>
         <div className="ws-profile-save">
-          <output>{message || "Your name and photo on the hive."}</output>
-          <button type="submit" className="ws-button">
-            Save profile
+          <output>{message || "Your public profile on the hive."}</output>
+          <button type="submit" className="ws-button" disabled={pending}>
+            {pending ? "Saving…" : "Save profile"}
           </button>
         </div>
       </form>
@@ -197,13 +137,16 @@ const SettingSwitch = ({
   checked,
   label,
   onChange,
+  disabled,
 }: {
   checked: boolean;
   label: string;
   onChange: () => void;
+  disabled: boolean;
 }) => (
   <button
     type="button"
+    disabled={disabled}
     role="switch"
     aria-checked={checked}
     aria-label={label}
@@ -216,35 +159,19 @@ const SettingSwitch = ({
 
 const CapabilitySettings = ({
   tool,
-  preference,
-  onUpdate,
   token,
   onRefresh,
 }: {
   tool: RegistryCapability;
-  preference: CapabilityPreference;
   token: string;
   onRefresh: () => void;
-  onUpdate: (pref: CapabilityPreference) => void;
 }) => {
-  const [priceDraft, setPriceDraft] = useState<string | null>(null);
-  const price = priceDraft ?? atomicMoney(preference.paidPrice);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
-  const save = (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      onUpdate({ ...preference, paidPrice: parsePrice(price) });
-      setPriceDraft(null);
-      setMessage("Price saved in this preview.");
-    } catch (error) {
-      setMessage(errorMessage(error));
-    }
-  };
   return (
     <>
       <div className="ws-author-row">
-        <span className="ws-author-avatar" aria-hidden="true">
+        <span className="ws-author-avatar">
           <Icon name="box" size={16} />
         </span>
         <span className="ws-author-name">Your capability</span>
@@ -256,107 +183,61 @@ const CapabilitySettings = ({
       <p className="ws-capability-description">{tool.description}</p>
       <div className="ws-capability-tags">
         <span>{runtimeLabels[tool.runtime]}</span>
-        <span>{preference.active ? "Enabled" : "Disabled"}</span>
+        <span>{tool.active ? "Enabled" : "Disabled"}</span>
       </div>
       <div className="ws-account-settings-section">
         <div className="ws-setting-row">
           <div>
             <h3>Marketplace listing</h3>
             <p>
-              {preference.active
+              {tool.active
                 ? "Available for agents to discover."
                 : "Hidden from the marketplace."}
             </p>
           </div>
           <SettingSwitch
             label="Enable capability on marketplace"
-            checked={preference.active}
-            onChange={() => {
-              if (!token) {
-                onUpdate({ ...preference, active: !preference.active });
-                return;
-              }
-              if (pending) {
-                return;
-              }
+            checked={tool.active}
+            disabled={pending}
+            onChange={async () => {
               setPending(true);
-              void (async () => {
-                try {
-                  await hiveway(
-                    `/v1/capabilities/${tool.id}/availability`,
-                    token,
-                    {
-                      body: JSON.stringify({ active: !tool.active }),
-                      method: "POST",
-                    }
-                  );
-                  setMessage("Marketplace listing updated.");
-                  onRefresh();
-                } catch (error: unknown) {
-                  setMessage(errorMessage(error));
-                }
-                setPending(false);
-              })();
+              setMessage("");
+              try {
+                await hiveway(
+                  `/v1/capabilities/${tool.id}/availability`,
+                  token,
+                  {
+                    body: JSON.stringify({ active: !tool.active }),
+                    method: "POST",
+                  }
+                );
+                setMessage("Marketplace listing updated.");
+                onRefresh();
+              } catch (error) {
+                setMessage(errorMessage(error));
+              }
+              setPending(false);
             }}
           />
         </div>
       </div>
-      <fieldset
-        disabled={Boolean(token)}
-        className="ws-account-settings-section"
-      >
+      <div className="ws-account-settings-section">
         <div className="ws-setting-row">
           <div>
-            <h3>Paid capability</h3>
-            <p>
-              {preference.paid
-                ? "Earn each time your capability is invoked."
-                : "Free for other agents to use."}
-            </p>
+            <h3>
+              {BigInt(tool.price) > 0n ? "Paid capability" : "Free capability"}
+            </h3>
+            <p>{atomicMoney(tool.price)} USDC per invocation.</p>
           </div>
-          <SettingSwitch
-            label="Charge per invocation"
-            checked={preference.paid}
-            onChange={() => {
-              onUpdate({ ...preference, paid: !preference.paid });
-              setMessage("Pricing preference saved in this preview.");
-            }}
-          />
         </div>
-        <form onSubmit={save} className="ws-capability-price-form">
-          <label className="ws-field">
-            Price per call · USDC
-            <input
-              inputMode="decimal"
-              value={preference.paid ? price : "0.00"}
-              disabled={!preference.paid}
-              onChange={(event) => setPriceDraft(event.target.value)}
-              required
-              aria-describedby="account-price-note"
-            />
-          </label>
-          <p id="account-price-note" className="ws-fine">
-            {preference.paid
-              ? "Up to six decimal places. Set the amount charged per invocation."
-              : "No charge per invocation. Your previous paid price is kept for later."}
-          </p>
-          <button
-            type="submit"
-            className="ws-button ws-primary"
-            disabled={!preference.paid}
-          >
-            Save price <Icon name="check" size={14} />
-          </button>
-        </form>
-      </fieldset>
-      <output className="ws-account-edit-status">
-        {message || "Select a setting to update your capability."}
+        <p className="ws-fine">
+          Prices and code are immutable. Publish a new capability to change the
+          price.
+        </p>
+      </div>
+      <output className="ws-account-edit-status" aria-live="polite">
+        {message}
       </output>
-      <p className="ws-fine">
-        {token
-          ? "Listing availability is saved to Hive. Prices and code are immutable; publish a new capability to change pricing."
-          : "Example preferences are saved on this device."}
-      </p>
     </>
   );
 };
@@ -372,19 +253,9 @@ const AccountSession = ({
   onConnect: () => void;
   onDisconnect: () => void;
 }) => {
-  const [copyStatus, setCopyStatus] = useState("");
-  const copyToken = async () => {
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopyStatus(
-        "Credential copied. Keep it private; it expires with this session."
-      );
-    } catch {
-      setCopyStatus(
-        "Clipboard unavailable. Reconnect with a credential you already control."
-      );
-    }
-  };
+  const walletConnected = Boolean(
+    credential && !credential.wallet.startsWith("github:")
+  );
   return (
     <details open className="ws-account-session">
       <summary>
@@ -397,53 +268,68 @@ const AccountSession = ({
         <>
           <dl className="ws-facts">
             <div>
-              <dt>Wallet</dt>
+              <dt>
+                {credential.wallet.startsWith("github:")
+                  ? "GitHub identity"
+                  : "Wallet"}
+              </dt>
               <dd>
-                <code>{credential.wallet}</code>
+                <code>
+                  {walletConnected ? credential.wallet : `@${credential.name}`}
+                </code>
               </dd>
             </div>
             <div>
               <dt>Expires</dt>
               <dd>{new Date(credential.expires_at * 1000).toLocaleString()}</dd>
             </div>
-            <div>
-              <dt>Session limit</dt>
-              <dd>{atomicMoney(credential.total_limit)} USDC</dd>
-            </div>
-            <div>
-              <dt>Spent / reserved</dt>
-              <dd>
-                {atomicMoney(credential.spent)} /{" "}
-                {atomicMoney(credential.reserved)} USDC
-              </dd>
-            </div>
+            {walletConnected && (
+              <>
+                <div>
+                  <dt>Session limit</dt>
+                  <dd>{atomicMoney(credential.total_limit)} USDC</dd>
+                </div>
+                <div>
+                  <dt>Spent / reserved</dt>
+                  <dd>
+                    {atomicMoney(credential.spent)} /{" "}
+                    {atomicMoney(credential.reserved)} USDC
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
           <p className="ws-fine">
-            Session authorization is a spending limit, separate from your
-            account balance.
+            {walletConnected
+              ? "Your spending authorization is separate from your wallet balance."
+              : "Free capabilities are ready to use. A wallet is optional and only needed for payments."}
           </p>
-          <button
-            type="button"
-            className="ws-button"
-            onClick={() => {
-              void copyToken();
-            }}
-          >
-            Copy scoped MCP credential
+          <p className="ws-fine">
+            Create and remove agent credentials in the API keys tab.
+          </p>
+          <button type="button" className="ws-button" onClick={onConnect}>
+            <Icon name="wallet" size={14} />{" "}
+            {walletConnected ? "Change wallet" : "Connect wallet (optional)"}
           </button>
-          <output className="ws-fine">{copyStatus}</output>
-          <button type="button" className="ws-button" onClick={onDisconnect}>
-            <Icon name="logout" size={14} /> Disconnect session
-          </button>
+          {token !== "session" && (
+            <button type="button" className="ws-button" onClick={onDisconnect}>
+              <Icon name="logout" size={14} /> Disconnect wallet
+            </button>
+          )}
         </>
       ) : (
         <button type="button" className="ws-button" onClick={onConnect}>
-          <Icon name="wallet" size={15} /> Connect wallet
+          <Icon name="wallet" size={15} /> Connect wallet (optional)
         </button>
       )}
+      <form action="/api/auth/logout" method="POST">
+        <button type="submit" className="ws-button">
+          <Icon name="logout" size={14} /> Sign out of Hive
+        </button>
+      </form>
       <p className="ws-muted">
-        Your agent creates and publishes capabilities through its MCP
-        connection.
+        Use the MCP endpoint with your agent. Free capabilities work with your
+        GitHub account; publishing and payments use a wallet connection.
       </p>
       <Json
         value={{
@@ -456,25 +342,23 @@ const AccountSession = ({
 };
 
 const accountTabs: {
-  id: "profile" | "balance" | "capabilities";
+  id: "profile" | "balance" | "capabilities" | "api-keys";
   label: string;
   icon: IconName;
 }[] = [
   { icon: "settings", id: "profile", label: "Profile" },
   { icon: "wallet", id: "balance", label: "Agent balance" },
   { icon: "box", id: "capabilities", label: "Capabilities" },
+  { icon: "code", id: "api-keys", label: "API keys" },
 ];
 export type AccountTab = (typeof accountTabs)[number]["id"];
 
 const AccountPanel = ({
-  account,
   hasMore,
   onLoadMore,
   token,
   tab,
   onTabChange,
-  scope,
-  onUpdate,
   credential,
   capabilities,
   loading,
@@ -482,14 +366,11 @@ const AccountPanel = ({
   onConnect,
   onDisconnect,
 }: {
-  account: AccountPreview;
   hasMore: boolean;
   onLoadMore: () => void;
   token: string;
   tab: AccountTab;
   onTabChange: (tab: AccountTab) => void;
-  scope: string;
-  onUpdate: UpdateAccount;
   credential: Credential | null;
   capabilities: RegistryCapability[];
   loading: boolean;
@@ -526,11 +407,19 @@ const AccountPanel = ({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const inspector = useRef<HTMLElement>(null);
-  const items = token
-    ? capabilities
-    : capabilities.map((tool) =>
-        resolveAccountCapability(tool, account.capabilities)
-      );
+  const queryClient = useQueryClient();
+  const profile = useQuery({
+    queryFn: ({ signal }) =>
+      hiveway<Profile>("/v1/account", "session", { signal }),
+    queryKey: ["hive-account", "profile"],
+  });
+  const balance = useQuery({
+    enabled: Boolean(token && credential),
+    queryFn: ({ signal }) =>
+      hiveway<WalletBalance>("/v1/account/balance", token, { signal }),
+    queryKey: ["hive", credential?.id, "wallet-balance"],
+  });
+  const items = capabilities;
   const results = items.filter((tool) =>
     `${tool.name} ${tool.description}`
       .toLowerCase()
@@ -564,6 +453,16 @@ const AccountPanel = ({
         ))}
       </div>
       <div
+        id="account-panel-api-keys"
+        className="ws-account-tab-panel"
+        role="tabpanel"
+        aria-labelledby="account-tab-api-keys"
+        tabIndex={0}
+        hidden={tab !== "api-keys"}
+      >
+        {tab === "api-keys" && <ApiKeys />}
+      </div>
+      <div
         id="account-panel-profile"
         className="ws-account-tab-panel ws-account-split ws-account-profile-panel"
         role="tabpanel"
@@ -571,10 +470,35 @@ const AccountPanel = ({
         tabIndex={0}
         hidden={tab !== "profile"}
       >
-        <ProfileForm
-          profile={account.profile}
-          onSave={(profile) => onUpdate((current) => ({ ...current, profile }))}
-        />
+        {profile.data ? (
+          <ProfileForm
+            profile={profile.data}
+            onSave={async (next) => {
+              const saved = await hiveway<Profile>("/v1/account", "session", {
+                body: JSON.stringify(next),
+                method: "POST",
+              });
+              queryClient.setQueryData(["hive-account", "profile"], saved);
+            }}
+          />
+        ) : (
+          <EmptyState
+            title={
+              profile.error ? "Unable to load profile" : "Loading profile…"
+            }
+          >
+            {profile.error ? errorMessage(profile.error) : ""}
+            <button
+              className="ws-button"
+              type="button"
+              onClick={() => {
+                void profile.refetch();
+              }}
+            >
+              Retry
+            </button>
+          </EmptyState>
+        )}
         <aside className="ws-account-secondary">
           <AccountSession
             token={token}
@@ -592,73 +516,16 @@ const AccountPanel = ({
         tabIndex={0}
         hidden={tab !== "balance"}
       >
-        {!account.welcomeDismissed && (
-          <div className="ws-welcome-credit">
-            <span className="ws-welcome-credit-icon">
-              <Icon name="wallet" size={21} />
-            </span>
-            <div>
-              <strong>Your first $50 is on us.</strong>
-              <p>
-                New accounts get $50 in starter credit. Put your agent to work.
-              </p>
-            </div>
-            <button
-              className="ws-icon-button"
-              type="button"
-              aria-label="Dismiss starter credit message"
-              onClick={() =>
-                onUpdate((current) => ({ ...current, welcomeDismissed: true }))
-              }
-            >
-              <Icon name="close" size={16} />
-            </button>
-          </div>
-        )}
-        <div className="ws-account-split">
-          <AccountBalance
-            balance={account.balance}
-            preview={scope === "preview"}
-          />
-          <aside
-            className="ws-account-secondary"
-            aria-labelledby="payment-connection-heading"
-          >
-            <div className="ws-account-section-title">
-              <div>
-                <h2 id="payment-connection-heading">Payment connection</h2>
-                <p>Funding and incoming payments.</p>
-              </div>
-            </div>
-            <div className="ws-account-provider">
-              <span className="ws-payment-provider-icon">
-                <Icon name="wallet" size={20} />
-              </span>
-              <div>
-                <strong>Dodo Payments</strong>
-                <small>Not connected</small>
-              </div>
-            </div>
-            <dl className="ws-account-payment-facts">
-              <div>
-                <dt>Top ups</dt>
-                <dd>Not connected</dd>
-              </div>
-              <div>
-                <dt>Incoming payments</dt>
-                <dd>Not connected</dd>
-              </div>
-              <div>
-                <dt>Transfers</dt>
-                <dd>Unavailable</dd>
-              </div>
-            </dl>
-            <p className="ws-fine">
-              Live checkout and transfers will be available once payments are
-              connected. Demo top-ups only change your preview balance.
-            </p>
-          </aside>
-        </div>
+        <AccountBalance
+          balance={balance.data ?? null}
+          error={balance.error ? errorMessage(balance.error) : ""}
+          loading={balance.isFetching}
+          onRefresh={() => {
+            void balance.refetch();
+          }}
+          onConnect={onConnect}
+          token={token}
+        />
       </div>
       <div
         id="account-panel-capabilities"
@@ -795,9 +662,14 @@ const AccountPanel = ({
             <p className="ws-fine">
               {credential
                 ? `Showing capabilities owned by ${shortId(credential.wallet)} including inactive listings.`
-                : "Example capabilities · Connect your wallet to load your agent’s work."}
+                : "Connect your wallet to load your agent’s work."}
             </p>
           </section>
+          {credential?.scopes.includes("capabilities:publish") && (
+            <section className="ws-account-capabilities">
+              <CreatorTools token={token} onRefresh={onRefresh} />
+            </section>
+          )}
         </div>
         <aside
           ref={inspector}
@@ -810,19 +682,6 @@ const AccountPanel = ({
               tool={rawSelected}
               token={token}
               onRefresh={onRefresh}
-              preference={preferenceFor(
-                rawSelected,
-                token ? {} : account.capabilities
-              )}
-              onUpdate={(pref) =>
-                onUpdate((current) => ({
-                  ...current,
-                  capabilities: {
-                    ...current.capabilities,
-                    [rawSelected.id]: pref,
-                  },
-                }))
-              }
             />
           ) : (
             <EmptyState title="Capability settings">
@@ -831,14 +690,6 @@ const AccountPanel = ({
             </EmptyState>
           )}
         </aside>
-      </div>
-      <div className="ws-account-preview-note">
-        <Icon name="help" size={14} />
-        <span>
-          {account.storageError
-            ? "Browser storage is unavailable. Changes last for this visit only."
-            : "Account preview · Changes are saved on this device."}
-        </span>
       </div>
     </div>
   );

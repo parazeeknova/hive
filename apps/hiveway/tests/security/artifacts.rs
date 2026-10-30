@@ -44,6 +44,7 @@ pub(super) async fn exercise(app: Router, state: &AppState, tokens: (&str, &str)
     let (status, capability) = post(app.clone(), "/v1/capabilities", &definition, &a).await?;
     assert_eq!(status, StatusCode::OK, "{capability}");
     let id: Uuid = serde_json::from_value(capability["id"].clone())?;
+    samples(app.clone(), id, &a, &b).await?;
     for value in ["first", "different request"] {
         let input = json!({"value":value});
         assert_eq!(cell::execute_capability(state, id, &input).await?, input);
@@ -104,5 +105,24 @@ async fn reject_uploads(app: Router, valid: &Value, bearer: &str) -> Result {
     invalid["owner_wallet"] = json!("0x2222222222222222222222222222222222222222");
     let (status, _) = post(app, "/v1/artifacts", &invalid, bearer).await?;
     assert!(status.is_client_error());
+    Ok(())
+}
+
+async fn samples(app: Router, id: Uuid, a: &str, b: &str) -> Result {
+    let test_path = format!("/v1/capabilities/{id}/test");
+    let sample = json!({"input":{"value":"sample execution"}});
+    let (status, _) = post(app.clone(), &test_path, &sample, b).await?;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "paid sample cannot bypass purchase"
+    );
+    let (status, result) = post(app.clone(), &test_path, &sample, a).await?;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["result"], sample["input"]);
+    let (status, _) = post(app.clone(), &test_path, &json!({"input":{"value":42}}), a).await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = attack(app.clone(), "POST", &test_path, sample.to_string(), &[]).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     Ok(())
 }

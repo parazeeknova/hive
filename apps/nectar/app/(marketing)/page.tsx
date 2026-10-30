@@ -2,11 +2,17 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { Icon } from "../../components/icon";
+import { publicMetadata, websiteSchema } from "../../lib/seo";
 import CreatorSection from "./creator-section";
 import EarningsSection from "./earnings-section";
 import ExecutionComparison from "./execution-comparison";
 import Hero from "./hero";
 import NetworkSection from "./network-section";
+
+export const metadata = publicMetadata(
+  "Hive — AI agent tools and MCP capabilities",
+  "/"
+);
 
 const section =
   "mx-auto w-[calc(100%-4rem)] max-w-6xl max-[760px]:w-[calc(100%-2rem)]";
@@ -23,6 +29,14 @@ const faqBody = "mt-3.5 pr-8 text-sm leading-loose text-stone-500";
 
 const Home = () => (
   <>
+    <script
+      type="application/ld+json"
+      // JSON-LD is generated from server-owned values and escapes HTML delimiters.
+      // oxlint-disable-next-line react/no-danger
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(websiteSchema).replaceAll("<", "\\u003C"),
+      }}
+    />
     <Hero />
     <NetworkSection />
     <ExecutionComparison />
@@ -33,11 +47,11 @@ const Home = () => (
       id="docs"
     >
       <div>
-        <span className={overline}>A few things, upfront</span>
+        <span className={overline}>Getting started</span>
         <h2 className={sectionHeading}>
-          Good tools.
+          A few questions,
           <br />
-          <span className="text-stone-400">Clear terms.</span>
+          <span className="text-stone-400">answered.</span>
         </h2>
         <Link
           href="/dashboard"
@@ -49,51 +63,64 @@ const Home = () => (
       <div>
         <details open className={faqItem}>
           <summary className={faqSummary}>
-            What does Hive actually run?
+            How do I get started?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            The published implementation runs with the caller’s inputs. The
-            result is generated for that request, so the same tool can serve
-            different repositories, documents, or datasets.
+            Sign in with GitHub, find a capability in Discover, and try it with
+            your own input. You can also connect your agent to Hive using an API
+            key and MCP. The{" "}
+            <Link href="/docs" className="underline underline-offset-4">
+              setup guides
+            </Link>{" "}
+            walk you through it.
           </p>
         </details>
         <details className={faqItem}>
           <summary className={faqSummary}>
-            How does pricing work?
+            Do I need a wallet to use Hive?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            Creators publish a fixed per-call price, including free
-            capabilities. Hiveway enforces session budgets and records
-            invocations and creator sales. Paid calls require a separate
-            client-wallet authorization; the website provides the quote handoff
-            to your agent.
+            No. Your GitHub account is enough to run free capabilities and
+            create API keys for your agents. Connect a wallet when you want to
+            use paid capabilities or publish your own.
           </p>
         </details>
         <details className={faqItem}>
           <summary className={faqSummary}>
-            What does “verified” mean?
+            How much does a capability cost?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            A capability has passed a defined set of contract checks. Its
-            listing should show the test evidence and version. Those checks are
-            evidence you can inspect, rather than a promise that every result
-            will be correct.
+            Each listing shows its price per run. Free capabilities cost
+            nothing. For a paid capability, review the quote and authorize
+            payment before running it. Your agent’s spending limits help you
+            control what it can spend.
           </p>
         </details>
         <details className={faqItem}>
           <summary className={faqSummary}>
-            What can I try today?
+            Can I publish a capability I built?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            Connect a scoped wallet session to search live capabilities, run
-            free hosted Wasm with JSON input, inspect receipts, and manage
-            listing availability. Agents can publish artifacts through MCP. Paid
-            calls use quotes and explicit wallet authorization. Disconnected
-            examples are illustrative.
+            Yes. Connect a creator wallet, upload your Wasm artifact, and add a
+            name, description, input and output schemas, and price. Publish it
+            from Account settings or through your agent. You can pause or
+            restore the listing whenever you need to.
+          </p>
+        </details>
+        <details className={faqItem}>
+          <summary className={faqSummary}>
+            Where can I find my results?
+            <Icon name="plus" size={18} className={faqIcon} />
+          </summary>
+          <p className={faqBody}>
+            Open Activity in your dashboard to see invocation status, receipts,
+            and results for your current credential. Sample-test results appear
+            in the test dialog. If a payment is still pending, check its receipt
+            before starting another paid run.
           </p>
         </details>
       </div>

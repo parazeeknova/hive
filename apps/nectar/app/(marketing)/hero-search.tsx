@@ -5,12 +5,10 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../components/icon";
 
 const prompts = [
-  "Audit a GitHub repo for security issues",
-  "Find outdated dependencies in my repo",
-  "Extract documentation from a repository",
-  "Check the licenses in my codebase",
-  "Map the tech stack of a repository",
-  "Review my code for quality issues",
+  "Repository stack",
+  "Dependency inventory",
+  "JSON echo",
+  "Repository workflow",
 ] as const;
 
 interface TypingFrame {
@@ -91,6 +89,7 @@ const HeroSearch = () => {
         method="get"
         className="surface-light flex h-16 items-center gap-3 rounded-full p-2 pl-5 focus-within:outline-2 focus-within:outline-offset-4 focus-within:outline-neutral-300 sm:h-18 sm:gap-4 sm:pl-6"
       >
+        <input type="hidden" name="view" value="discover" />
         <Icon name="search" size={21} className="shrink-0 text-neutral-400" />
         <label className="sr-only" htmlFor="hero-capability-search">
           Search Hive capabilities
@@ -100,10 +99,15 @@ const HeroSearch = () => {
           name="q"
           type="search"
           required
+          maxLength={200}
           autoComplete="off"
           aria-describedby="hero-search-hint"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            if (new TextEncoder().encode(event.target.value).length <= 200) {
+              setQuery(event.target.value);
+            }
+          }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={prompt.slice(0, frame.characters)}
@@ -121,7 +125,7 @@ const HeroSearch = () => {
         id="hero-search-hint"
         className="mt-4 text-center text-xs text-neutral-500"
       >
-        Describe the job. Find a little head start.
+        Search capabilities by name or description.
       </p>
     </search>
   );

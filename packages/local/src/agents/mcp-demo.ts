@@ -66,7 +66,7 @@ const artifact = await call(creator, "upload_artifact", {
 const capability = await call(creator, "publish_capability", {
   artifact_id: artifact.id,
   description: "Live free MCP acceptance",
-  name: `Free MCP echo ${crypto.randomUUID()}`,
+  name: "Agent echo",
   price: "0",
   runtime: "wasm",
 });

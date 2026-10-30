@@ -1,16 +1,19 @@
+import { fileURLToPath } from "node:url";
+
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   agentRules: false,
-  poweredByHeader: false,
-  rewrites() {
-    return Promise.resolve([
+  headers: () =>
+    Promise.resolve([
       {
-        destination: "http://127.0.0.1:3001/api/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
         source: "/api/:path*",
       },
-    ]);
-  },
+    ]),
+  output: "standalone",
+  outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
+  poweredByHeader: false,
   serverExternalPackages: [
     "pino",
     "@opentelemetry/sdk-node",
