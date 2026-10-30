@@ -30,7 +30,8 @@ def request_json(url, *, body=None, key=None):
     # Never include response bodies or credential-bearing configuration in errors.
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
+            payload = response.read()
+            return json.loads(payload) if payload.strip() else None
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"HTTP {error.code} from {urllib.parse.urlsplit(url).path}") from None
 

@@ -1,6 +1,7 @@
 """Regression checks for release identity and Dokploy queue handling."""
 
 import importlib.util
+import io
 from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
@@ -11,6 +12,14 @@ spec.loader.exec_module(deploy)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_empty_success_response_is_accepted(self):
+        with patch.object(deploy.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+            self.assertIsNone(deploy.request_json("https://dokploy.example/api/application.deploy", body={}))
+
+    def test_json_success_response_is_preserved(self):
+        with patch.object(deploy.urllib.request, "urlopen", return_value=io.BytesIO(b'{"status":"ok"}')):
+            self.assertEqual(deploy.request_json("https://dokploy.example/api/application.one"), {"status": "ok"})
+
     def test_only_matching_immutable_images_are_accepted(self):
         image = "ghcr.io/parazeeknova/hive-nectar@sha256:" + "a" * 64
         self.assertEqual(deploy.immutable_image(image, "nectar"), image)
