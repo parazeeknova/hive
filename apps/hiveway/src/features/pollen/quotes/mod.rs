@@ -67,6 +67,12 @@ pub async fn quote(
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?
         .price;
+    if price > 0 && c.wallet.starts_with("github:") {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "wallet_session_required_for_payment",
+        ));
+    }
     if price > 0 {
         x402::supported(&state).await?;
     }

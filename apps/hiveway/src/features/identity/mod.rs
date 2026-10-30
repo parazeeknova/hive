@@ -4,6 +4,7 @@ use crate::entities::wallet_challenges::Column as WalletChallengesColumn;
 use crate::entities::wallet_challenges::Entity as WalletChallengesEntity;
 use sea_orm::sea_query::{Alias, Asterisk, Expr, ExprTrait, Func, Query as SqlQuery};
 use sea_orm::{ActiveModelTrait, QuerySelect};
+pub mod github;
 pub mod signature;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use sea_orm::{ConnectionTrait, TransactionTrait};

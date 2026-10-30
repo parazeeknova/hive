@@ -1,7 +1,7 @@
 pub mod config;
 mod guard;
 use crate::{
-    features::{comb, hiveway, identity, pollen, scout, waggle, wax},
+    features::{account, comb, hiveway, identity, pollen, scout, waggle, wax},
     state::AppState,
 };
 use axum::{
@@ -15,6 +15,16 @@ use tower_http::cors::CorsLayer;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/v1/account", get(account::get).post(account::save))
+        .route("/v1/account/balance", get(account::balance::get))
+        .route(
+            "/v1/account/credentials",
+            get(account::credentials::list).post(account::credentials::issue),
+        )
+        .route(
+            "/v1/account/credentials/{id}/revoke",
+            post(account::credentials::revoke),
+        )
         .route("/mcp", post(hiveway::gateway))
         .route("/v1/capabilities/page", get(scout::discovery::page))
         .route("/v1/capabilities/{id}", get(scout::detail::detail))
@@ -28,6 +38,9 @@ pub fn router() -> Router<AppState> {
         .route("/api/config", get(config::configuration))
         .route("/v1/workflows", post(comb::compose))
         .route("/v1/activity", get(waggle::activity))
+        .route("/v1/auth/github", post(identity::github::exchange))
+        .route("/v1/auth/logout", post(identity::github::logout))
+        .route("/v1/capabilities/{id}/test", post(identity::github::test))
         .route("/v1/auth/challenges", post(identity::challenge))
         .route("/v1/auth/verify", post(identity::verify))
         .route("/v1/credentials/me", get(identity::me))

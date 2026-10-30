@@ -1,28 +1,34 @@
 "use client";
-
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { Icon } from "../../components/icon";
+import type { WalletBalance } from "../../lib/account";
+import { sendUsdc, networkLabel } from "../../lib/account";
 import {
-  addDemoFunds,
-  balanceHealth,
-  parseTopUp,
-} from "../../lib/account-store";
-import { atomicMoney, errorMessage } from "../../lib/hiveway";
-
-type PaymentAction = "topup" | "send" | "receive";
+  atomicMoney,
+  errorMessage,
+  hiveway,
+  parsePrice,
+  shortId,
+} from "../../lib/hiveway";
 
 export const SidebarBalance = ({
-  balance,
-  preview,
+  token,
+  credentialId,
   onOpen,
 }: {
-  balance: string;
-  preview: boolean;
+  token: string;
+  credentialId: string | undefined;
   onOpen: () => void;
 }) => {
-  const health = balanceHealth(balance);
+  const balance = useQuery({
+    enabled: Boolean(token && credentialId),
+    queryFn: ({ signal }) =>
+      hiveway<WalletBalance>("/v1/account/balance", token, { signal }),
+    queryKey: ["hive", credentialId, "wallet-balance"],
+  });
   return (
     <button
       className="ws-sidebar-balance"
@@ -34,58 +40,60 @@ export const SidebarBalance = ({
         Agent balance <Icon name="wallet" size={14} />
       </span>
       <strong>
-        {preview ? `$${atomicMoney(balance)}` : "Unavailable"}
-        <small>{preview ? "USD" : ""}</small>
+        {typeof balance.data?.amount === "string" ? (
+          <>
+            {atomicMoney(balance.data.amount)} <small>USDC</small>
+          </>
+        ) : (
+          "Free access"
+        )}
       </strong>
-      <span
-        className={`ws-balance-health ${preview ? `is-${health.tone}` : "is-unknown"}`}
-        aria-hidden="true"
-      >
-        <span className="ws-balance-track">
-          <span style={{ width: `${preview ? health.percent : 0}%` }} />
-        </span>
-      </span>
       <span className="ws-sidebar-balance-link">
-        Manage balance <Icon name="chevron" size={12} />
+        {balance.data?.wallet ? "Manage balance" : "Wallet optional"}
+        <Icon name="chevron" size={12} />
       </span>
     </button>
   );
 };
+type PaymentAction = "topup" | "send" | "receive";
 const titles: Record<PaymentAction, string> = {
   receive: "Receive funds",
-  send: "Send funds",
-  topup: "Top up your balance",
+  send: "Send USDC",
+  topup: "Fund your wallet",
 };
-
-// Replace this boundary with server-created Dodo checkout and verified webhook crediting.
 const AccountPaymentDialog = ({
   action,
-  preview,
+  balance,
   onClose,
+  onRefresh,
 }: {
   action: PaymentAction;
-  preview: boolean;
+  balance: WalletBalance;
   onClose: () => void;
+  onRefresh: () => void;
 }) => {
   const ref = useRef<HTMLDialogElement>(null);
-  const [amount, setAmount] = useState("25");
+  const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [message, setMessage] = useState("");
+  const [hash, setHash] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     ref.current?.showModal();
   }, []);
-  const topUp = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!preview) {
-      setMessage("Checkout is not connected yet.");
-      return;
-    }
+    setBusy(true);
+    setMessage("");
     try {
-      addDemoFunds("preview", parseTopUp(amount));
-      onClose();
+      setHash(await sendUsdc(balance, recipient.trim(), parsePrice(amount)));
+      setMessage(
+        "Transaction submitted. Confirm it in your wallet, then refresh the balance after confirmation."
+      );
     } catch (error) {
       setMessage(errorMessage(error));
     }
+    setBusy(false);
   };
   return (
     <dialog
@@ -113,191 +121,279 @@ const AccountPaymentDialog = ({
           <Icon name="wallet" size={21} />
         </span>
         <div>
-          <strong>Dodo Payments</strong>
-          <small>Checkout &amp; incoming payments</small>
+          <strong>Connected wallet</strong>
+          <small>{networkLabel(balance.chain_id)}</small>
         </div>
-        <span className="ws-badge">Not connected</span>
       </div>
-      {action === "topup" && (
-        <form onSubmit={topUp}>
-          <p className="ws-muted">
-            Add funds for your agent to use on paid capabilities.
-          </p>
-          <div className="ws-topup-presets" aria-label="Top-up amounts">
-            {["10", "25", "50", "100"].map((value) => (
-              <button
-                type="button"
-                key={value}
-                aria-pressed={amount === value}
-                onClick={() => setAmount(value)}
-              >
-                ${value}
-              </button>
-            ))}
-          </div>
+      {action === "send" ? (
+        <form
+          className="ws-payment-fields"
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+        >
           <label className="ws-field">
-            Amount · USD
+            Recipient wallet
             <input
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
               required
-              autoComplete="off"
-            />
-          </label>
-          <p className="ws-fine">
-            Dodo checkout is not connected yet. No payment will be taken.
-          </p>
-          <button type="button" className="ws-button ws-primary" disabled>
-            Continue to Dodo checkout <Icon name="external" size={14} />
-          </button>
-          {preview && (
-            <button type="submit" className="ws-button">
-              Add demo funds
-            </button>
-          )}
-          {message && (
-            <p className="ws-error" role="alert">
-              {message}
-            </p>
-          )}
-        </form>
-      )}
-      {action === "send" && (
-        <div className="ws-payment-fields">
-          <label className="ws-field">
-            Recipient
-            <input
               value={recipient}
               onChange={(event) => setRecipient(event.target.value)}
-              placeholder="Account or wallet address"
+              placeholder="0x…"
               autoComplete="off"
             />
           </label>
           <label className="ws-field">
-            Amount · USD
+            Amount · USDC
             <input
+              required
               inputMode="decimal"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
           </label>
           <p className="ws-fine">
-            Transfers need a connected payment provider and a supported
-            recipient. Sending funds is not available yet.
+            Your wallet will show the recipient, token amount, and network fee
+            before you approve.
           </p>
-          <button type="button" className="ws-button ws-primary" disabled>
-            Review transfer <Icon name="arrow" size={14} />
+          <button
+            type="submit"
+            className="ws-button ws-primary"
+            disabled={busy || Boolean(hash)}
+          >
+            {busy ? "Waiting for wallet…" : "Review in wallet"}
+            <Icon name="arrow" size={14} />
           </button>
-        </div>
-      )}
-      {action === "receive" && (
+        </form>
+      ) : (
         <div className="ws-payment-fields">
-          <div className="ws-receive-placeholder">
-            <Icon name="down" size={25} />
-            <strong>Your incoming payments, in one place.</strong>
-            <p>
-              Payment links and incoming-payment history will appear here when
-              payments are connected.
-            </p>
-          </div>
-          <button type="button" className="ws-button ws-primary" disabled>
-            Create payment link <Icon name="external" size={14} />
+          <p className="ws-muted">
+            Send USDC on {networkLabel(balance.chain_id)} to this wallet
+            address. Funds remain in your wallet and can be used for capability
+            payments.
+          </p>
+          <code className="ws-receive-address">{balance.wallet}</code>
+          <button
+            className="ws-button"
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(balance.wallet ?? "");
+                setMessage("Wallet address copied.");
+              } catch (error) {
+                setMessage(errorMessage(error));
+              }
+            }}
+          >
+            <Icon name="copy" size={14} /> Copy wallet address
           </button>
+          {balance.chain_id === 84_532 && (
+            <a
+              className="ws-button ws-primary"
+              href="https://faucet.circle.com/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Get free Base Sepolia test USDC <Icon name="external" size={14} />
+            </a>
+          )}
+          <p className="ws-fine">
+            Dodo checkouts pay for individual invocations. They do not credit a
+            wallet balance.
+          </p>
         </div>
       )}
+      {hash && (
+        <>
+          <code className="ws-receive-address">{hash}</code>
+          <button className="ws-button" type="button" onClick={onRefresh}>
+            Refresh balance
+          </button>
+        </>
+      )}
+      {message && <output className="ws-fine">{message}</output>}
     </dialog>
+  );
+};
+
+const PaymentConnection = ({
+  balance,
+  token,
+}: {
+  balance: WalletBalance | null;
+  token: string;
+}) => {
+  const earnings = useQuery({
+    enabled: Boolean(balance?.wallet),
+    queryFn: ({ signal }) =>
+      hiveway<{
+        lifetime_amount: number;
+        settled_runs: number;
+        refunded_amount: number;
+      }>("/v1/earnings/summary", token, { signal }),
+    queryKey: ["hive", balance?.wallet, "balance-earnings"],
+  });
+  let checkout = "—";
+  if (balance) {
+    checkout = balance.dodo_test_checkout ? "Configured" : "Not configured";
+  }
+  return (
+    <aside className="ws-account-secondary">
+      <div className="ws-account-section-title">
+        <div>
+          <h2>Payment connection</h2>
+          <p>Funding and incoming payments.</p>
+        </div>
+      </div>
+      <div className="ws-account-provider">
+        <span className="ws-payment-provider-icon">
+          <Icon name="wallet" size={20} />
+        </span>
+        <div>
+          <strong>
+            {balance?.wallet ? shortId(balance.wallet) : "No wallet connected"}
+          </strong>
+          <small>
+            {balance?.wallet
+              ? networkLabel(balance.chain_id)
+              : "Optional for paid capabilities"}
+          </small>
+        </div>
+      </div>
+      <dl className="ws-account-payment-facts">
+        <div>
+          <dt>Incoming payments</dt>
+          <dd>Direct to wallet</dd>
+        </div>
+        <div>
+          <dt>Creator earnings</dt>
+          <dd>
+            {earnings.data
+              ? `${atomicMoney(String(earnings.data.lifetime_amount))} USDC`
+              : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Settled sales</dt>
+          <dd>{earnings.data?.settled_runs ?? "—"}</dd>
+        </div>
+        <div>
+          <dt>Dodo test checkout</dt>
+          <dd>{checkout}</dd>
+        </div>
+      </dl>
+      {earnings.error && (
+        <p className="ws-fine">{errorMessage(earnings.error)}</p>
+      )}
+      <p className="ws-fine">
+        Earnings are settlement history, including Dodo test accounting. They
+        are not a withdrawable Hive balance.
+      </p>
+    </aside>
   );
 };
 
 export const AccountBalance = ({
   balance,
-  preview,
+  error,
+  loading,
+  onRefresh,
+  onConnect,
+  token,
 }: {
-  balance: string;
-  preview: boolean;
+  balance: WalletBalance | null;
+  error: string;
+  loading: boolean;
+  onRefresh: () => void;
+  onConnect: () => void;
+  token: string;
 }) => {
   const [action, setAction] = useState<PaymentAction | null>(null);
-  const health = balanceHealth(balance);
+  const connected = Boolean(balance?.wallet);
+  const amount = balance?.amount;
+  let status = connected
+    ? "On-chain balance"
+    : "Free capabilities are ready to use";
+  if (loading) {
+    status = "Checking wallet…";
+  }
   return (
-    <section className="ws-account-balance" aria-labelledby="balance-heading">
-      <div className="ws-account-section-title">
-        <div>
-          <h2 id="balance-heading">Agent balance</h2>
-          <p>Funds available for your agent&apos;s calls.</p>
+    <div className="ws-account-split">
+      <section className="ws-account-balance" aria-labelledby="balance-heading">
+        <div className="ws-account-section-title">
+          <div>
+            <h2 id="balance-heading">Agent balance</h2>
+            <p>
+              {connected
+                ? "USDC available in your connected wallet."
+                : "Use free capabilities with your GitHub account."}
+            </p>
+          </div>
+          <span className="ws-badge">
+            {connected ? networkLabel(balance?.chain_id) : "Free access"}
+          </span>
         </div>
-        <span className="ws-badge">
-          {preview ? "Preview balance" : "Payments not connected"}
-        </span>
-      </div>
-      <div className="ws-balance-main">
-        <div>
-          <strong className="ws-balance-amount">
-            {preview ? `$${atomicMoney(balance)}` : "—"}
-          </strong>
-          <span className="ws-balance-currency">USD</span>
+        <div className="ws-balance-main">
+          <div>
+            <strong
+              className={connected ? "ws-balance-amount" : "ws-balance-empty"}
+            >
+              {typeof amount === "string" ? atomicMoney(amount) : "Free access"}
+            </strong>
+            {typeof amount === "string" && (
+              <span className="ws-balance-currency">USDC</span>
+            )}
+          </div>
+          <button
+            className="ws-button ws-primary"
+            type="button"
+            onClick={() => (connected ? setAction("topup") : onConnect())}
+          >
+            <Icon name="plus" size={15} />
+            {balance?.wallet ? "Top up" : "Add wallet (optional)"}
+          </button>
         </div>
-        <button
-          type="button"
-          className="ws-button ws-primary"
-          onClick={() => setAction("topup")}
-        >
-          <Icon name="plus" size={15} /> Top up
-        </button>
-      </div>
-      <div
-        className={`ws-balance-health ${preview ? `is-${health.tone}` : "is-unknown"}`}
-      >
-        <div>
-          <span>{preview ? health.label : "Balance unavailable"}</span>
-          <small>
-            {preview
-              ? "Balance health"
-              : "Connect payments to load your balance"}
-          </small>
+        <div className="ws-balance-health is-unknown">
+          <div>
+            <span>{status}</span>
+            <small>
+              {connected
+                ? networkLabel(balance?.chain_id)
+                : "Connect a wallet whenever you want to use paid capabilities."}
+            </small>
+          </div>
         </div>
-        <div className="ws-balance-track">
-          <meter
-            className="sr-only"
-            min={0}
-            max={100}
-            low={20}
-            high={50}
-            optimum={100}
-            value={preview ? health.percent : 0}
-            aria-label="Balance health relative to $50 starter credit"
-            aria-valuetext={
-              preview
-                ? `$${atomicMoney(balance)} available. ${health.label}`
-                : "Balance unavailable"
-            }
-          />
-          <span
-            aria-hidden="true"
-            style={{ width: `${preview ? health.percent : 0}%` }}
-          />
-        </div>
-      </div>
-      <div className="ws-balance-actions">
-        <button type="button" onClick={() => setAction("send")}>
-          <Icon name="arrow" size={15} /> Send
-        </button>
-        <button type="button" onClick={() => setAction("receive")}>
-          <Icon name="down" size={15} /> Receive
-        </button>
-      </div>
-      {!preview && (
+        {connected && (
+          <div className="ws-balance-actions">
+            <button type="button" onClick={() => setAction("send")}>
+              <Icon name="arrow" size={15} /> Send
+            </button>
+            <button type="button" onClick={() => setAction("receive")}>
+              <Icon name="down" size={15} /> Receive
+            </button>
+            <button type="button" disabled={loading} onClick={onRefresh}>
+              <Icon name="activity" size={15} /> Refresh
+            </button>
+          </div>
+        )}
+        {error && (
+          <p className="ws-error" role="alert">
+            {error}
+          </p>
+        )}
         <p className="ws-fine">
-          Your session&apos;s USDC spending limit is separate from this balance.
+          Session authorization limits and creator earnings are separate from
+          the funds held in this wallet.
         </p>
-      )}
-      {action && (
+      </section>
+      <PaymentConnection balance={balance} token={token} />
+      {action && balance?.wallet && (
         <AccountPaymentDialog
           action={action}
-          preview={preview}
+          balance={balance}
+          onRefresh={onRefresh}
           onClose={() => setAction(null)}
         />
       )}
-    </section>
+    </div>
   );
 };

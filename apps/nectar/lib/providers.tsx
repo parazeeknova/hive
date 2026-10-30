@@ -41,7 +41,7 @@ export const Providers = ({ children }: { children: ReactNode }) => {
         },
       })
   );
-  const [storedToken, setStoredToken] = useState("");
+  const [storedToken, setStoredToken] = useState("session");
   const [sessionKey, setSessionKey] = useState(0);
   const [credential, setCredential] = useState<Credential | null>(null);
   const setToken = useCallback(

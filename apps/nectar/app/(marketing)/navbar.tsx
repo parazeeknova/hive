@@ -16,7 +16,7 @@ const links = [
 const navLink =
   "inline-flex h-10 items-center justify-center rounded-full px-2 text-[13px] leading-none font-medium whitespace-nowrap text-neutral-500 transition-colors hover:text-black";
 
-const Navbar = () => {
+const Navbar = ({ username }: { username: string | null }) => {
   const [open, setOpen] = useState(false);
   return (
     <header className="fixed top-6 left-0 z-40 w-full px-8 font-medium max-[760px]:top-4 max-[760px]:px-4">
@@ -39,14 +39,19 @@ const Navbar = () => {
           ))}
         </div>
         <div className="flex items-center justify-end gap-2 justify-self-end">
-          <Link className={`${navLink} max-[760px]:hidden`} href="/sign-in">
-            Sign in
-          </Link>
+          {!username && (
+            <Link className={`${navLink} max-[760px]:hidden`} href="/sign-in">
+              Sign in
+            </Link>
+          )}
           <Link
             className="surface-dark inline-flex h-10 items-center justify-center gap-2 rounded-full px-4 text-[13px] leading-none font-medium whitespace-nowrap text-white transition-[filter,scale] duration-200 hover:brightness-110 active:scale-[0.985] active:brightness-95 motion-reduce:scale-100 motion-reduce:transform-none max-[760px]:px-3 max-[760px]:text-xs"
             href="/dashboard"
+            aria-label={username ? `Open dashboard for ${username}` : undefined}
           >
-            <span>Meet the hive</span>
+            <span className="max-w-40 truncate max-[760px]:max-w-24">
+              {username ? `@${username}` : "Meet the hive"}
+            </span>
             <Icon name="arrow" size={16} />
           </Link>
           <button
@@ -78,11 +83,11 @@ const Navbar = () => {
             </Link>
           ))}
           <Link
-            href="/sign-in"
+            href={username ? "/dashboard" : "/sign-in"}
             onClick={() => setOpen(false)}
             className="flex min-h-11 items-center rounded-full px-4 text-sm font-medium text-neutral-600 hover:bg-neutral-100"
           >
-            Sign in
+            {username ? `@${username} · Dashboard` : "Sign in"}
           </Link>
         </nav>
       )}

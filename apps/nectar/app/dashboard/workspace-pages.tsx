@@ -22,6 +22,7 @@ import type {
   RegistryCapability,
   Sale,
 } from "../../lib/hiveway";
+import { sampleInput } from "../../lib/sample-input";
 
 export const EmptyState = ({
   title,
@@ -455,17 +456,48 @@ export const SalesPanel = ({
   </section>
 );
 
-// Replace this boundary when the native x402 wallet component is available.
-const PaymentAuthorizationPlaceholder = () => (
-  <div className="ws-placeholder">
-    <Icon name="wallet" size={19} />
-    <strong>Wallet payment</strong>
-    <p>
-      Native payment UI is not connected yet. Continue with an x402-compatible
-      agent using the quote below.
-    </p>
-  </div>
-);
+const Checkout = ({ id, token }: { id: string; token: string }) => {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <div>
+      <button
+        className="ws-button"
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError("");
+          try {
+            const checkout = await hiveway<{ checkout_url: string }>(
+              `/v1/invocations/${id}/checkout`,
+              token,
+              { body: "{}", method: "POST" }
+            );
+            const url = new URL(checkout.checkout_url);
+            if (url.protocol !== "https:") {
+              setError("Invalid checkout URL");
+              setBusy(false);
+              return;
+            }
+            window.location.assign(url.href);
+          } catch (error_) {
+            setError(errorMessage(error_));
+          }
+          setBusy(false);
+        }}
+      >
+        Open Dodo test checkout
+      </button>
+      <p>
+        Test payments only. For x402, use the signed payment handoff below.
+        Completion is verified by the backend; returning from checkout does not
+        establish payment.
+      </p>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+};
 
 export const QuoteForm = ({
   tool,
@@ -628,7 +660,7 @@ export const QuoteForm = ({
             </>
           ) : (
             <>
-              <PaymentAuthorizationPlaceholder />
+              <Checkout id={quote.id} token={token} />
               <p className="ws-fine">No payment has been submitted here.</p>
             </>
           )}
@@ -692,6 +724,100 @@ export const QuoteForm = ({
   );
 };
 
+const SampleForm = ({
+  tool,
+  token,
+}: {
+  tool: RegistryCapability;
+  token: string;
+}) => {
+  const [input, setInput] = useState(
+    JSON.stringify(
+      tool.runtime === "wasm"
+        ? (tool.definition.sample_input ?? {})
+        : {
+            repository_url: "https://github.com/octocat/Hello-World",
+            revision: "7fd1a60b01f91b314f59955a4e4d4c63fbd0fa49",
+          },
+      null,
+      2
+    )
+  );
+  const [result, setResult] = useState<unknown>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      className="ws-form"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError("");
+        setResult(null);
+        try {
+          const data = await hiveway<{ result: unknown }>(
+            `/v1/capabilities/${tool.id}/test`,
+            token,
+            {
+              body: JSON.stringify({ input: JSON.parse(input) as unknown }),
+              method: "POST",
+            }
+          );
+          setResult(data.result);
+        } catch (error_) {
+          setError(errorMessage(error_));
+        }
+        setBusy(false);
+      }}
+    >
+      <p>
+        Run editable input against the actual runtime. Paid sample tests require
+        the creator’s wallet session.
+      </p>
+      {tool.runtime === "wasm" &&
+        typeof tool.definition.artifact_id === "string" && (
+          <button
+            className="ws-button"
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError("");
+              try {
+                const artifact = await hiveway<{ input_schema: unknown }>(
+                  `/v1/artifacts/${String(tool.definition.artifact_id)}`,
+                  token
+                );
+                setInput(
+                  JSON.stringify(sampleInput(artifact.input_schema), null, 2)
+                );
+              } catch (error_) {
+                setError(errorMessage(error_));
+              }
+              setBusy(false);
+            }}
+          >
+            Load sample from artifact schema
+          </button>
+        )}
+      <label className="ws-field">
+        Sample JSON
+        <textarea
+          rows={10}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          required
+        />
+      </label>
+      <button className="ws-button ws-primary" disabled={busy} type="submit">
+        {busy ? "Running…" : "Run test"}
+      </button>
+      {error && <p role="alert">{error}</p>}
+      {result !== null && <Json value={result} />}
+    </form>
+  );
+};
+
 export const CapabilityActionDialog = ({
   mode,
   tool,
@@ -734,32 +860,18 @@ export const CapabilityActionDialog = ({
           <Icon name="close" size={18} />
         </button>
       </div>
-      {mode === "sample" && tool.runtime !== "wasm" ? (
-        <div className="ws-placeholder">
-          <strong>Sample testing</strong>
-          <p>
-            This component is not connected yet. The current API has no free
-            sample execution endpoint. Use a public repository and commit to
-            request a quote through Invoke in agent.
-          </p>
-        </div>
+      {mode === "sample" ? (
+        <SampleForm tool={tool} token={token} />
       ) : (
-        <>
-          <p>
-            {tool.runtime === "wasm"
-              ? "Enter JSON matching the artifact schema. Free capabilities run immediately; paid calls return a quote for wallet authorization."
-              : "Choose a public repository and commit, then reserve a quote to hand off to your agent."}
-          </p>
-          <QuoteForm
-            tool={tool}
-            token={token}
-            onQuoted={onRefresh}
-            onConnect={() => {
-              onClose();
-              onConnect();
-            }}
-          />
-        </>
+        <QuoteForm
+          tool={tool}
+          token={token}
+          onQuoted={onRefresh}
+          onConnect={() => {
+            onClose();
+            onConnect();
+          }}
+        />
       )}
     </dialog>
   );

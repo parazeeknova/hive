@@ -1,4 +1,8 @@
 #![cfg(not(miri))]
+#[path = "security/account.rs"]
+mod account;
+#[path = "security/api_keys.rs"]
+mod api_keys;
 #[path = "security/artifacts.rs"]
 mod artifacts;
 #[path = "security/catalog.rs"]
@@ -342,6 +346,8 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     .await;
     let artifacts_result = artifacts::exercise(app.clone(), &state, (&token_a, &token_b)).await;
     let catalog_result = catalog::exercise(app.clone(), &state, (&token_a, &token_b)).await;
+    let account_result = account::exercise(app.clone(), &state, (&token_a, &token_b)).await;
+    let session_result = session_lifecycle(app.clone(), &state).await;
     let socket_result = live_socket_probe(app).await;
     facilitator.abort();
     let _ = facilitator.await;
@@ -359,6 +365,8 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     recovery_result?;
     artifacts_result?;
     catalog_result?;
+    session_result?;
+    account_result?;
     socket_result
 }
 
@@ -538,5 +546,177 @@ async fn probe_checkout_rejections(
             );
         }
     }
+    Ok(())
+}
+
+async fn session_lifecycle(app: Router, state: &AppState) -> Result {
+    let token = format!("hwa_{}", "d".repeat(64));
+    let bearer = format!("Bearer {token}");
+    let id = Uuid::new_v4();
+    agent_credentials::ActiveModel {
+        id: Set(id),
+        wallet: Set("github:123".into()),
+        name: Set("github-user".into()),
+        token_hash: Set(identity::hash(token.as_bytes())),
+        scopes: Set(vec![
+            "capabilities:read".into(),
+            "receipts:read".into(),
+            "capabilities:invoke".into(),
+        ]),
+        per_call_limit: Set(100),
+        total_limit: Set(100),
+        expires_at: Set(hiveway::features::common::model::now() + 3600),
+        created_at: Set(0),
+        ..Default::default()
+    }
+    .insert(&state.postgres)
+    .await?;
+    let headers = [("authorization", bearer.as_str())];
+    free_agent_credential(app.clone(), state, &headers).await?;
+    let (status, me) = attack(
+        app.clone(),
+        "GET",
+        "/v1/credentials/me",
+        String::new(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(me["wallet"], "github:123");
+    let (status, balance) = attack(
+        app.clone(),
+        "GET",
+        "/v1/account/balance",
+        String::new(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(balance["amount"].is_null());
+    assert!(
+        balance["wallet"].is_null(),
+        "GitHub sign-in must not invent a wallet"
+    );
+    let (status, _) = attack(
+        app.clone(),
+        "POST",
+        "/v1/auth/logout",
+        "{}".into(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = attack(
+        app.clone(),
+        "GET",
+        "/v1/credentials/me",
+        String::new(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "revoked sessions must fail database verification"
+    );
+    Ok(())
+}
+
+async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, &str)]) -> Result {
+    let (status, issued) = attack(
+        app.clone(),
+        "POST",
+        "/v1/account/credentials",
+        json!({"name":"Test agent"}).to_string(),
+        headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{issued}");
+    let token = issued["token"].as_str().ok_or("missing credential")?;
+    let bearer = format!("Bearer {token}");
+    let (status, me) = attack(
+        app.clone(),
+        "GET",
+        "/v1/credentials/me",
+        String::new(),
+        &[("authorization", &bearer)],
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(me["wallet"], "github:123");
+    assert_eq!(
+        me["scopes"],
+        json!(["capabilities:read", "receipts:read", "capabilities:invoke"])
+    );
+    free_agent_invocation(app.clone(), state, &bearer).await?;
+    let (status, _) = attack(
+        app.clone(),
+        "GET",
+        "/v1/sales",
+        String::new(),
+        &[("authorization", &bearer)],
+    )
+    .await?;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "free credentials must not gain creator permissions"
+    );
+    api_keys::exercise(app, state, headers, &issued, &bearer).await
+}
+
+async fn free_agent_invocation(app: Router, state: &AppState, bearer: &str) -> Result {
+    use hiveway::entities::capabilities;
+    let cap = capabilities::Entity::find()
+        .filter(capabilities::Column::Name.eq("Dynamic echo"))
+        .one(&state.postgres)
+        .await?
+        .ok_or("missing echo")?;
+    let paid_id = cap.id;
+    let mut free: capabilities::ActiveModel = cap.into();
+    let id = Uuid::new_v4();
+    free.id = Set(id);
+    free.price = Set(0);
+    free.insert(&state.postgres).await?;
+    let key = Uuid::new_v4().to_string();
+    let headers = [("authorization", bearer), ("idempotency-key", key.as_str())];
+    let input = json!({"capability_id":id,"input":{"value":"free with GitHub"}});
+    let (status, quote) = attack(
+        app.clone(),
+        "POST",
+        "/v1/quotes",
+        input.to_string(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CREATED, "{quote}");
+    let invocation = quote["id"].as_str().ok_or("missing invocation")?;
+    let (status, receipt) = attack(
+        app.clone(),
+        "POST",
+        &format!("/v1/invocations/{invocation}"),
+        "{}".into(),
+        &headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{receipt}");
+    assert_eq!(receipt["result"], input["input"]);
+    let paid = json!({"capability_id":paid_id,"input":{"value":"cannot pay"}});
+    let (status, _) = attack(
+        app,
+        "POST",
+        "/v1/quotes",
+        paid.to_string(),
+        &[
+            ("authorization", bearer),
+            ("idempotency-key", &Uuid::new_v4().to_string()),
+        ],
+    )
+    .await?;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "free credentials cannot create paid quotes"
+    );
     Ok(())
 }

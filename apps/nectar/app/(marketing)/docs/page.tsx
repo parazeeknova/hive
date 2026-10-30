@@ -1,13 +1,13 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
+import { publicMetadata } from "../../../lib/seo";
 import { ConnectionGuide } from "./connection-guide";
 
-export const metadata: Metadata = {
-  description:
-    "Connect Claude Code, OpenCode, Codex, Pi, and Antigravity to Hive with scoped MCP credentials.",
-  title: "Connect your agent · Hive docs",
-};
+export const metadata = publicMetadata(
+  "Connect your AI agent with MCP | Hive docs",
+  "/docs",
+  "Connect Claude Code, OpenCode, Codex, Pi, and Antigravity to Hive with scoped MCP API keys. Run free tools without a wallet and publish reusable Wasm capabilities."
+);
 const Docs = () => (
   <div className="mx-auto max-w-6xl px-6 pt-40 pb-24 sm:px-10">
     <div className="mb-14 max-w-3xl">
@@ -48,17 +48,18 @@ const Docs = () => (
         </section>
         <section id="credentials" className="scroll-mt-32">
           <h2 className="font-display text-2xl">
-            One wallet. A scoped session.
+            One API key. A scoped connection.
           </h2>
           <p className="mt-4 leading-7 text-stone-600">
             Open{" "}
             <Link href="/dashboard?view=settings" className="underline">
               Account settings
             </Link>{" "}
-            and connect your wallet. Sign the displayed challenge to issue a
-            short-lived credential. Existing credentials can also be used to
-            connect. Keep the token private and use your client’s
-            environment-variable support where available.
+            and open the API keys tab. Sign in with GitHub and create a named,
+            short-lived key for free capabilities. A wallet is optional for free
+            tools; connect one for paid invocations or publishing. Keep the
+            token private and use your client’s environment-variable support
+            where available.
           </p>
           <p className="mt-3 leading-7 text-stone-600">
             Reading requires <code>capabilities:read</code>. Invoking hosted
