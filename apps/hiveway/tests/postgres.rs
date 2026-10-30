@@ -21,6 +21,9 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
     admin
         .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
         .await?;
+    // Exercise upgrading a database whose shared extension predates Hiveway.
+    let extension_schema = format!("{schema}_extensions");
+    admin.execute_unprepared(&format!("CREATE SCHEMA {extension_schema}; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public; ALTER EXTENSION pg_trgm SET SCHEMA {extension_schema}")).await?;
     let mut options = sea_orm::ConnectOptions::new(url);
     options.set_schema_search_path(schema.clone());
     let db = Database::connect(options).await?;
@@ -103,6 +106,9 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
     admin
         .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
         .await?;
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {extension_schema}"))
+        .await?;
     admin.close().await?;
     outcome
 }
@@ -142,7 +148,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        8
+        10
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {
@@ -228,6 +234,21 @@ async fn assert_settlement_output(
                 .is_err()
         );
     }
+    // Zero price alone must not weaken the settled-output constraint when
+    // payment_method is NULL (SQL CHECK treats an unknown predicate as valid).
+    assert!(
+        invocations::Entity::update_many()
+            .col_expr(invocations::Column::State, Expr::val("settled"))
+            .col_expr(invocations::Column::Price, Expr::val(0_i64))
+            .col_expr(
+                invocations::Column::Result,
+                Expr::val(serde_json::json!({"ok":true}))
+            )
+            .filter(invocations::Column::Id.eq(id))
+            .exec(db)
+            .await
+            .is_err()
+    );
     let updated = invocations::Entity::update_many()
         .col_expr(invocations::Column::State, Expr::val("settled"))
         .col_expr(

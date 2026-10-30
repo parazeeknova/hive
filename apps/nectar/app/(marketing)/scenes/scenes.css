@@ -1,0 +1,1263 @@
+/* Shared scene surfaces use the existing Tailwind palette, fonts, radii and shadows. */
+@layer components {
+  .hive-scene {
+    --scene-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --scene-duration: 7s;
+    --scene-story: scene-story-seven;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    flex-shrink: 0;
+    margin: 0;
+    overflow: hidden;
+    container-type: inline-size;
+    border-radius: var(--radius-3xl);
+    background: linear-gradient(
+      160deg,
+      var(--color-stone-50),
+      var(--color-stone-100)
+    );
+    color: var(--color-neutral-600);
+    font-family: var(--font-body);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .scene-track {
+    position: absolute;
+    inset: 0;
+  }
+  .scene-surface {
+    border-radius: var(--radius-xl);
+    background: var(--color-white);
+    box-shadow:
+      inset 0 1px 0 var(--color-white),
+      var(--shadow-sm),
+      var(--shadow-soft);
+  }
+  .scene-mono,
+  .scene-tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .scene-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--color-neutral-100);
+    color: var(--color-neutral-500);
+  }
+  .scene-done {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 2px 6px;
+    border-radius: var(--radius-md);
+    background: var(--color-amber-100);
+    color: var(--color-amber-800);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .scene-hexagon {
+    width: 100%;
+    height: 100%;
+    color: var(--color-white);
+  }
+
+  /* DISCOVER — text, then results, then one clear selection. */
+  .discover-scene {
+    --scene-duration: 6s;
+    --scene-story: scene-story-six;
+  }
+  .discover-board {
+    inset: 4% 5%;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(6px, 2.5cqw, 12px);
+    justify-content: center;
+  }
+  .discover-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: clamp(32px, 10cqw, 44px);
+    min-height: 32px;
+    padding: 0 10px;
+    flex-shrink: 0;
+    color: var(--color-neutral-400);
+  }
+  .discover-search > svg {
+    flex-shrink: 0;
+  }
+  .discover-query {
+    position: relative;
+    display: inline-block;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--color-neutral-600);
+    white-space: nowrap;
+  }
+  .discover-type-mask {
+    position: absolute;
+    inset: 0;
+    background: var(--color-white);
+    transform: translateX(100%);
+  }
+  .discover-caret {
+    position: absolute;
+    top: 1px;
+    left: 0;
+    width: 1px;
+    height: 14px;
+    background: var(--color-neutral-500);
+    opacity: 0;
+  }
+  .discover-results {
+    display: grid;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    gap: clamp(5px, 2cqw, 9px);
+    flex: 1;
+    min-height: 0;
+    max-height: 220px;
+  }
+  .discover-row {
+    position: relative;
+    min-height: 0;
+    border-radius: var(--radius-xl);
+    background: var(--color-white);
+    box-shadow: var(--shadow-xs);
+  }
+  .discover-row-content {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 100%;
+    padding: 4px 9px;
+  }
+  .discover-hex {
+    width: clamp(22px, 7cqw, 30px);
+    height: clamp(22px, 7cqw, 30px);
+    flex-shrink: 0;
+    color: var(--color-neutral-100);
+  }
+  .discover-row-0 .discover-hex {
+    color: var(--color-amber-200);
+  }
+  .discover-name {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    font-size: clamp(11px, 3cqw, 13px);
+    font-weight: 500;
+    color: var(--color-neutral-700);
+  }
+  .discover-name > span {
+    white-space: nowrap;
+  }
+  .discover-tags {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .discover-tested {
+    padding: 1px 4px;
+  }
+  .discover-price {
+    margin-left: auto;
+    flex-shrink: 0;
+    color: var(--color-neutral-500);
+  }
+  .discover-row-1,
+  .discover-row-2 {
+    opacity: 0.45;
+  }
+  .discover-highlight {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--color-amber-50);
+    box-shadow: inset 0 0 0 1px var(--color-amber-300);
+  }
+
+  /* INVOKE — a fixed node, three distinct documents and table shapes. */
+  .invoke-caption {
+    position: absolute;
+    top: 12%;
+    right: 6%;
+    left: 6%;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--color-neutral-400);
+  }
+  .invoke-wires {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--color-neutral-300);
+  }
+  .invoke-input-lane {
+    position: absolute;
+    top: 47%;
+    left: 4%;
+    width: 34%;
+    height: 30px;
+    transform: translateY(-50%);
+  }
+  .input-chip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 6px;
+    font-size: 11.5px;
+    white-space: nowrap;
+    opacity: 0;
+  }
+  .input-chip > svg {
+    flex-shrink: 0;
+  }
+  .input-chip-2 {
+    opacity: 1;
+  }
+  .invoke-capability {
+    position: absolute;
+    top: 47%;
+    left: 46%;
+    width: 22%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+  }
+  .invoke-node {
+    position: relative;
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+  }
+  .invoke-node-shape {
+    position: absolute;
+    inset: 0;
+    color: var(--color-amber-200);
+    filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.05));
+  }
+  .invoke-node > svg:last-child {
+    position: relative;
+    color: var(--color-amber-800);
+  }
+  .invoke-ring {
+    position: absolute;
+    inset: -3%;
+    border: 1px solid var(--color-amber-400);
+    border-radius: 50%;
+    opacity: 0;
+  }
+  .invoke-node-label {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--color-neutral-700);
+  }
+  .invoke-hosted {
+    position: absolute;
+    top: calc(100% + 25px);
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--color-neutral-400);
+  }
+  .invoke-output {
+    position: absolute;
+    top: 30%;
+    right: 4%;
+    display: flex;
+    width: 32%;
+    height: 48%;
+    flex-direction: column;
+    padding: 10px 8px;
+  }
+  .invoke-output-title {
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .invoke-table-area {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    margin: 9px 0;
+  }
+  .invoke-table {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(var(--columns), 1fr);
+    grid-template-rows: repeat(var(--rows), 1fr);
+    gap: 3px;
+    opacity: 0;
+  }
+  .invoke-table-2 {
+    opacity: 1;
+  }
+  .table-cell {
+    border-radius: 3px;
+    background: var(--color-neutral-200);
+  }
+  .table-cell:nth-child(-n + 2) {
+    background: var(--color-amber-200);
+  }
+  .invoke-table-1 .table-cell:nth-child(-n + 4),
+  .invoke-table-2 .table-cell:nth-child(-n + 3) {
+    background: var(--color-amber-200);
+  }
+  .invoke-billing {
+    display: flex;
+    justify-content: center;
+  }
+  .invoke-price {
+    position: relative;
+    width: 54px;
+    height: 22px;
+    overflow: hidden;
+  }
+  .invoke-total {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+  }
+  .invoke-total-2 {
+    opacity: 1;
+  }
+
+  /* COMPOSE — three adjacent cells become a published tool and a fourth joins. */
+  .compose-grid {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--color-neutral-300);
+    opacity: 0.45;
+  }
+  .compose-cluster {
+    position: absolute;
+    inset: 0;
+    transform: translateY(-4px);
+  }
+  .compose-cluster::before {
+    content: "";
+    position: absolute;
+    top: 9%;
+    left: 19%;
+    width: 52%;
+    height: 69%;
+    border-radius: var(--radius-3xl);
+    box-shadow: var(--shadow-md);
+    opacity: 0.5;
+  }
+  .compose-connections {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    color: var(--color-amber-600);
+  }
+  .compose-outline-fill {
+    opacity: 0.08;
+  }
+  .compose-outline {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 0;
+  }
+  .compose-line {
+    stroke-dasharray: 100;
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  .compose-data-dot {
+    opacity: 0;
+  }
+  .compose-node {
+    position: absolute;
+    width: 26%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+  }
+  .compose-node-0 {
+    left: 34%;
+    top: 30%;
+  }
+  .compose-node-1 {
+    left: 56.5%;
+    top: 30%;
+  }
+  .compose-node-2 {
+    left: 45.25%;
+    top: 56%;
+  }
+  .compose-token {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  .compose-token > .scene-hexagon {
+    position: absolute;
+    inset: 0;
+    color: var(--color-white);
+    opacity: 0.35;
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.06));
+  }
+  .compose-node-copy {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--color-neutral-500);
+    opacity: 0;
+  }
+  .compose-combined {
+    position: absolute;
+    top: 40%;
+    left: 45.25%;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 8px;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    font-size: clamp(11px, 3.5cqw, 14px);
+    font-weight: 500;
+    color: var(--color-neutral-700);
+  }
+  .compose-combined > div {
+    display: flex;
+    gap: 12px;
+    color: var(--color-neutral-500);
+  }
+  .compose-published {
+    position: absolute;
+    top: 81%;
+    left: 45.25%;
+    transform: translateX(-50%);
+  }
+  .compose-next-slot,
+  .compose-next-node {
+    position: absolute;
+    top: 56%;
+    left: 68%;
+    width: 26%;
+    aspect-ratio: 1;
+    transform: translate(-50%, -50%);
+  }
+  .compose-next-slot {
+    color: var(--color-neutral-300);
+    opacity: 0;
+  }
+  .compose-next-slot > svg {
+    width: 100%;
+    height: 100%;
+  }
+  .compose-next-node > .scene-hexagon {
+    position: absolute;
+    inset: 0;
+    color: var(--color-neutral-200);
+    opacity: 0.6;
+  }
+  .compose-next-node > svg:last-child {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--color-neutral-400);
+  }
+
+  .network-card {
+    position: relative;
+    height: 100%;
+    box-shadow: var(--shadow-sm);
+  }
+  .network-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* A single clock per scene. All offsets are baked into keyframes, so loops never drift. */
+@media (prefers-reduced-motion: no-preference) {
+  .network-section[data-reveal="armed"] .network-enter-line,
+  .network-section[data-reveal="armed"] .network-card-entry,
+  .network-section[data-reveal="ready"]
+    .network-card-entry[data-card-reveal="pending"] {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  .network-section[data-reveal="ready"] .network-enter-line {
+    animation: network-line-enter 480ms
+      var(--scene-ease, cubic-bezier(0.22, 1, 0.36, 1)) var(--entry-delay) both;
+  }
+  .network-section[data-reveal="ready"]
+    .network-card-entry[data-card-reveal="ready"] {
+    animation: network-card-enter 480ms cubic-bezier(0.22, 1, 0.36, 1)
+      var(--entry-delay) both;
+  }
+  .network-card {
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .network-card::after {
+    transition: opacity 240ms ease;
+  }
+  .hive-scene[data-loop="idle"] .scene-track,
+  .hive-scene[data-loop="reset"] .scene-track {
+    opacity: 0;
+  }
+  .hive-scene:is([data-loop="running"], [data-loop="paused"]) .scene-track {
+    animation: var(--scene-story) var(--scene-duration) linear infinite both;
+  }
+
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-type-mask {
+    animation: discover-type 6s steps(24, end) infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-caret {
+    animation: discover-caret 6s steps(1, end) infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-row-0 {
+    animation: discover-row-first 6s var(--scene-ease) infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-row-1 {
+    animation: discover-row-second 6s var(--scene-ease) infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-row-2 {
+    animation: discover-row-third 6s var(--scene-ease) infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-highlight {
+    animation: discover-select 6s ease-in-out infinite both;
+  }
+  .discover-scene:is([data-loop="running"], [data-loop="paused"])
+    .discover-tested {
+    animation: discover-tested 6s var(--scene-ease) infinite both;
+  }
+
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .input-chip-0 {
+    animation: invoke-input-first 7s ease-in-out infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .input-chip-1 {
+    animation: invoke-input-second 7s ease-in-out infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .input-chip-2 {
+    animation: invoke-input-third 7s ease-in-out infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .invoke-node {
+    animation: invoke-pulse 7s ease-in-out infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .invoke-ring {
+    animation: invoke-ring 7s ease-in-out infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-table-0 {
+    animation: invoke-output-first 7s var(--scene-ease) infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-table-1 {
+    animation: invoke-output-second 7s var(--scene-ease) infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-table-2 {
+    animation: invoke-output-third 7s var(--scene-ease) infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .table-cell-0 {
+    animation: invoke-cell-first 7s var(--scene-ease) calc(var(--cell) * 40ms)
+      infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .table-cell-1 {
+    animation: invoke-cell-second 7s var(--scene-ease) calc(var(--cell) * 40ms)
+      infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"]) .table-cell-2 {
+    animation: invoke-cell-third 7s var(--scene-ease) calc(var(--cell) * 40ms)
+      infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-total-0 {
+    animation: invoke-price-first 7s var(--scene-ease) infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-total-1 {
+    animation: invoke-price-second 7s var(--scene-ease) infinite both;
+  }
+  .invoke-scene:is([data-loop="running"], [data-loop="paused"])
+    .invoke-total-2 {
+    animation: invoke-price-third 7s var(--scene-ease) infinite both;
+  }
+
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-node-0
+    .compose-token {
+    animation: compose-fetch 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-node-1
+    .compose-token {
+    animation: compose-parse 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-node-2
+    .compose-token {
+    animation: compose-summarize 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-token
+    > .scene-hexagon {
+    animation: compose-hex-fade 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-node-copy {
+    animation: compose-labels 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"]) .compose-line {
+    animation: compose-line 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-data-dot {
+    animation: compose-data 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-outline {
+    animation: compose-outline 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-outline-fill {
+    animation: compose-fill 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-combined {
+    animation: compose-combined 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-cluster {
+    animation: compose-lift 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-cluster::before {
+    animation: compose-depth 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-published {
+    animation: compose-published 7s var(--scene-ease) infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-next-slot {
+    animation: compose-slot 7s ease-in-out infinite both;
+  }
+  .compose-scene:is([data-loop="running"], [data-loop="paused"])
+    .compose-next-node {
+    animation: compose-next 7s var(--scene-ease) infinite both;
+  }
+
+  .hive-scene[data-loop="paused"] *,
+  .hive-scene[data-loop="paused"] *::before {
+    animation-play-state: paused !important;
+  }
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .network-card:hover {
+    transform: translateY(-2px);
+  }
+  .network-card:hover::after {
+    opacity: 1;
+  }
+}
+
+@keyframes network-line-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes network-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes scene-story-six {
+  0% {
+    opacity: 0;
+  }
+  2%,
+  95% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes scene-story-seven {
+  0% {
+    opacity: 0;
+  }
+  2%,
+  95.714% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes discover-type {
+  0% {
+    transform: translateX(0);
+  }
+  20%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+@keyframes discover-caret {
+  0%,
+  4%,
+  12% {
+    opacity: 1;
+  }
+  2%,
+  8%,
+  16%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes discover-row-first {
+  0%,
+  20% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  28.667%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes discover-row-second {
+  0%,
+  22% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  30.667%,
+  33.333% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  46.667%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+}
+@keyframes discover-row-third {
+  0%,
+  24% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  32.667%,
+  33.333% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  46.667%,
+  100% {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+}
+@keyframes discover-select {
+  0%,
+  33.333% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  46.667%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes discover-tested {
+  0%,
+  46.667% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  56.667%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes invoke-input-first {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px) scale(1);
+  }
+  2% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  7.143% {
+    opacity: 0;
+    transform: translateX(18cqw) scale(0.96);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(18cqw) scale(0.96);
+  }
+}
+@keyframes invoke-input-second {
+  0%,
+  25.714% {
+    opacity: 0;
+    transform: translateX(-8px) scale(1);
+  }
+  27.714% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  32.857%,
+  100% {
+    opacity: 0;
+    transform: translateX(18cqw) scale(0.96);
+  }
+}
+@keyframes invoke-input-third {
+  0%,
+  51.429% {
+    opacity: 0;
+    transform: translateX(-8px) scale(1);
+  }
+  53.429% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  58.571%,
+  100% {
+    opacity: 0;
+    transform: translateX(18cqw) scale(0.96);
+  }
+}
+@keyframes invoke-pulse {
+  0%,
+  7.143%,
+  14.286%,
+  32.857%,
+  40%,
+  58.571%,
+  65.714%,
+  100% {
+    transform: scale(1);
+  }
+  10.714%,
+  36.429%,
+  62.143% {
+    transform: scale(1.06);
+  }
+}
+@keyframes invoke-ring {
+  0%,
+  7.143%,
+  14.286%,
+  32.857%,
+  40%,
+  58.571%,
+  65.714%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  7.5%,
+  33.2%,
+  59% {
+    opacity: 0.65;
+    transform: scale(1);
+  }
+  14%,
+  39.7%,
+  65.4% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+@keyframes invoke-output-first {
+  0%,
+  12.857% {
+    opacity: 0;
+  }
+  15.714%,
+  38.571% {
+    opacity: 1;
+  }
+  41.429%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes invoke-output-second {
+  0%,
+  38.571% {
+    opacity: 0;
+  }
+  41.429%,
+  64.286% {
+    opacity: 1;
+  }
+  67.143%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes invoke-output-third {
+  0%,
+  64.286% {
+    opacity: 0;
+  }
+  67.143%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes invoke-cell-first {
+  0%,
+  12.857% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  17.143%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes invoke-cell-second {
+  0%,
+  38.571% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  42.857%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes invoke-cell-third {
+  0%,
+  64.286% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  68.571%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes invoke-price-first {
+  0%,
+  12.857% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  17.143%,
+  38.571% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  42.857%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes invoke-price-second {
+  0%,
+  38.571% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  42.857%,
+  64.286% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  68.571%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes invoke-price-third {
+  0%,
+  64.286% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  68.571%,
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes compose-fetch {
+  0% {
+    opacity: 0;
+    transform: translate(-6px, -4px) rotate(-4deg);
+  }
+  7.857%,
+  11.429% {
+    opacity: 1;
+    transform: translate(-6px, -4px) rotate(-4deg);
+  }
+  26.286%,
+  100% {
+    opacity: 1;
+    transform: translate(0) rotate(0);
+  }
+}
+@keyframes compose-parse {
+  0%,
+  1.714% {
+    opacity: 0;
+    transform: translate(6px, -3px) rotate(5deg);
+  }
+  9.571%,
+  12.571% {
+    opacity: 1;
+    transform: translate(6px, -3px) rotate(5deg);
+  }
+  27.429%,
+  100% {
+    opacity: 1;
+    transform: translate(0) rotate(0);
+  }
+}
+@keyframes compose-summarize {
+  0%,
+  3.429% {
+    opacity: 0;
+    transform: translate(4px, 6px) rotate(-3deg);
+  }
+  11.286%,
+  13.714% {
+    opacity: 1;
+    transform: translate(4px, 6px) rotate(-3deg);
+  }
+  28.571%,
+  100% {
+    opacity: 1;
+    transform: translate(0) rotate(0);
+  }
+}
+@keyframes compose-hex-fade {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  54.286%,
+  100% {
+    opacity: 0.35;
+  }
+}
+@keyframes compose-labels {
+  0%,
+  40% {
+    opacity: 1;
+  }
+  54.286%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes compose-line {
+  0%,
+  28.571% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  29% {
+    opacity: 1;
+    stroke-dashoffset: 100;
+  }
+  40% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  54.286%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes compose-data {
+  0%,
+  28.571% {
+    opacity: 0;
+    transform: translate(109px, 72px);
+  }
+  29% {
+    opacity: 1;
+    transform: translate(109px, 72px);
+  }
+  34.286% {
+    opacity: 1;
+    transform: translate(181px, 72px);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(145px, 134px);
+  }
+  41%,
+  100% {
+    opacity: 0;
+    transform: translate(145px, 134px);
+  }
+}
+@keyframes compose-outline {
+  0%,
+  40% {
+    opacity: 0;
+    stroke-dashoffset: 100;
+  }
+  40.1% {
+    opacity: 1;
+    stroke-dashoffset: 100;
+  }
+  54.286%,
+  100% {
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes compose-fill {
+  0%,
+  40% {
+    opacity: 0;
+  }
+  54.286%,
+  100% {
+    opacity: 0.08;
+  }
+}
+@keyframes compose-combined {
+  0%,
+  40% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px));
+  }
+  54.286%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+@keyframes compose-lift {
+  0%,
+  54.286% {
+    transform: translateY(0);
+  }
+  62.857%,
+  100% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes compose-depth {
+  0%,
+  54.286% {
+    opacity: 0;
+  }
+  62.857%,
+  100% {
+    opacity: 0.5;
+  }
+}
+@keyframes compose-published {
+  0%,
+  54.286% {
+    opacity: 0;
+    transform: translate(-50%, 4px) scale(0.96);
+  }
+  62.857%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes compose-slot {
+  0%,
+  62.857% {
+    opacity: 0;
+  }
+  67.143%,
+  74.286% {
+    opacity: 1;
+  }
+  77.143%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes compose-next {
+  0%,
+  68.571% {
+    opacity: 0;
+    transform: translate(calc(-50% - 8px), -50%);
+  }
+  77.143%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}

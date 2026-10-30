@@ -23,7 +23,7 @@ pub(super) async fn release_expired(tx: &Tx, credential: Uuid) -> ApiResult<()> 
         .await?
         .flatten()
         .unwrap_or(0);
-    if released > 0 {
+    {
         Invocations::update_many()
             .col_expr(InvocationColumn::State, Expr::val("expired"))
             .col_expr(InvocationColumn::ErrorCode, Expr::val("quote_expired"))

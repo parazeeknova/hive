@@ -1,13 +1,19 @@
 import { context, propagation, trace } from "@opentelemetry/api";
 
-import { logger } from "../lib/logger";
+import { logger } from "../../../lib/logger";
 
-const Home = () =>
+export const dynamic = "force-dynamic";
+
+export const GET = () =>
   trace.getTracer("nectar").startActiveSpan("hiveway.health", async (span) => {
     try {
       const headers: Record<string, string> = {};
       propagation.inject(context.active(), headers);
-      const response = await fetch("http://127.0.0.1:3001/api/health", {
+      const origin =
+        process.env.HIVEWAY_ORIGIN ||
+        process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ||
+        "http://127.0.0.1:3001";
+      const response = await fetch(`${origin.replace(/\/$/u, "")}/api/health`, {
         cache: "no-store",
         headers,
         signal: AbortSignal.timeout(5000),
@@ -25,10 +31,8 @@ const Home = () =>
         throw new Error("Hiveway returned an invalid health response");
       }
       logger.info("Hiveway health request completed");
-      return <main>{health.status}</main>;
+      return Response.json({ hiveway: health, nectar: "ok" });
     } finally {
       span.end();
     }
   });
-
-export default Home;

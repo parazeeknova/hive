@@ -30,18 +30,20 @@ use model::{CapabilityPage, PageQuery};
 use sea_orm::sea_query::ExprTrait;
 use sea_orm::sea_query::SimpleExpr;
 use sea_orm::{
-    ColumnTrait, Condition, EntityTrait, FromQueryResult, QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use std::collections::HashMap;
 use std::time::Duration;
 
 const CACHE_TTL_SECONDS: i64 = 30;
-const CACHE_TIMEOUT: Duration = Duration::from_millis(200);
+const VERSION_WRITE_TIMEOUT: Duration = Duration::from_millis(200);
+const CACHE_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// Bump the catalog version after a write so cached discovery pages expire.
 pub async fn bump_catalog_version(state: &AppState) {
     let bumped = tokio::time::timeout(
-        CACHE_TIMEOUT,
+        VERSION_WRITE_TIMEOUT,
         state.redis.incr::<i64, _>("scout:catalog_ver"),
     )
     .await;
@@ -57,14 +59,21 @@ async fn cache_get(state: &AppState, key: &str) -> Option<String> {
         .ok()?
 }
 
-async fn catalog_version(state: &AppState) -> String {
-    cache_get(state, "scout:catalog_ver")
-        .await
-        .unwrap_or_else(|| "0".into())
+async fn catalog_version(state: &AppState) -> Option<String> {
+    // A failed version read must bypass the cache, never select an older generation.
+    let version: Option<String> =
+        tokio::time::timeout(CACHE_TIMEOUT, state.redis.get("scout:catalog_ver"))
+            .await
+            .ok()?
+            .ok()?;
+    Some(version.unwrap_or_else(|| "0".into()))
 }
 
 /// Integer relevance tier: exact substring, full-text, then trigram similarity.
 fn tier(query: &str) -> SimpleExpr {
+    if query.is_empty() {
+        return sea_orm::sea_query::Expr::val(0_i32);
+    }
     sea_orm::sea_query::Expr::cust_with_values(
         "CASE WHEN strpos(lower(name), lower($1)) > 0 OR strpos(lower(description), lower($1)) > 0 THEN 0 \
          WHEN search_vector @@ plainto_tsquery('english', $1) THEN 1 \
@@ -153,6 +162,7 @@ async fn fetch_page_keys(
     postgres: &sea_orm::DatabaseConnection,
     req: &ResolvedPage,
 ) -> ApiResult<(Vec<PageKey>, bool)> {
+    let tx = postgres.begin().await?;
     let tier_expr = tier(&req.query);
     let mut keys = Entity::find()
         .select_only()
@@ -160,6 +170,24 @@ async fn fetch_page_keys(
         .column_as(tier_expr.clone(), "tier")
         .column(Column::CreatedAt)
         .filter(tier_expr.clone().lte(2));
+    if !req.query.is_empty() {
+        // The trigram operator can use GIN; similarity() alone scans every row.
+        // SET LOCAL is pinned to this transaction and cannot leak into the pool.
+        tx.execute_unprepared("SET LOCAL pg_trgm.similarity_threshold = 0.15")
+            .await?;
+        let pattern = format!(
+            "%{}%",
+            req.query
+                .to_lowercase()
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        keys = keys.filter(sea_orm::sea_query::Expr::cust_with_values(
+            "lower(name) LIKE $1 OR lower(description) LIKE $1 OR search_vector @@ plainto_tsquery('english', $2) OR lower(name) OPERATOR(public.%) lower($2) OR lower(description) OPERATOR(public.%) lower($2)",
+            [pattern, req.query.clone()],
+        ));
+    }
     if !req.include_inactive {
         keys = keys.filter(Column::Active.eq(true));
     }
@@ -193,8 +221,9 @@ async fn fetch_page_keys(
         .order_by_asc(Column::Id)
         .limit(u64::from(req.limit) + 1)
         .into_model::<PageKey>()
-        .all(postgres)
+        .all(&tx)
         .await?;
+    tx.commit().await?;
     let more = keys.len() > usize::from(req.limit);
     keys.truncate(usize::from(req.limit));
     Ok((keys, more))
@@ -211,7 +240,8 @@ pub async fn page(
     let req = resolve(&state, &headers, request).await?;
     let version = catalog_version(&state).await;
     let cache_key = format!(
-        "scout:v{version}:{}",
+        "scout:v{}:{}",
+        version.as_deref().unwrap_or("unavailable"),
         hex::encode(identity::hash(&serde_json::to_vec(&(
             &req.query,
             &req.runtime,
@@ -222,7 +252,8 @@ pub async fn page(
             &req.cursor,
         ))?))
     );
-    if let Some(hit) = cache_get(&state, &cache_key).await
+    if version.is_some()
+        && let Some(hit) = cache_get(&state, &cache_key).await
         && let Ok(page) = serde_json::from_str::<CapabilityPage>(&hit)
     {
         return Ok(Json(page));
@@ -264,7 +295,9 @@ pub async fn page(
         items: values,
         next_cursor,
     };
-    if let Ok(body) = serde_json::to_string(&page) {
+    if version.is_some()
+        && let Ok(body) = serde_json::to_string(&page)
+    {
         let stored = tokio::time::timeout(
             CACHE_TIMEOUT,
             state.redis.set::<(), _, _>(

@@ -9,6 +9,7 @@ use crate::entities::invocations::Entity as InvocationsEntity;
 use sea_orm::sea_query::{Expr, ExprTrait, OnConflict, Query as SqlQuery};
 use sea_orm::{ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait};
 pub mod dodo;
+mod free;
 pub mod quotes;
 pub mod worker;
 pub mod x402;
@@ -207,7 +208,11 @@ fn required(inv: &Invocation) -> ApiResult<PaymentRequired> {
     Ok(PaymentRequired {
         x402_version: 2,
         resource: serde_json::from_value(inv.resource.clone())?,
-        accepts: vec![serde_json::from_value(inv.requirements.clone())?],
+        accepts: if inv.price == 0 {
+            Vec::new()
+        } else {
+            vec![serde_json::from_value(inv.requirements.clone())?]
+        },
     })
 }
 fn payment_response(inv: &Invocation) -> ApiResult<Response> {
@@ -289,6 +294,9 @@ pub async fn invoke(
         release(&tx, &inv, "expired", "quote_expired").await?;
         tx.commit().await?;
         return Err(ApiError::new(StatusCode::CONFLICT, "quote_expired"));
+    }
+    if inv.price == 0 {
+        return free::invoke(&state, tx, inv).await;
     }
     let Some(header) = headers.get("payment-signature") else {
         let response = payment_response(&inv)?;

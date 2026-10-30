@@ -1,6 +1,6 @@
 {
   "name": "@hive/local",
-  "version": "0.0.26",
+  "version": "0.0.29",
   "private": true,
   "description": "Development-only payment fixtures and protocol test dependencies for Hiveway",
   "type": "module",

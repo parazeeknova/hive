@@ -9,6 +9,8 @@ mod m20261030_000005_wasm_artifacts;
 mod m20261030_000006_catalog_read_indexes;
 mod m20261030_000007_creator_earnings;
 mod m20261030_000008_catalog_search;
+mod m20261030_000009_free_capabilities;
+mod m20261030_000010_catalog_candidates;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -22,6 +24,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000006_catalog_read_indexes::Migration),
             Box::new(m20261030_000007_creator_earnings::Migration),
             Box::new(m20261030_000008_catalog_search::Migration),
+            Box::new(m20261030_000009_free_capabilities::Migration),
+            Box::new(m20261030_000010_catalog_candidates::Migration),
         ]
     }
 }
