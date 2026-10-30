@@ -301,12 +301,27 @@ pub async fn authenticate(
         .and_then(|v| v.strip_prefix("Bearer "))
         .filter(|v| v.len() == 68 && v.starts_with("hwa_"))
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "credential_required"))?;
-    let credential = AgentCredentialsEntity::find()
+    let mut credential = AgentCredentialsEntity::find()
         .filter(AgentCredentialsColumn::TokenHash.eq(hash(raw.as_bytes())))
         .into_model::<Credential>()
         .one(&state.postgres)
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "invalid_credential"))?;
+    authorize(&credential, "")?;
+    // Existing browser sessions receive the current free-publishing policy.
+    // Issued API keys retain their original explicit scopes until replaced.
+    if credential.wallet.starts_with("github:")
+        && crate::entities::account_api_keys::Entity::find_by_id(credential.id)
+            .one(&state.postgres)
+            .await?
+            .is_none()
+    {
+        for permission in ["capabilities:publish", "workflows:publish"] {
+            if !credential.scopes.iter().any(|s| s == permission) {
+                credential.scopes.push(permission.into());
+            }
+        }
+    }
     authorize(&credential, scope)?;
     Ok(credential)
 }
@@ -376,4 +391,15 @@ pub async fn authenticate_invoker(state: &AppState, headers: &HeaderMap) -> ApiR
     let credential = authenticate(state, headers, "").await?;
     invocation_scope(&credential)?;
     Ok(credential)
+}
+
+/// Validate publication pricing for the authenticated creator identity.
+/// # Errors
+/// Rejects paid listings without a payout wallet and malformed prices.
+pub fn publishing_price(creator: &str, value: &str) -> ApiResult<i64> {
+    let amount = price(value)?;
+    if creator.starts_with("github:") && amount != 0 {
+        return Err(ApiError::bad("connect_wallet_for_paid_publishing"));
+    }
+    Ok(amount)
 }

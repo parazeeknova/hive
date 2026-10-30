@@ -23,6 +23,7 @@ pub async fn publish(
     Json(request): Json<PublishCapability>,
 ) -> ApiResult<Json<Capability>> {
     let owner = identity::authenticate(&state, &headers, "capabilities:publish").await?;
+    let price = identity::publishing_price(&owner.wallet, &request.price)?;
     if request.name.trim().is_empty()
         || request.name.len() > 80
         || request.description.trim().is_empty()
@@ -53,7 +54,7 @@ pub async fn publish(
         description: Set(request.description),
         version: Set("1".into()),
         runtime: Set(request.runtime),
-        price: Set(identity::price(&request.price)?),
+        price: Set(price),
         active: Set(true),
         created_at: Set(now()),
         definition: Set(definition),

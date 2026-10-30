@@ -32,6 +32,7 @@ pub async fn compose(
     Json(request): Json<ComposeRequest>,
 ) -> ApiResult<Json<Capability>> {
     let creator = identity::authenticate(&state, &headers, "workflows:publish").await?;
+    let price = identity::publishing_price(&creator.wallet, &request.price)?;
     if request.name.trim().is_empty()
         || request.name.len() > 80
         || request.description.trim().is_empty()
@@ -67,7 +68,7 @@ pub async fn compose(
         description: Set(request.description),
         version: Set("1".into()),
         runtime: Set("workflow".into()),
-        price: Set(identity::price(&request.price)?),
+        price: Set(price),
         active: Set(true),
         created_at: Set(now()),
         definition: Set(serde_json::json!({"steps":request.steps})),

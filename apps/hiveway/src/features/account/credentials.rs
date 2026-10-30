@@ -65,6 +65,8 @@ pub async fn issue(
             [
                 "capabilities:read",
                 "capabilities:invoke",
+                "capabilities:publish",
+                "workflows:publish",
                 "repository:analyze",
                 "receipts:read",
             ]
