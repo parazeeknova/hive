@@ -16,7 +16,7 @@ def required(name):
     return value
 
 
-def request_json(url, *, body=None, key=None):
+def request_json(url, *, body=None, key=None, allow_empty=False):
     headers = {"Accept": "application/json", "Cache-Control": "no-cache"}
     if key:
         headers["x-api-key"] = key
@@ -30,7 +30,10 @@ def request_json(url, *, body=None, key=None):
     # Never include response bodies or credential-bearing configuration in errors.
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
+            payload = response.read()
+            if allow_empty and not payload.strip():
+                return None
+            return json.loads(payload)
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"HTTP {error.code} from {urllib.parse.urlsplit(url).path}") from None
 
@@ -46,7 +49,7 @@ class Dokploy:
         url = f"{self.url}/api/{endpoint}"
         if query:
             url += "?" + urllib.parse.urlencode(query)
-        return request_json(url, body=body, key=self.key)
+        return request_json(url, body=body, key=self.key, allow_empty=body is not None)
 
     def image(self, application_id, image):
         return self.api(

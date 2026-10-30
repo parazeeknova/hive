@@ -1,6 +1,7 @@
 """Regression checks for release identity and Dokploy queue handling."""
 
 import importlib.util
+import io
 from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
@@ -11,6 +12,27 @@ spec.loader.exec_module(deploy)
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_empty_success_response_is_accepted(self):
+        with patch.object(deploy.urllib.request, "urlopen", return_value=io.BytesIO(b"")):
+            self.assertIsNone(deploy.Dokploy("https://dokploy.example", "private").api("application.deploy", {}))
+
+    def test_empty_health_response_retries(self):
+        responses = [io.BytesIO(b""), io.BytesIO(b'{"status":"ok","revision":"new"}'), io.BytesIO(b'{"status":"ok"}')]
+        with patch.object(deploy.urllib.request, "urlopen", side_effect=responses), patch.object(deploy.time, "sleep") as sleep:
+            deploy.verify_health("https://api.example", "new")
+        sleep.assert_called_once_with(10)
+
+    def test_empty_readiness_response_retries(self):
+        health = b'{"status":"ok","revision":"new"}'
+        responses = [io.BytesIO(health), io.BytesIO(b""), io.BytesIO(health), io.BytesIO(b'{"status":"ok"}')]
+        with patch.object(deploy.urllib.request, "urlopen", side_effect=responses), patch.object(deploy.time, "sleep") as sleep:
+            deploy.verify_health("https://api.example", "new")
+        sleep.assert_called_once_with(10)
+
+    def test_json_success_response_is_preserved(self):
+        with patch.object(deploy.urllib.request, "urlopen", return_value=io.BytesIO(b'{"status":"ok"}')):
+            self.assertEqual(deploy.request_json("https://dokploy.example/api/application.one"), {"status": "ok"})
+
     def test_only_matching_immutable_images_are_accepted(self):
         image = "ghcr.io/parazeeknova/hive-nectar@sha256:" + "a" * 64
         self.assertEqual(deploy.immutable_image(image, "nectar"), image)
