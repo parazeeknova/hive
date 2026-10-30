@@ -94,3 +94,7 @@
     transform: translateY(0);
   }
 }
+
+.publisher-stage[data-loop="idle"] :is(.publisher-story, .publisher-call) {
+  opacity: 0;
+}

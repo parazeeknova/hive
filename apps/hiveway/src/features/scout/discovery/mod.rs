@@ -37,12 +37,13 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 const CACHE_TTL_SECONDS: i64 = 30;
+const VERSION_WRITE_TIMEOUT: Duration = Duration::from_millis(200);
 const CACHE_TIMEOUT: Duration = Duration::from_millis(10);
 
 /// Bump the catalog version after a write so cached discovery pages expire.
 pub async fn bump_catalog_version(state: &AppState) {
     let bumped = tokio::time::timeout(
-        CACHE_TIMEOUT,
+        VERSION_WRITE_TIMEOUT,
         state.redis.incr::<i64, _>("scout:catalog_ver"),
     )
     .await;

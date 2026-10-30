@@ -96,14 +96,15 @@ const setup = ({ card = false, reduced = false } = {}) => {
     value: ObserverStub,
   });
   const cleanup = observeLoopInView(root as unknown as HTMLElement);
-  const intersect = (ratio: number) => {
+  const intersect = (ratio: number, latest?: number) => {
     observers[0]?.onIntersect(
-      [
-        {
-          intersectionRatio: ratio,
-          isIntersecting: ratio > 0,
-        } as IntersectionObserverEntry,
-      ],
+      [ratio, ...(latest === undefined ? [] : [latest])].map(
+        (value) =>
+          ({
+            intersectionRatio: value,
+            isIntersecting: value > 0,
+          }) as IntersectionObserverEntry
+      ),
       {} as IntersectionObserver
     );
   };
@@ -149,6 +150,16 @@ const setup = ({ card = false, reduced = false } = {}) => {
 };
 
 describe("scene visibility lifecycle", () => {
+  test("uses the newest observation when crossings are batched", () => {
+    const scene = setup();
+    scene.intersect(0.5, 0);
+    scene.flush();
+    expect(scene.root.dataset.loop).not.toBe("running");
+    scene.intersect(0, 0.5);
+    scene.flush();
+    expect(scene.root.dataset.loop).toBe("running");
+    scene.stop();
+  });
   test("standalone scene starts only at 40 percent visibility", () => {
     const scene = setup();
     try {

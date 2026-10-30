@@ -9,14 +9,15 @@ export const GET = () =>
     try {
       const headers: Record<string, string> = {};
       propagation.inject(context.active(), headers);
-      const response = await fetch(
-        `${(process.env.HIVEWAY_ORIGIN ?? process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ?? "http://127.0.0.1:3001").replace(/\/$/u, "")}/api/health`,
-        {
-          cache: "no-store",
-          headers,
-          signal: AbortSignal.timeout(5000),
-        }
-      );
+      const origin =
+        process.env.HIVEWAY_ORIGIN ||
+        process.env.NEXT_PUBLIC_HIVEWAY_ORIGIN ||
+        "http://127.0.0.1:3001";
+      const response = await fetch(`${origin.replace(/\/$/u, "")}/api/health`, {
+        cache: "no-store",
+        headers,
+        signal: AbortSignal.timeout(5000),
+      });
       if (!response.ok) {
         throw new Error(`Hiveway returned ${response.status}`);
       }

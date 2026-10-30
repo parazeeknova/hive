@@ -14,6 +14,7 @@ impl MigrationTrait for Migration {
         // when migrations run with an isolated schema as the search path.
         db.execute_unprepared("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
             .await?;
+        db.execute_unprepared("DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm' AND extnamespace <> 'public'::regnamespace) THEN ALTER EXTENSION pg_trgm SET SCHEMA public; END IF; END $$").await?;
         db.execute_unprepared(
             "ALTER TABLE capabilities ADD COLUMN IF NOT EXISTS search_vector tsvector \
              GENERATED ALWAYS AS (to_tsvector('english', name || ' ' || description)) STORED",

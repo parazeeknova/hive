@@ -64,9 +64,11 @@ const Home = () => (
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            Creators set a per-call price. The planned payment flow checks your
-            authorized budget and records the invocation, payment, fees, and
-            creator earnings separately. Prices in this preview are examples.
+            Creators publish a fixed per-call price, including free
+            capabilities. Hiveway enforces session budgets and records
+            invocations and creator sales. Paid calls require a separate
+            client-wallet authorization; the website provides the quote handoff
+            to your agent.
           </p>
         </details>
         <details className={faqItem}>
@@ -87,10 +89,11 @@ const Home = () => (
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
           <p className={faqBody}>
-            This is a product preview. You can browse example capabilities,
-            inspect contracts, try sample responses, and draft a workflow. Live
-            authentication, execution, publishing, and payments are still being
-            built.
+            Connect a scoped wallet session to search live capabilities, run
+            free hosted Wasm with JSON input, inspect receipts, and manage
+            listing availability. Agents can publish artifacts through MCP. Paid
+            calls use quotes and explicit wallet authorization. Disconnected
+            examples are illustrative.
           </p>
         </details>
       </div>

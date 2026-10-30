@@ -18,7 +18,7 @@ const clients = [
     id: "opencode",
     name: "OpenCode",
     note: "This is the documented JSON config. OpenCode 2.x also supports: opencode mcp add hive --url <endpoint> --header 'Authorization=Bearer <token>' --global. Confirm with opencode mcp list.",
-    source: "https://opencode.ai/docs/mcp-servers/",
+    source: "https://opencode.ai/v2/docs/mcp-servers",
   },
   {
     file: "~/.codex/config.toml",
@@ -51,11 +51,13 @@ const snippet = (id: string, endpoint: string) => {
     config = {
       $schema: "https://opencode.ai/config.json",
       mcp: {
-        hive: {
-          headers: { Authorization: "Bearer {env:HIVE_TOKEN}" },
-          oauth: false,
-          type: "remote",
-          url: endpoint,
+        servers: {
+          hive: {
+            headers: { Authorization: "Bearer {env:HIVE_TOKEN}" },
+            oauth: false,
+            type: "remote",
+            url: endpoint,
+          },
         },
       },
     };
@@ -149,7 +151,7 @@ export const ConnectionGuide = () => {
             setEndpoint(event.target.value);
             setMessage("");
           }}
-          className="mt-2 mb-5 block w-full rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-normal tracking-normal"
+          className="mt-2 mb-5 block w-full rounded-xl border border-stone-200 bg-white px-4 py-3 text-base font-normal tracking-normal sm:text-sm"
           aria-describedby="endpoint-note"
         />
       </label>

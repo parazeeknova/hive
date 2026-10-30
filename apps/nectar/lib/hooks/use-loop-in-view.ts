@@ -82,7 +82,8 @@ export const observeLoopInView = (root: HTMLElement) => {
     return;
   }
   const observer = new IntersectionObserver(
-    ([entry]) => {
+    (entries) => {
+      const entry = entries.at(-1);
       if (!entry) {
         return;
       }

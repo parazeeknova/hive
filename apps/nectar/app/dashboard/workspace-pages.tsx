@@ -23,19 +23,6 @@ import type {
   Sale,
 } from "../../lib/hiveway";
 
-// Kept for reading older local preview drafts; live forms never submit these DTOs.
-export interface Draft {
-  id: string;
-  name: string;
-  description: string;
-  type: string;
-  price: number;
-}
-export interface WorkflowDraft {
-  name: string;
-  steps: string[];
-}
-
 export const EmptyState = ({
   title,
   children,
@@ -204,24 +191,49 @@ export const ActivityPanel = ({
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const loadAbort = useRef<AbortController | null>(null);
+  const pollAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const abort = () => {
+      loadAbort.current?.abort();
+      pollAbort.current?.abort();
+    };
+    if (!token) {
+      abort();
+    }
+    return abort;
+  }, [token]);
   const load = async (id: string, reconcile = false) => {
+    loadAbort.current?.abort();
+    pollAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
     setBusy(true);
     setError("");
     try {
-      setReceipt(
-        await hiveway<Receipt>(
-          `/v1/invocations/${id}${reconcile ? "/reconcile" : ""}`,
-          token,
-          reconcile ? { body: "{}", method: "POST" } : {}
-        )
+      const next = await hiveway<Receipt>(
+        `/v1/invocations/${id}${reconcile ? "/reconcile" : ""}`,
+        token,
+        {
+          signal: controller.signal,
+          ...(reconcile ? { body: "{}", method: "POST" } : {}),
+        }
       );
+      if (controller.signal.aborted) {
+        return;
+      }
+      setReceipt(next);
       if (reconcile) {
         onRefresh();
       }
     } catch (error_) {
-      setError(errorMessage(error_));
+      if (!controller.signal.aborted) {
+        setError(errorMessage(error_));
+      }
     }
-    setBusy(false);
+    if (!controller.signal.aborted) {
+      setBusy(false);
+    }
   };
   const receiptId = receipt?.id;
   const receiptState = receipt?.state;
@@ -229,6 +241,8 @@ export const ActivityPanel = ({
     if (!receiptId || !receiptState || terminalStates.has(receiptState)) {
       return;
     }
+    const controller = new AbortController();
+    pollAbort.current = controller;
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;
     let delay = 2000;
@@ -237,9 +251,10 @@ export const ActivityPanel = ({
         try {
           const next = await hiveway<Receipt>(
             `/v1/invocations/${receiptId}`,
-            token
+            token,
+            { signal: controller.signal }
           );
-          if (disposed) {
+          if (disposed || controller.signal.aborted) {
             return;
           }
           setReceipt(next);
@@ -248,7 +263,7 @@ export const ActivityPanel = ({
             return;
           }
         } catch (error_) {
-          if (!disposed) {
+          if (!disposed && !controller.signal.aborted) {
             setError(errorMessage(error_));
           }
           return;
@@ -266,6 +281,7 @@ export const ActivityPanel = ({
     }, delay);
     return () => {
       disposed = true;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [receiptId, receiptState, token, onRefresh]);
@@ -490,6 +506,9 @@ export const QuoteForm = ({
       return;
     }
     setBusy(true);
+    setQuote(null);
+    setFreeReceipt(null);
+    setNow(Date.now());
     setError("");
     try {
       if (tool.runtime !== "wasm") {
@@ -510,7 +529,6 @@ export const QuoteForm = ({
         headers: { "Idempotency-Key": request.current.key },
         method: "POST",
       });
-      setQuote(result);
       if (result.payment.accepts.length === 0) {
         setFreeReceipt(
           await hiveway<Receipt>(`/v1/invocations/${result.id}`, token, {
@@ -519,6 +537,7 @@ export const QuoteForm = ({
           })
         );
       }
+      setQuote(result);
       setCopied(false);
       setNow(Date.now());
       onQuoted();

@@ -96,7 +96,7 @@ const EarningsSection = () => {
                 {modes.map(({ value, label, description }) => (
                   <label
                     key={value}
-                    className="group relative flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-3 not-has-focus-visible:bg-transparent has-focus-visible:outline-2 has-focus-visible:outline-offset-3 has-focus-visible:outline-amber-600 has-data-[selected=true]:bg-white has-data-[selected=true]:shadow-[inset_0_1px_0_var(--color-white),var(--shadow-xs)] sm:px-4"
+                    className="group relative flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-3 has-focus-visible:outline-2 has-focus-visible:outline-offset-3 has-focus-visible:outline-amber-600 data-[selected=true]:bg-white data-[selected=true]:shadow-[inset_0_1px_0_var(--color-white),var(--shadow-xs)] sm:px-4"
                     data-selected={mode === value}
                   >
                     <input
@@ -108,7 +108,7 @@ const EarningsSection = () => {
                       onChange={() => setMode(value)}
                     />
                     <span
-                      className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-neutral-200 text-transparent group-has-data-[selected=true]:bg-amber-200 group-has-data-[selected=true]:text-amber-900"
+                      className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-neutral-200 text-transparent group-data-[selected=true]:bg-amber-200 group-data-[selected=true]:text-amber-900"
                       aria-hidden="true"
                     >
                       <Icon name="check" size={11} />

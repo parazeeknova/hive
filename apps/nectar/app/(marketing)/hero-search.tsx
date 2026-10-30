@@ -107,7 +107,7 @@ const HeroSearch = () => {
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={prompt.slice(0, frame.characters)}
-          className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-neutral-900 outline-none placeholder:text-neutral-400 focus-visible:outline-none motion-reduce:placeholder:text-neutral-500 sm:text-sm"
+          className="h-full min-w-0 flex-1 border-0 bg-transparent text-base text-neutral-900 outline-none placeholder:text-neutral-400 focus-visible:outline-none motion-reduce:placeholder:text-neutral-500 sm:text-sm"
         />
         <button
           type="submit"

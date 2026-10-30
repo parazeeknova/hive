@@ -21,6 +21,9 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
     admin
         .execute_unprepared(&format!("CREATE SCHEMA {schema}"))
         .await?;
+    // Exercise upgrading a database whose shared extension predates Hiveway.
+    let extension_schema = format!("{schema}_extensions");
+    admin.execute_unprepared(&format!("CREATE SCHEMA {extension_schema}; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public; ALTER EXTENSION pg_trgm SET SCHEMA {extension_schema}")).await?;
     let mut options = sea_orm::ConnectOptions::new(url);
     options.set_schema_search_path(schema.clone());
     let db = Database::connect(options).await?;
@@ -102,6 +105,9 @@ async fn migrations_entities_and_budget_transactions() -> Result<(), Box<dyn std
     db.close().await?;
     admin
         .execute_unprepared(&format!("DROP SCHEMA {schema} CASCADE"))
+        .await?;
+    admin
+        .execute_unprepared(&format!("DROP SCHEMA {extension_schema}"))
         .await?;
     admin.close().await?;
     outcome

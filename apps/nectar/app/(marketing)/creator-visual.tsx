@@ -18,7 +18,7 @@ const CreatorVisual = () => {
     <figure
       ref={ref}
       data-loop="idle"
-      className="m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)]"
+      className="publisher-stage m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)]"
       aria-label="Illustrative publishing activity: one Repository Analyzer capability serves three different repositories at five cents per call, for fifteen cents in total call value."
     >
       <div

@@ -101,6 +101,21 @@ const Inspector = ({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) => {
+  let outputDescription =
+    "Report fields can include repository_url, revision, manifests, technologies, dependencies, and analysis_limit_reached. The settled result is the source of truth.";
+  let limitationDescription =
+    "Analysis describes declared repository manifests and may reach runtime analysis limits.";
+  if (tool.runtime === "wasm") {
+    outputDescription =
+      "Output must match the published artifact output schema.";
+    limitationDescription =
+      "Execution is bounded by fuel, memory, input/output size, and schema validation.";
+  } else if (tool.runtime === "workflow") {
+    outputDescription =
+      "Output contains repository identity and a steps array with each capability, version, runtime, and result.";
+    limitationDescription =
+      "Every step uses the same repository input. Conditional steps and nested workflows are not supported.";
+  }
   const artifactId = tool.definition.artifact_id;
   const artifact = useQuery({
     enabled: Boolean(
@@ -181,29 +196,32 @@ const Inspector = ({
             )}
             <Json
               value={
-                artifact.data ?? {
-                  properties: {
-                    repository_url: {
-                      description: "Public GitHub repository URL",
-                      format: "uri",
-                      type: "string",
-                    },
-                    revision: {
-                      description: "Full immutable commit SHA",
-                      pattern: "^[a-fA-F0-9]{40}$",
-                      type: "string",
-                    },
-                  },
-                  required: ["repository_url", "revision"],
-                  type: "object",
-                }
+                artifact.data ??
+                (tool.runtime === "wasm"
+                  ? {
+                      status: artifact.isFetching
+                        ? "Loading artifact schemas"
+                        : "Artifact schemas unavailable",
+                    }
+                  : {
+                      properties: {
+                        repository_url: {
+                          description: "Public GitHub repository URL",
+                          format: "uri",
+                          type: "string",
+                        },
+                        revision: {
+                          description: "Full immutable commit SHA",
+                          pattern: "^[a-fA-F0-9]{40}$",
+                          type: "string",
+                        },
+                      },
+                      required: ["repository_url", "revision"],
+                      type: "object",
+                    })
               }
             />
-            <p>
-              {tool.runtime === "workflow"
-                ? "Output contains repository identity and a steps array with each capability, version, runtime, and result."
-                : "Report fields can include repository_url, revision, manifests, technologies, dependencies, and analysis_limit_reached. The settled result is the source of truth."}
-            </p>
+            <p>{outputDescription}</p>
           </div>
         </details>
         <details className="ws-detail-section">
@@ -276,14 +294,11 @@ const Inspector = ({
           </summary>
           <div className="ws-section-body">
             <p>
-              Public GitHub repositories only. Supply a full 40-character commit
-              SHA; branches, tags, and private repositories are not supported.
+              {tool.runtime === "wasm"
+                ? "Pure JSON-in/JSON-out Wasm. No filesystem, network, clock, or environment access."
+                : "Public GitHub repositories only. Supply a full 40-character commit SHA; branches, tags, and private repositories are not supported."}
             </p>
-            <p>
-              {tool.runtime === "workflow"
-                ? "Every step uses the same repository input. Conditional steps and nested workflows are not supported."
-                : "Analysis describes declared repository manifests and may reach runtime analysis limits."}
-            </p>
+            <p>{limitationDescription}</p>
           </div>
         </details>
         <details className="ws-detail-section">
@@ -761,12 +776,7 @@ const Workspace = () => {
                       className="ws-filters"
                       aria-label="Filter loaded capabilities by runtime"
                     >
-                      {[
-                        "all",
-                        "repository_stack",
-                        "dependency_inventory",
-                        "workflow",
-                      ].map((runtime) => (
+                      {["all", ...Object.keys(runtimeLabels)].map((runtime) => (
                         <button
                           type="button"
                           aria-pressed={filter === runtime}
@@ -776,16 +786,20 @@ const Workspace = () => {
                           {runtime === "all"
                             ? "All capabilities"
                             : runtimeLabels[runtime as Runtime]}
-                          <span>
-                            {
-                              visibleCatalog.filter(
-                                (tool) =>
-                                  tool.active &&
-                                  (runtime === "all" ||
-                                    tool.runtime === runtime)
-                              ).length
-                            }
-                          </span>
+                          {(!token ||
+                            (runtime === filter &&
+                              !registry.isPlaceholderData)) && (
+                            <span>
+                              {
+                                visibleCatalog.filter(
+                                  (tool) =>
+                                    tool.active &&
+                                    (runtime === "all" ||
+                                      tool.runtime === runtime)
+                                ).length
+                              }
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
