@@ -22,11 +22,11 @@ concurrency:
   cancel-in-progress: true
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18.6-trixie@sha256:979bccfde35445db618c65107d27d08c6c21339d8dc3ad4c830c6633947be0e4
         env:
           POSTGRES_DB: hive
           POSTGRES_USER: hive
@@ -35,7 +35,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U hive -d hive" --health-interval 2s --health-timeout 3s --health-retries 30
       redis:
-        image: redis:8
+        image: redis:8.10.3-trixie@sha256:298641b35ac51aa999f9bb85707d6681fe635ce59cda51886a0b6adc1da37b8e
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 30
@@ -76,6 +76,7 @@ jobs:
           curl --fail --silent http://127.0.0.1:3001/api/ready
           HIVE_DEMO_REVISION="$GITHUB_SHA" devenv shell -- bun packages/local/src/agents/demo.ts
           devenv shell -- bun packages/local/src/agents/hosted-demo.ts
+          devenv shell -- bun packages/local/src/agents/mcp-demo.ts
       - name: Collect diagnostics on failure
         if: failure()
         run: |

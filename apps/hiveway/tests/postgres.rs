@@ -142,7 +142,7 @@ async fn assert_database_constraints(
         sea_orm_migration::seaql_migrations::Entity::find()
             .count(db)
             .await?,
-        8
+        10
     );
     assert!(
         hiveway::entities::creator_sales::ActiveModel {
@@ -228,6 +228,21 @@ async fn assert_settlement_output(
                 .is_err()
         );
     }
+    // Zero price alone must not weaken the settled-output constraint when
+    // payment_method is NULL (SQL CHECK treats an unknown predicate as valid).
+    assert!(
+        invocations::Entity::update_many()
+            .col_expr(invocations::Column::State, Expr::val("settled"))
+            .col_expr(invocations::Column::Price, Expr::val(0_i64))
+            .col_expr(
+                invocations::Column::Result,
+                Expr::val(serde_json::json!({"ok":true}))
+            )
+            .filter(invocations::Column::Id.eq(id))
+            .exec(db)
+            .await
+            .is_err()
+    );
     let updated = invocations::Entity::update_many()
         .col_expr(invocations::Column::State, Expr::val("settled"))
         .col_expr(

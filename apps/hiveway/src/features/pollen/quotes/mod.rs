@@ -62,7 +62,14 @@ pub async fn quote(
     }
     cell::validate_input(&state, request.capability_id, &request.input).await?;
     // Do remote I/O before acquiring a credential row lock or a pool transaction.
-    x402::supported(&state).await?;
+    let price = CapabilitiesEntity::find_by_id(request.capability_id)
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?
+        .price;
+    if price > 0 {
+        x402::supported(&state).await?;
+    }
     let tx = state.postgres.begin().await?;
     let c = locked_credential(&tx, c.id, identity::invocation_scope(&c)?).await?;
     if let Some(result) = existing_quote(&tx, c.id, key, &fingerprint).await? {
@@ -130,7 +137,11 @@ pub async fn quote(
             payment: PaymentRequired {
                 x402_version: 2,
                 resource,
-                accepts: vec![requirements],
+                accepts: if cap.price == 0 {
+                    Vec::new()
+                } else {
+                    vec![requirements]
+                },
             },
         }),
     )

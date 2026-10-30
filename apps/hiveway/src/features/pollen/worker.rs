@@ -274,7 +274,7 @@ async fn release_abandoned(state: &AppState) -> ApiResult<()> {
     let abandoned = InvocationsEntity::find()
         .filter(
             Expr::col(InvocationsColumn::PaymentMethod)
-                .eq(Expr::val("x402"))
+                .is_in(["x402", "free"])
                 .and(Expr::col(InvocationsColumn::State).is_in(["verifying", "executing"]))
                 .and(Expr::col(InvocationsColumn::UpdatedAt).lt(Expr::val(
                     now() - state.settings.runtime.worker.stale_after_seconds,
