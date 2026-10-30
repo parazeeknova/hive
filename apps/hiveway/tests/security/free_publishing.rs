@@ -5,6 +5,9 @@ use serde_json::json;
 
 pub(super) async fn exercise(app: Router, bearer: &str) -> Result {
     let headers = [("authorization", bearer)];
+    let (status, invalid) = attack(app.clone(), "POST", "/mcp", json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"scaffold_project","arguments":{"project_name":"new-app","repository_url":"http://127.0.0.1/private","revision":"a".repeat(40)}}}).to_string(), &headers).await?;
+    assert_eq!(status, StatusCode::OK, "{invalid}");
+    assert_eq!(invalid["result"]["isError"], true);
     let wasm = wat::parse_str(include_str!(
         "../../../../packages/local/fixtures/wasm/echo.wat"
     ))?;

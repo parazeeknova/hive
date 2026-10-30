@@ -122,6 +122,9 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
         .iter()
         .any(|s| s == "repository:analyze" || s == "capabilities:invoke")
     {
+        if c.scopes.iter().any(|s| s == "capabilities:invoke") {
+            tools.push(tool("scaffold_project", "Prepare a new local project from any public GitHub repository at a full commit SHA. Verifies a bounded archive and returns its checksum and local filesystem/shell install plan. Free; no files, installations or remote repositories are created by the server.", json!({"project_name":{"type":"string","minLength":1,"maxLength":63,"pattern":"^[A-Za-z0-9][A-Za-z0-9_-]*$"},"repository_url":{"type":"string","description":"Public https://github.com/owner/repository URL"},"revision":{"type":"string","pattern":"^[a-fA-F0-9]{40}$"}}), json!(["project_name","repository_url","revision"]), true));
+        }
         tools.push(tool("invoke_capability","Invoke a quote. An unsigned request returns x402 payment requirements; use a client wallet to sign. Never provide private keys.",json!({"invocation_id":{"type":"string","format":"uuid"},"payment_signature":{"type":"string"}}),json!(["invocation_id"]),false));
         tools.push(tool("dodo_checkout","Create a hosted Dodo test checkout for a quoted invocation. Requires a human card checkout.",json!({"invocation_id":{"type":"string","format":"uuid"}}),json!(["invocation_id"]),false));
         let caps = CapabilitiesEntity::find()
@@ -212,6 +215,10 @@ async fn result(response: Response) -> ApiResult<Value> {
 }
 async fn call(state: AppState, headers: HeaderMap, name: &str, args: Value) -> ApiResult<Value> {
     match name {
+        "scaffold_project" => {
+            identity::authenticate(&state, &headers, "capabilities:invoke").await?;
+            crate::features::scaffold::plan(&state, args).await
+        }
         "search_capabilities" => {
             let request = serde_json::from_value(args)
                 .map_err(|_| ApiError::bad("invalid_discovery_arguments"))?;
