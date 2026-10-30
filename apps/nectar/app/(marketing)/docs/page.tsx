@@ -42,7 +42,8 @@ const Docs = () => (
           <h2 className="font-display text-2xl">Make yourself at home.</h2>
           <p className="mt-3 mb-7 text-stone-500">
             Choose your client for its connection settings. Hive uses Streamable
-            HTTP and a scoped bearer credential.
+            HTTP at https://hiveway.itssingularity.com/mcp and your Hive API
+            key.
           </p>
           <ConnectionGuide />
         </section>
@@ -52,14 +53,16 @@ const Docs = () => (
           </h2>
           <p className="mt-4 leading-7 text-stone-600">
             Open{" "}
-            <Link href="/dashboard?view=settings" className="underline">
-              Account settings
+            <Link
+              href="/dashboard?view=settings&tab=api-keys"
+              className="underline"
+            >
+              Account settings → API keys
             </Link>{" "}
-            and open the API keys tab. Sign in with GitHub and create a named,
-            short-lived key for free capabilities. A wallet is optional for free
-            tools; connect one for paid invocations or publishing. Keep the
-            token private and use your client’s environment-variable support
-            where available.
+            and sign in with GitHub to create a named, short-lived key for free
+            capabilities. A wallet is optional for free tools; connect one for
+            paid invocations or publishing. Keep the token private and use your
+            client’s environment-variable support where available.
           </p>
           <p className="mt-3 leading-7 text-stone-600">
             Reading requires <code>capabilities:read</code>. Invoking hosted
