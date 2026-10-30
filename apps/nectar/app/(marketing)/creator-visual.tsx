@@ -18,15 +18,18 @@ const CreatorVisual = () => {
     <figure
       ref={ref}
       data-loop="idle"
-      className="publisher-stage"
+      className="m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)]"
       aria-label="Illustrative publishing activity: one Repository Analyzer capability serves three different repositories at five cents per call, for fifteen cents in total call value."
     >
-      <div className="publisher-story" aria-hidden="true">
+      <div
+        className="publisher-story mx-auto w-full max-w-[420px]"
+        aria-hidden="true"
+      >
         <div className="mb-5 flex items-center justify-between gap-3 px-1 text-[11px] text-neutral-400">
           <span className="font-medium">One implementation. Fresh inputs.</span>
           <span className="font-mono">EXAMPLE</span>
         </div>
-        <div className="publisher-sheet rounded-3xl bg-white p-4 sm:p-6">
+        <div className="rounded-3xl bg-white p-4 shadow-[inset_0_1px_0_var(--color-white),var(--shadow-sm),var(--shadow-soft)] sm:p-6">
           <div className="flex items-center gap-3">
             <span className="relative block size-11 shrink-0">
               <SceneHexagon className="size-full text-amber-200" />
@@ -54,7 +57,7 @@ const CreatorVisual = () => {
             </p>
           </div>
           <div className="mt-5 border-t border-neutral-100 pt-5">
-            <div className="publisher-columns mb-2 px-2 font-mono text-[11px] text-neutral-400">
+            <div className="mb-2 grid grid-cols-[minmax(0,1fr)_13px_minmax(0,1fr)] items-center gap-1.5 px-2 font-mono text-[11px] text-neutral-400">
               <span>INPUT</span>
               <span className="col-span-2 text-right">OUTPUT</span>
             </div>
@@ -62,13 +65,13 @@ const CreatorVisual = () => {
               {calls.map(({ input, output }, index) => (
                 <div
                   key={input}
-                  className={`publisher-call publisher-call-${index} publisher-columns rounded-xl bg-neutral-50 px-2 py-3`}
+                  className={`publisher-call publisher-call-${index} grid grid-cols-[minmax(0,1fr)_13px_minmax(0,1fr)] items-center gap-1.5 rounded-xl bg-neutral-50 px-2 py-3`}
                 >
-                  <span className="font-mono text-[11px] text-neutral-500">
+                  <span className="min-w-0 font-mono text-[11px] wrap-anywhere text-neutral-500">
                     {input}
                   </span>
                   <Icon name="arrow" size={13} className="text-neutral-300" />
-                  <span className="text-right text-[11px] font-medium text-neutral-600 sm:text-xs">
+                  <span className="min-w-0 text-right text-[11px] font-medium wrap-anywhere text-neutral-600 sm:text-xs">
                     {output}
                   </span>
                 </div>

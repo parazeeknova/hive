@@ -26,8 +26,11 @@ const EarningsSection = () => {
     >
       <div className="overflow-hidden rounded-[2rem] py-2.5 sm:rounded-[2.5rem] sm:py-3">
         <div className="grid items-center gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-4">
-          <div className="earnings-art" aria-hidden="true">
-            <div className="earnings-art-caption">
+          <div
+            className="relative flex min-w-0 flex-col items-center justify-center self-stretch overflow-hidden rounded-[1.75rem] bg-linear-155 from-stone-50 to-amber-50 px-4 pt-5 pb-6 sm:px-5 sm:pt-7 sm:pb-8 lg:px-7 lg:pt-8 lg:pb-10"
+            aria-hidden="true"
+          >
+            <div className="flex w-full items-center gap-2 sm:gap-3 lg:absolute lg:inset-x-7 lg:top-8 lg:w-auto">
               <span className="font-mono text-[11px] tracking-[0.12em] text-neutral-400">
                 BUILT ONCE
               </span>
@@ -42,9 +45,9 @@ const EarningsSection = () => {
               width={1254}
               height={1254}
               sizes="(min-width: 1280px) 480px, (min-width: 1024px) 42vw, (min-width: 640px) 360px, 260px"
-              className="earnings-coin"
+              className="mt-1.5 mb-[-34px] block h-auto w-[min(100%,260px)] max-sm:mb-[-18px] sm:max-w-[360px] lg:max-w-[min(100%,480px)]"
             />
-            <div className="earnings-call-receipt">
+            <div className="relative flex min-h-20 w-full max-w-[360px] items-center gap-2 rounded-2xl bg-white px-3 py-3 shadow-[inset_0_1px_0_var(--color-white),var(--shadow-sm),var(--shadow-soft)] sm:gap-3 sm:px-4 sm:py-3.5">
               <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
                 <Icon name="check" size={17} />
               </span>
@@ -93,7 +96,7 @@ const EarningsSection = () => {
                 {modes.map(({ value, label, description }) => (
                   <label
                     key={value}
-                    className="earnings-mode relative flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-3 sm:px-4"
+                    className="group relative flex cursor-pointer items-center gap-2 rounded-2xl px-3 py-3 not-has-focus-visible:bg-transparent has-focus-visible:outline-2 has-focus-visible:outline-offset-3 has-focus-visible:outline-amber-600 has-data-[selected=true]:bg-white has-data-[selected=true]:shadow-[inset_0_1px_0_var(--color-white),var(--shadow-xs)] sm:px-4"
                     data-selected={mode === value}
                   >
                     <input
@@ -105,7 +108,7 @@ const EarningsSection = () => {
                       onChange={() => setMode(value)}
                     />
                     <span
-                      className="earnings-mode-indicator"
+                      className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-neutral-200 text-transparent group-has-data-[selected=true]:bg-amber-200 group-has-data-[selected=true]:text-amber-900"
                       aria-hidden="true"
                     >
                       <Icon name="check" size={11} />

@@ -1,72 +1,34 @@
+/* The stage holds still until the loop hook reports it is running or paused. */
 @layer components {
-  .publisher-stage {
-    margin: 0;
-    min-width: 0;
-    overflow: hidden;
-    border-radius: 1.75rem;
-    background: linear-gradient(
-      160deg,
-      var(--color-stone-50),
-      var(--color-stone-100)
-    );
-    padding: clamp(14px, 3vw, 36px);
-  }
+  @media (prefers-reduced-motion: no-preference) {
+    .publisher-stage:is([data-loop="running"], [data-loop="paused"])
+      .publisher-story {
+      animation: publisher-story 7s ease-in-out infinite;
+    }
 
-  .publisher-story {
-    width: 100%;
-    max-width: 420px;
-    margin-inline: auto;
-  }
+    .publisher-stage:is([data-loop="running"], [data-loop="paused"])
+      .publisher-call {
+      animation: publisher-first-call 7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
 
-  .publisher-sheet {
-    box-shadow:
-      inset 0 1px 0 var(--color-white),
-      var(--shadow-sm),
-      var(--shadow-soft);
-  }
+    .publisher-stage:is([data-loop="running"], [data-loop="paused"])
+      .publisher-call-1 {
+      animation-name: publisher-second-call;
+    }
 
-  .publisher-columns {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 13px minmax(0, 1fr);
-    align-items: center;
-    gap: 6px;
-  }
+    .publisher-stage:is([data-loop="running"], [data-loop="paused"])
+      .publisher-call-2 {
+      animation-name: publisher-third-call;
+    }
 
-  .publisher-call > span {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-}
+    .publisher-stage:is([data-loop="running"], [data-loop="paused"])
+      .publisher-return {
+      animation: publisher-return 7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
 
-/* The capability stays put while calls arrive, then the completed receipt rests. */
-@media (prefers-reduced-motion: no-preference) {
-  .publisher-stage:is([data-loop="running"], [data-loop="paused"])
-    .publisher-story {
-    animation: publisher-story 7s ease-in-out infinite;
-  }
-
-  .publisher-stage:is([data-loop="running"], [data-loop="paused"])
-    .publisher-call {
-    animation: publisher-first-call 7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-  }
-
-  .publisher-stage:is([data-loop="running"], [data-loop="paused"])
-    .publisher-call-1 {
-    animation-name: publisher-second-call;
-  }
-
-  .publisher-stage:is([data-loop="running"], [data-loop="paused"])
-    .publisher-call-2 {
-    animation-name: publisher-third-call;
-  }
-
-  .publisher-stage:is([data-loop="running"], [data-loop="paused"])
-    .publisher-return {
-    animation: publisher-return 7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
-  }
-
-  .publisher-stage[data-loop="paused"] * {
-    animation-play-state: paused !important;
+    .publisher-stage[data-loop="paused"] * {
+      animation-play-state: paused !important;
+    }
   }
 }
 
