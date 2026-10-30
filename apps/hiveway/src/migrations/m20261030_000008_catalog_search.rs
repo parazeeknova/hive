@@ -3,6 +3,11 @@ use sea_orm_migration::prelude::*;
 pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
+    /// Install trigram support in `public` and add the generated search vector
+    /// and catalog indexes, including when the connection uses an isolated schema.
+    ///
+    /// # Errors
+    /// Returns database errors if extension installation or catalog DDL fails.
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         // Extension objects must match the qualified operator classes below even
@@ -26,6 +31,11 @@ impl MigrationTrait for Migration {
         }
         Ok(())
     }
+    /// Remove catalog search indexes and the generated vector, retaining the
+    /// shared trigram extension for other schemas and applications.
+    ///
+    /// # Errors
+    /// Returns database errors if an index or column cannot be removed.
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
         for statement in [
