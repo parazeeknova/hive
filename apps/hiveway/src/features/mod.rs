@@ -10,3 +10,5 @@ pub mod scaffold;
 pub mod scout;
 pub mod waggle;
 pub mod wax;
+
+pub mod connections;
