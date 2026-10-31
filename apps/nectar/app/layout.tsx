@@ -21,8 +21,11 @@ export const metadata: Metadata = {
 const fontVariables = [manrope.variable, subjectivity.variable].join(" ");
 
 const RootLayout = ({ children }: Readonly<{ children: ReactNode }>) => (
-  <html className={fontVariables} lang="en">
-    <body>
+  <html
+    className={`${fontVariables} scroll-pt-[5.5rem] scroll-smooth selection:bg-amber-200 [&_:focus-visible]:outline-2 [&_:focus-visible]:outline-offset-4 [&_:focus-visible]:outline-amber-600 [&_a_svg]:shrink-0 [&_button_svg]:shrink-0`}
+    lang="en"
+  >
+    <body className="font-body bg-stone-50 text-sm text-stone-800 antialiased">
       <Providers>{children}</Providers>
     </body>
   </html>

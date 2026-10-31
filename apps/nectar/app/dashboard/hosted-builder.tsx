@@ -34,7 +34,7 @@ const BuilderProvider = ({
 }) => (
   <>
     {configuration?.builder && (
-      <p className="ws-fine">
+      <p className="ws-fine mt-3 text-[10px] leading-[1.9] [overflow-wrap:anywhere] text-[#686f60]">
         Model: {configuration.builder.model}. Up to{" "}
         {configuration.builder.account_daily_limit} builds per account in 24
         hours, subject to the shared server limit.{" "}
@@ -80,14 +80,14 @@ const HostedBuilder = ({ token }: { token: string }) => {
     }
   }, [client, selected.data?.state]);
   return (
-    <div className="ws-form">
-      <h2>Build with Hive</h2>
+    <div className="ws-form mt-[18px] flex flex-col items-stretch gap-[18px] max-[760px]:[&>.ws-button]:min-h-[44px]">
+      <h2 className="font-display">Build with Hive</h2>
       <p>
         Describe a reusable JSON tool and supply examples. Hive generates the
         code, compiles it, runs your examples and publishes it free when they
         pass. No wallet needed. Builds use shared daily limits.
       </p>
-      <p className="ws-fine">
+      <p className="ws-fine mt-3 text-[10px] leading-[1.9] [overflow-wrap:anywhere] text-[#686f60]">
         Hosted tools can transform and validate JSON. They cannot use the
         network, filesystem or external services. Your task and examples are
         sent to the configured model provider. Passing examples does not prove
@@ -98,7 +98,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
         error={configuration.error}
       />
       <form
-        className="ws-form"
+        className="ws-form mt-[18px] flex flex-col items-stretch gap-[18px] max-[760px]:[&>.ws-button]:min-h-[44px]"
         onChange={() => {
           key.current = null;
         }}
@@ -135,7 +135,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
           setBusy(false);
         }}
       >
-        <label className="ws-field">
+        <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           Name
           <input
             name="name"
@@ -144,7 +144,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
             placeholder="Double an integer"
           />
         </label>
-        <label className="ws-field">
+        <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           Description
           <input
             name="description"
@@ -153,7 +153,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
             placeholder="Double the integer n in an input object"
           />
         </label>
-        <label className="ws-field">
+        <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           What should the tool do?
           <textarea
             name="task"
@@ -163,7 +163,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
             placeholder="Accept an object with integer n between 0 and 1000000, no additional properties. Return an object with doubled equal to n times two. Handle any valid input in that range."
           />
         </label>
-        <label className="ws-field">
+        <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           Sample input objects and expected output objects
           <textarea
             rows={6}
@@ -173,7 +173,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
           />
         </label>
         <button
-          className="ws-button"
+          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
           type="submit"
           disabled={
             busy || !configuration.data?.builder || running(builds.data)
@@ -186,7 +186,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
       {builds.error && <p role="alert">{errorMessage(builds.error)}</p>}
       {builds.data?.map((build) => (
         <button
-          className="ws-button"
+          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
           type="button"
           key={build.id}
           onClick={() => setId(build.id)}
@@ -216,10 +216,8 @@ const HostedBuilder = ({ token }: { token: string }) => {
           )}
           {selected.data.source && (
             <details>
-              <summary>Generated source</summary>
-              <pre style={{ whiteSpace: "pre-wrap" }}>
-                {selected.data.source}
-              </pre>
+              <summary className="cursor-pointer">Generated source</summary>
+              <pre className="whitespace-pre-wrap">{selected.data.source}</pre>
             </details>
           )}
         </div>

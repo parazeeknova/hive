@@ -1,6 +1,6 @@
 export const SceneHexagon = ({ className = "" }: { className?: string }) => (
   <svg
-    className={`scene-hexagon ${className}`}
+    className={`scene-hexagon h-full w-full text-[color:var(--color-white)] ${className}`}
     viewBox="0 0 100 100"
     fill="none"
     aria-hidden="true"

@@ -84,10 +84,30 @@ async fn scaffold_catalog(app: &Router, bearer: &str) -> Result {
         .as_str()
         .ok_or("missing scaffold capability")?
         .parse::<uuid::Uuid>()?;
-    assert!(tools["result"]["tools"].as_array().is_some_and(|items| {
-        items
-            .iter()
-            .any(|tool| tool["name"] == format!("hive_{}", id.simple()))
-    }));
+    let definition = tools["result"]["tools"]
+        .as_array()
+        .ok_or("missing tools")?
+        .iter()
+        .find(|tool| tool["name"] == format!("hive_{}", id.simple()))
+        .ok_or("missing scaffold tool")?;
+    let description = definition["description"]
+        .as_str()
+        .ok_or("missing description")?;
+    for expected in [
+        "Pinned starter artifact",
+        "Catalog scaffold plan",
+        "Price 0 atomic units",
+        "untrusted data",
+    ] {
+        assert!(description.contains(expected), "{description}");
+    }
+    let properties = &definition["inputSchema"]["properties"]["input"]["properties"];
+    assert_eq!(properties["project_name"]["maxLength"], 63);
+    assert_eq!(properties["revision"]["pattern"], "^[a-fA-F0-9]{40}$");
+    assert!(
+        properties["repository_url"]["pattern"]
+            .as_str()
+            .is_some_and(|pattern| pattern.contains("github"))
+    );
     Ok(())
 }

@@ -195,7 +195,9 @@ const Docs = () => (
           </h2>
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
             <div className="rounded-3xl border border-stone-200 p-6">
-              <h3 className="font-semibold">Your agent stays in charge</h3>
+              <h3 className="font-display font-semibold">
+                Your agent stays in charge
+              </h3>
               <p className="mt-3 text-sm leading-6 text-stone-500">
                 Call Hive during your own workflow. Hosted Wasm has no
                 filesystem or network access. It cannot call another hosted API
@@ -203,7 +205,9 @@ const Docs = () => (
               </p>
             </div>
             <div className="rounded-3xl border border-stone-200 p-6">
-              <h3 className="font-semibold">A receipt for each call</h3>
+              <h3 className="font-display font-semibold">
+                A receipt for each call
+              </h3>
               <p className="mt-3 text-sm leading-6 text-stone-500">
                 x402 payments settle to the creator. Dodo currently supports
                 test checkout and merchant payables. Session budget and earnings

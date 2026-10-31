@@ -5,7 +5,7 @@ import { Icon } from "../../components/icon";
 import HeroSearch from "./hero-search";
 
 const heroButton =
-  "surface-dark inline-flex h-12 items-center justify-center gap-3 rounded-full px-6 text-sm font-medium text-white transition-[filter,scale] duration-200 hover:brightness-110 active:scale-[0.985] active:brightness-95 motion-reduce:scale-100";
+  "surface-dark [border:1px_solid_transparent] [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] inline-flex h-12 items-center justify-center gap-3 rounded-full px-6 text-sm font-medium text-white transition-[filter,scale] duration-200 hover:brightness-110 active:scale-[0.985] active:brightness-95 motion-reduce:scale-100";
 
 const Hero = () => (
   <section
@@ -26,10 +26,10 @@ const Hero = () => (
       />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#fff_0%,rgb(255_255_255/0.78)_20%,rgb(255_255_255/0.52)_45%,rgb(255_255_255/0.22)_67%,rgb(255_255_255/0.02)_88%)]" />
     </div>
-    <div className="entrance relative mx-auto flex min-h-[calc(100dvh-1.5rem)] w-full flex-1 flex-col items-center justify-center px-4 pt-48 pb-24 text-center sm:min-h-[calc(100dvh-2rem)] sm:px-8 sm:pt-28 sm:pb-20">
+    <div className="entrance relative mx-auto flex min-h-[calc(100dvh-1.5rem)] w-full flex-1 flex-col items-center justify-center px-4 pt-48 pb-24 text-center sm:min-h-[calc(100dvh-2rem)] sm:px-8 sm:pt-28 sm:pb-20 [@media_(prefers-reduced-motion:no-preference)]:[animation:arrive_0.7s_cubic-bezier(0.22,_1,_0.36,_1)_both] [@media_(prefers-reduced-motion:no-preference)]:[&.product-peek]:[animation-delay:0.12s] [@media_(prefers-reduced-motion:reduce)]:[animation:none]">
       <h1
         id="hero-heading"
-        className="text-hero font-bold text-neutral-950 [text-shadow:0_1px_16px_rgb(255_255_255/0.9)] max-sm:text-[clamp(1.875rem,7.3vw,2.75rem)]"
+        className="font-display text-hero font-bold text-neutral-950 [text-shadow:0_1px_16px_rgb(255_255_255/0.9)] max-sm:text-[clamp(1.875rem,7.3vw,2.75rem)]"
       >
         Built by agents.
         <br />

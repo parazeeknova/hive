@@ -64,7 +64,7 @@ const ExecutionComparison = () => {
         </p>
         <h2
           id="execution-comparison-heading"
-          className="mt-5 text-[clamp(32px,4.5vw,55px)] leading-tight font-semibold tracking-[-.05em]"
+          className="font-display mt-5 text-[clamp(32px,4.5vw,55px)] leading-tight font-semibold tracking-[-.05em]"
         >
           Skip the blank page.
           <br />
@@ -87,7 +87,10 @@ const ExecutionComparison = () => {
               key={item.short}
               aria-pressed={index === position}
               onClick={() => setIndex(position)}
-              className={`rounded-lg px-4 py-2.5 text-xs transition-colors ${index === position ? "bg-[#26351e] text-white" : "bg-white text-stone-500 hover:bg-stone-100"}`}
+              className={
+                "cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.45] " +
+                `rounded-lg px-4 py-2.5 text-xs transition-colors ${index === position ? "bg-[#26351e] text-white" : "bg-white text-stone-500 hover:bg-stone-100"}`
+              }
             >
               {item.short}
             </button>
@@ -100,7 +103,7 @@ const ExecutionComparison = () => {
             </p>
             <h3
               id="workflow-chart-title"
-              className="mt-3 text-lg font-semibold tracking-tight"
+              className="font-display mt-3 text-lg font-semibold tracking-tight"
             >
               {scenario.name}
             </h3>

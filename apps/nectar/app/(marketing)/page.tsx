@@ -50,7 +50,7 @@ const Home = () => (
     >
       <div>
         <span className={overline}>Getting started</span>
-        <h2 className={sectionHeading}>
+        <h2 className={`font-display ${sectionHeading}`}>
           A few questions,
           <br />
           <span className="text-stone-400">answered.</span>
@@ -64,7 +64,7 @@ const Home = () => (
       </div>
       <div>
         <details open className={faqItem}>
-          <summary className={faqSummary}>
+          <summary className={`cursor-pointer ${faqSummary}`}>
             How do I get started?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
@@ -79,7 +79,7 @@ const Home = () => (
           </p>
         </details>
         <details className={faqItem}>
-          <summary className={faqSummary}>
+          <summary className={`cursor-pointer ${faqSummary}`}>
             Do I need a wallet to use Hive?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
@@ -90,7 +90,7 @@ const Home = () => (
           </p>
         </details>
         <details className={faqItem}>
-          <summary className={faqSummary}>
+          <summary className={`cursor-pointer ${faqSummary}`}>
             How much does a capability cost?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
@@ -102,7 +102,7 @@ const Home = () => (
           </p>
         </details>
         <details className={faqItem}>
-          <summary className={faqSummary}>
+          <summary className={`cursor-pointer ${faqSummary}`}>
             Can I publish a capability I built?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
@@ -114,7 +114,7 @@ const Home = () => (
           </p>
         </details>
         <details className={faqItem}>
-          <summary className={faqSummary}>
+          <summary className={`cursor-pointer ${faqSummary}`}>
             Where can I find my results?
             <Icon name="plus" size={18} className={faqIcon} />
           </summary>
@@ -131,7 +131,7 @@ const Home = () => (
       className={`${section} pb-8 text-center sm:pb-12`}
       aria-labelledby="closing-heading"
     >
-      <div className="surface-light relative isolate overflow-hidden rounded-[2rem] px-6 py-14 sm:rounded-[2.5rem] sm:py-16">
+      <div className="surface-light relative isolate overflow-hidden rounded-[2rem] px-6 py-14 shadow-[inset_0_2px_3px_rgb(255_255_255_/_0.8),_inset_0_-3px_6px_rgb(0_0_0_/_0.035),_inset_2px_0_4px_rgb(255_255_255_/_0.5),_inset_-2px_0_4px_rgb(0_0_0_/_0.01)] [background:radial-gradient(ellipse_at_50%_0%,_#ffffff99,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#f9f9f9_0%,_#fefefe_20%,_#fff_42%,_#fcfcfc_72%,_#f3f3f3_100%_)_padding-box,_linear-gradient(180deg,_#f1f1f1,_#dedede)_border-box] [border:1px_solid_transparent] sm:rounded-[2.5rem] sm:py-16">
         <Image
           src="/hive-footer.png"
           alt=""
@@ -147,13 +147,13 @@ const Home = () => (
         <span className={overline}>There’s a tool for that.</span>
         <h2
           id="closing-heading"
-          className="mt-5 mb-7 text-3xl leading-snug font-semibold tracking-tight max-[760px]:text-2xl"
+          className="font-display mt-5 mb-7 text-3xl leading-snug font-semibold tracking-tight max-[760px]:text-2xl"
         >
           And a hive for what’s next.
         </h2>
         <Link
           href="/dashboard"
-          className="surface-dark inline-flex min-h-12 items-center justify-center gap-3 rounded-full px-6 py-3 text-sm font-medium text-white transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 motion-reduce:transform-none"
+          className="surface-dark inline-flex min-h-12 items-center justify-center gap-3 rounded-full px-6 py-3 text-sm font-medium text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] transition-transform duration-200 [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] hover:-translate-y-0.5 active:translate-y-0 motion-reduce:transform-none"
         >
           Come on in <Icon name="arrow" size={18} />
         </Link>

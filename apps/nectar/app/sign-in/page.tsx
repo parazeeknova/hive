@@ -33,7 +33,7 @@ const SignInPage = async ({
         />
         <div className="relative z-2">
           <Brand />
-          <h1 className="mt-8 max-w-md text-4xl leading-tight font-bold tracking-tight text-stone-800 max-[760px]:text-3xl">
+          <h1 className="font-display mt-8 max-w-md text-4xl leading-tight font-bold tracking-tight text-stone-800 max-[760px]:text-3xl">
             A little less building.
             <br />A lot more doing.
           </h1>
@@ -51,7 +51,7 @@ const SignInPage = async ({
       </section>
       <section className="flex min-h-dvh flex-col items-center justify-center bg-white px-8 py-16 text-[#e6edf3] max-[760px]:min-h-0 max-[760px]:px-5 max-[760px]:py-14">
         <div className="w-full max-w-sm rounded-3xl border border-[#30363d] bg-[#0d1117] p-8 shadow-[0_24px_64px_-24px_#0d11174d] max-[760px]:p-6">
-          <h2 className="text-2xl font-bold tracking-tight text-white">
+          <h2 className="font-display text-2xl font-bold tracking-tight text-white">
             Come on in.
           </h2>
           <p className="mt-3 text-sm leading-7 text-[#8b949e]">
@@ -66,7 +66,7 @@ const SignInPage = async ({
           <Link
             href={`/api/auth/github?${new URLSearchParams({ next })}`}
             prefetch={false}
-            className="surface-dark mt-8 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full px-4 text-[13px] leading-none font-medium whitespace-nowrap text-white transition-[filter,scale] duration-200 hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white active:scale-[0.985] active:brightness-95 motion-reduce:scale-100 motion-reduce:transform-none"
+            className="surface-dark mt-8 inline-flex h-10 w-full items-center justify-center gap-2 rounded-full px-4 text-[13px] leading-none font-medium whitespace-nowrap text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] transition-[filter,scale] duration-200 [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white active:scale-[0.985] active:brightness-95 motion-reduce:scale-100 motion-reduce:transform-none"
           >
             <MarkGithubIcon size={16} />
             <span>Continue with GitHub</span>
