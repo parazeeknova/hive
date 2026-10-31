@@ -676,7 +676,7 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
             "workflows:publish"
         ])
     );
-    free_publishing::exercise(app.clone(), &bearer).await?;
+    free_publishing::exercise(app.clone(), &bearer, state).await?;
     Box::pin(builder::exercise(app.clone(), state, &bearer)).await?;
     free_agent_invocation(app.clone(), state, &bearer).await?;
     let (status, _) = attack(

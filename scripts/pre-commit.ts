@@ -6,6 +6,7 @@ const files = [
   "package.json",
   "apps/hiveway/package.json",
   "packages/local/package.json",
+  "packages/connector/package.json",
   "apps/nectar/package.json",
   "Cargo.toml",
   "lerna.json",

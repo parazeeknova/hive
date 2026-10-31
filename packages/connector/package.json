@@ -1,0 +1,16 @@
+{
+  "name": "@hive/connector",
+  "version": "0.0.45",
+  "private": true,
+  "description": "Outbound connector for private external MCP servers through Hive",
+  "type": "module",
+  "scripts": {
+    "start": "bun src/index.ts",
+    "check": "oxlint --deny-warnings . && oxfmt --check .",
+    "check-types": "tsc --project ../../tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/server-filesystem": "^2.1.0"
+  }
+}

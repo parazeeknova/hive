@@ -33,6 +33,7 @@ const Docs = () => (
           <a href="#connect">Connect your agent</a>
           <a href="#credentials">Get a credential</a>
           <a href="#workflow">Your first invocation</a>
+          <a href="#external-mcps">Connect external MCPs</a>
           <a href="#scaffold">Start a project</a>
           <a href="#build">Build with Hive</a>
           <a href="#publish">Publish an artifact</a>
@@ -103,6 +104,29 @@ const Docs = () => (
             me its price and schema, then invoke it with my approval. Keep its
             invocation ID so I can inspect the result.”
           </p>
+        </section>
+        <section id="external-mcps" className="scroll-mt-32">
+          <h2 className="font-display text-2xl">Bring your own MCP servers.</h2>
+          <p className="mt-4 text-sm leading-7 text-[#77796f]">
+            Connect external stdio or HTTP MCP servers through a private Hive
+            connector. The connector runs on your computer and makes outbound
+            HTTPS requests, so you do not need a public home-network endpoint.
+            Hive routing is free and requires no wallet; upstream services may
+            charge separately.
+          </p>
+          <p className="mt-4 text-sm leading-7 text-[#77796f]">
+            The official filesystem MCP is included. Configure explicit allowed
+            directories and keep your Hive API key outside them. Your agent
+            discovers namespaced tools through its existing Hive connection.
+            Connections are private to your account and do not become public
+            artifacts.
+          </p>
+          <a
+            className="mt-4 inline-flex text-sm font-semibold text-[#52664b] underline underline-offset-4"
+            href="https://github.com/parazeeknova/hive/tree/main/packages/connector"
+          >
+            Connector setup and filesystem configuration
+          </a>
         </section>
         <section id="scaffold" className="scroll-mt-32">
           <h2 className="font-display text-2xl">
