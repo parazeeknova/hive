@@ -1,7 +1,7 @@
 pub mod config;
 mod guard;
 use crate::{
-    features::{account, comb, hiveway, identity, pollen, scout, waggle, wax},
+    features::{account, builder, comb, hiveway, identity, pollen, scout, waggle, wax},
     state::AppState,
 };
 use axum::{
@@ -16,6 +16,7 @@ use tower_http::cors::CorsLayer;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/account", get(account::get).post(account::save))
+        .route("/v1/account/plan", get(account::plan::get))
         .route("/v1/account/balance", get(account::balance::get))
         .route(
             "/v1/account/credentials",
@@ -25,6 +26,8 @@ pub fn router() -> Router<AppState> {
             "/v1/account/credentials/{id}/revoke",
             post(account::credentials::revoke),
         )
+        .route("/v1/builds", get(builder::list).post(builder::submit))
+        .route("/v1/builds/{id}", get(builder::get))
         .route("/mcp", post(hiveway::gateway))
         .route("/v1/capabilities/page", get(scout::discovery::page))
         .route("/v1/capabilities/{id}", get(scout::detail::detail))
@@ -38,6 +41,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/config", get(config::configuration))
         .route("/v1/workflows", post(comb::compose))
         .route("/v1/activity", get(waggle::activity))
+        .route("/v1/catalog/metadata", post(scout::metadata::get))
         .route("/v1/auth/github", post(identity::github::exchange))
         .route("/v1/auth/logout", post(identity::github::logout))
         .route("/v1/capabilities/{id}/test", post(identity::github::test))
@@ -79,6 +83,9 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
         .allow_origin(origin.parse::<HeaderValue>()?)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([
+            header::HeaderName::from_static("x-hive-model"),
+            header::HeaderName::from_static("x-hive-agent"),
+            header::HeaderName::from_static("x-hive-harness"),
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
             header::HeaderName::from_static("idempotency-key"),

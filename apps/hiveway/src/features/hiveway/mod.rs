@@ -4,7 +4,7 @@ use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::entities::wasm_artifacts::{Column as ArtifactsColumn, Entity as ArtifactsEntity};
 use crate::{
     features::{
-        comb,
+        builder, comb,
         common::{
             error::{ApiError, ApiResult},
             model::{Credential, QuoteRequest},
@@ -187,6 +187,17 @@ async fn tools(state: &AppState, c: &Credential) -> ApiResult<Value> {
         tools.push(tool("refund_operation","Read a refund operation for an owned invocation. Set request=true to request/reconcile the full Dodo test refund for a failed paid execution; successful invocations cannot be refunded here.",json!({"invocation_id":{"type":"string","format":"uuid"},"request":{"type":"boolean"}}),json!(["invocation_id"]),false));
     }
     if c.scopes.iter().any(|s| s == "capabilities:publish") {
+        tools.push(tool(
+            "get_build",
+            "Read your hosted build status, generated source and sample test results.",
+            json!({"build_id":{"type":"string","format":"uuid"}}),
+            json!(["build_id"]),
+            true,
+        ));
+        if state.settings.builder.is_some() {
+            tools.push(tool("build_capability", "Ask Hive to generate, compile and sample-test a reusable pure JSON-in/JSON-out Wasm tool, then publish it free if tests pass. No network or filesystem. Asynchronous: poll get_build. Server-funded, quota-limited; task and examples go to the configured model provider. Passing samples does not prove correctness for all inputs.", json!({"idempotency_key":{"type":"string","format":"uuid"},"name":{"type":"string","maxLength":80},"description":{"type":"string","maxLength":1000},"task":{"type":"string","maxLength":4096},"examples":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"object","properties":{"input":{},"expected":{}},"required":["input","expected"],"additionalProperties":false}}}),json!(["idempotency_key","name","description","task","examples"]),false));
+        }
+
         tools.push(tool("upload_artifact","Upload an owned, immutable JSON-in/JSON-out Wasm artifact. Modules have no host imports and are CPU/memory bounded. Verification checks sandbox/ABI validity, not business correctness.",json!({"wasm_base64":{"type":"string"},"input_schema":{"type":"object"},"output_schema":{"type":"object"}}),json!(["wasm_base64","input_schema","output_schema"]),false));
         tools.push(tool("publish_capability","Publish an immutable bounded runtime capability. Code execution is restricted to the advertised runtimes.",json!({"name":{"type":"string"},"description":{"type":"string"},"runtime":{"enum":["repository_stack","dependency_inventory","wasm"]},"artifact_id":{"type":"string","format":"uuid"},"price":{"type":"string"}}),json!(["name","description","runtime","price"]),false));
     }
@@ -213,6 +224,12 @@ async fn result(response: Response) -> ApiResult<Value> {
     let value: Value = serde_json::from_slice(&body)?;
     Ok(json!({"http_status":status.as_u16(),"data":value}))
 }
+async fn upload_artifact(state: AppState, headers: HeaderMap, args: Value) -> ApiResult<Value> {
+    let request =
+        serde_json::from_value(args).map_err(|_| ApiError::bad("invalid_artifact_arguments"))?;
+    let Json(artifact) = wax::artifacts::upload(State(state), headers, Json(request)).await?;
+    Ok(serde_json::to_value(artifact)?)
+}
 async fn call(state: AppState, headers: HeaderMap, name: &str, args: Value) -> ApiResult<Value> {
     match name {
         "scaffold_project" => {
@@ -236,13 +253,8 @@ async fn call(state: AppState, headers: HeaderMap, name: &str, args: Value) -> A
             .await?;
             Ok(serde_json::to_value(value)?)
         }
-        "upload_artifact" => {
-            let request = serde_json::from_value(args)
-                .map_err(|_| ApiError::bad("invalid_artifact_arguments"))?;
-            let Json(artifact) =
-                wax::artifacts::upload(State(state), headers, Json(request)).await?;
-            Ok(serde_json::to_value(artifact)?)
-        }
+        "build_capability" | "get_build" => builder::call(state, headers, name, args).await,
+        "upload_artifact" => upload_artifact(state, headers, args).await,
         "publish_capability" => {
             let Json(value) = wax::publish(
                 State(state),
@@ -357,6 +369,31 @@ fn discovery() -> Value {
 }
 
 /// Stateless MCP transport with scoped credentials and origin validation.
+fn client_headers(mut headers: HeaderMap, params: &Value) -> ApiResult<HeaderMap> {
+    let client = &params["_meta"]["hive/client"];
+    for (header, value) in [
+        ("x-hive-model", client["model"].as_str()),
+        ("x-hive-agent", client["agent"].as_str()),
+        (
+            "x-hive-harness",
+            client["harness"]
+                .as_str()
+                .or_else(|| params["_meta"]["io.modelcontextprotocol/clientInfo"]["name"].as_str()),
+        ),
+    ] {
+        if let Some(value) = value {
+            if value.len() > 120 || value.chars().any(char::is_control) {
+                return Err(ApiError::bad("invalid_client_context"));
+            }
+            headers.insert(
+                header,
+                HeaderValue::from_str(value)
+                    .map_err(|_| ApiError::bad("invalid_client_context"))?,
+            );
+        }
+    }
+    Ok(headers)
+}
 /// # Errors
 /// Rejects invalid credentials, origins, malformed messages, and database failures.
 pub async fn gateway(
@@ -420,6 +457,7 @@ pub async fn gateway(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
+            let headers = client_headers(headers, &request.params)?;
             let result = Box::pin(call(state, headers, name, args)).await;
             let (value, failed) = match result {
                 Ok(value) => (value, false),

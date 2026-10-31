@@ -31,7 +31,14 @@ const proxy = async (
     return new NextResponse(null, { status: 403 });
   }
   const headers = new Headers({ Authorization: `Bearer ${token}` });
-  for (const name of ["content-type", "idempotency-key", "payment-signature"]) {
+  for (const name of [
+    "content-type",
+    "idempotency-key",
+    "payment-signature",
+    "x-hive-agent",
+    "x-hive-model",
+    "x-hive-harness",
+  ]) {
     const value = request.headers.get(name);
     if (value) {
       headers.set(name, value);

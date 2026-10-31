@@ -617,12 +617,10 @@ pub async fn get_receipt(
     headers: HeaderMap,
 ) -> ApiResult<Response> {
     let c = identity::authenticate(&state, &headers, "receipts:read").await?;
+    let scope = crate::features::waggle::activity::credential_scope(&state, &c).await?;
     let inv = InvocationsEntity::find()
-        .filter(
-            Expr::col(InvocationsColumn::Id)
-                .eq(Expr::val(id))
-                .and(Expr::col(InvocationsColumn::CredentialId).eq(Expr::val(c.id))),
-        )
+        .filter(Expr::col(InvocationsColumn::Id).eq(Expr::val(id)))
+        .filter(scope)
         .into_model::<Invocation>()
         .one(&state.postgres)
         .await?

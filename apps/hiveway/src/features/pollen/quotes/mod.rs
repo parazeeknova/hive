@@ -1,4 +1,5 @@
 //! Quote admission and budget reservations, independent from invocation settlement.
+mod context;
 mod replay;
 mod reservations;
 use super::{Tx, locked_credential, required, x402};
@@ -122,6 +123,7 @@ pub async fn quote(
         idempotency_key: sea_orm::Set(key),
         request_hash: sea_orm::Set(fingerprint),
         input: sea_orm::Set(serde_json::to_value(request.input)?),
+        client_context: sea_orm::Set(context::from_headers(&headers)?),
         requirements: sea_orm::Set(serde_json::to_value(&requirements)?),
         resource: sea_orm::Set(serde_json::to_value(&resource)?),
         state: sea_orm::Set("quoted".into()),

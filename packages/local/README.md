@@ -47,3 +47,30 @@ With 10,000 disposable catalog entries on this machine, the indexed search run m
 Rust unit and PostgreSQL/security integration tests also run against PostgreSQL 18.6. Dodo checkout/refund behavior uses integration fixtures in test mode. Real provider payments and a deployed public Hive service require separate acceptance.
 
 On this machine the Compose facilitator build failed because the Podman host referenced a missing `catatonit` executable. Running `bun packages/local/src/payments/facilitator.ts` directly allowed the local chain tests to continue. The pinned PostgreSQL 18.6 container started and passed integration tests.
+
+## Hosted builder
+
+Configure the server with all three variables (keep the key in ignored `.env.local` or the deployment secret environment):
+
+```sh
+HIVE_BUILDER_API_URL=https://api.meta.ai/v1/chat/completions
+HIVE_BUILDER_MODEL=muse-spark-1.3-contributor
+HIVE_BUILDER_REASONING_EFFORT=low
+HIVE_BUILDER_API_KEY=YOUR_SERVER_MODEL_KEY
+```
+
+The endpoint is configurable and must accept OpenAI-compatible chat completions with JSON-object output. Reasoning effort is optional and omitted unless configured; set it only for models supporting that parameter. All three omitted disables new builds. Partial configuration fails startup. No provider key is sent to browsers or MCP clients. Meta Contributor can use prompts and responses for training, so avoid private content in task inputs.
+
+`HIVE_BUILDER_ACCOUNT_DAILY_LIMIT` defaults to 3; `HIVE_BUILDER_GLOBAL_DAILY_LIMIT` defaults to 20. These count all accepted jobs in a rolling 24-hour window, including failures. One queued/running job per account, two generation attempts per build, a maximum of 8192 output tokens per attempt, and a 120-second timeout bound provider work. Limits are shared in PostgreSQL across replicas. They bound requests, not a precise currency spend cap. Provider billing limits remain useful.
+
+Use `POST /v1/builds` or MCP `build_capability` with `idempotency_key`, `name`, `description`, `task`, and 1–8 `{input, expected}` examples with object inputs and outputs. Read an owned build through `GET /v1/builds/{id}` / `get_build`; `GET /v1/builds` returns the latest twenty. A publishing-scoped GitHub identity can build without a wallet. Validation compiles generated WAT inside Hive, verifies the existing Wasm ABI and sandbox, and runs every supplied example. Only passing candidates publish zero-price artifacts and capabilities, atomically with the job's final state. No shell, native compiler, imports, WASI, network or filesystem are available to generated code. JSON validators, transformations and calculations fit this runtime; external side effects need a separate runtime.
+
+Provider credentials are checked before generation and publication. Revoked or expired Hive credentials cannot finish publication. Queued jobs survive restarts; generating jobs without an update for ten minutes fail as interrupted rather than silently repeating model calls. Job details, source and reports are owner-only. Published capability schemas and results follow normal catalog visibility. Poll `queued` / `generating` until `published` or `failed`.
+
+To explicitly fund an isolated live-provider acceptance test, set `HIVE_TEST_DATABASE_URL` and the three builder variables, then run:
+
+```sh
+cargo run --locked -p hiveway --example hosted_build
+```
+
+This creates a temporary PostgreSQL schema, generates an integer-doubling tool, checks three supplied cases plus five unseen inputs, and removes the schema. It makes up to two real model calls. Ordinary tests use an isolated mock provider and never need the model key.

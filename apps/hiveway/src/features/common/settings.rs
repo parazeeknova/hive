@@ -2,6 +2,7 @@ use anyhow::{Context, bail};
 use std::env;
 
 pub struct Settings {
+    pub builder: Option<crate::features::builder::config::Config>,
     pub runtime: crate::runtime::RuntimeConfig,
     pub public_url: String,
     pub auth_domain: String,
@@ -39,6 +40,7 @@ impl Settings {
         runtime.payment.settlement_finality.validate_rpc(&rpc_url)?;
         let optional = |key| env::var(key).ok().filter(|s| !s.is_empty());
         Ok(Self {
+            builder: crate::features::builder::config::Config::load()?,
             public_url,
             auth_domain,
             auth_uri,

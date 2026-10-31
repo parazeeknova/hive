@@ -17,7 +17,7 @@ use sea_orm::{
 use serde_json::Value;
 use uuid::Uuid;
 
-pub(super) async fn insert(
+pub(crate) async fn insert(
     state: &AppState,
     wallet: &str,
     bytes: Vec<u8>,

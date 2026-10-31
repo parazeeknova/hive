@@ -20,6 +20,8 @@ import type { Credential, RegistryCapability } from "../../lib/hiveway";
 import ApiKeys from "./account-api-keys";
 import { AccountBalance } from "./account-payments";
 import CreatorTools from "./creator-tools";
+import HostedBuilder from "./hosted-builder";
+import { PublisherSummary } from "./publisher";
 import { EmptyState, Json } from "./workspace-pages";
 
 import "./account.css";
@@ -183,6 +185,7 @@ const CapabilitySettings = ({
       <p className="ws-capability-description">{tool.description}</p>
       <div className="ws-capability-tags">
         <span>{runtimeLabels[tool.runtime]}</span>
+        <PublisherSummary metadata={tool.metadata} />
         <span>{tool.active ? "Enabled" : "Disabled"}</span>
       </div>
       <div className="ws-account-settings-section">
@@ -615,6 +618,7 @@ const AccountPanel = ({
                     </span>
                     <span className="ws-row-meta">
                       <span>{runtimeLabels[tool.runtime]}</span>
+                      <PublisherSummary metadata={tool.metadata} />
                       <span
                         className={`ws-account-listing-state ${tool.active ? "is-active" : ""}`}
                       >
@@ -668,6 +672,7 @@ const AccountPanel = ({
           </section>
           {credential?.scopes.includes("capabilities:publish") && (
             <section className="ws-account-capabilities">
+              <HostedBuilder token={token} />
               <CreatorTools token={token} onRefresh={onRefresh} />
             </section>
           )}

@@ -6,12 +6,19 @@ use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
 pub struct PublicConfig {
+    pub builder: Option<PublicBuilder>,
     pub version: &'static str,
     pub public_url: String,
     pub auth_origin: String,
     pub payment: PublicPayment,
     pub features: Features,
     pub limits: PublicLimits,
+}
+#[derive(Serialize, ToSchema)]
+pub struct PublicBuilder {
+    pub model: String,
+    pub account_daily_limit: u64,
+    pub global_daily_limit: u64,
 }
 #[derive(Serialize, ToSchema)]
 pub struct PublicPayment {
@@ -47,6 +54,11 @@ pub async fn configuration(State(state): State<AppState>) -> Json<PublicConfig> 
     let payment = &settings.runtime.payment;
     let sandbox = &settings.runtime.sandbox;
     Json(PublicConfig {
+        builder: settings.builder.as_ref().map(|config| PublicBuilder {
+            model: config.model.clone(),
+            account_daily_limit: config.owner_daily,
+            global_daily_limit: config.global_daily,
+        }),
         version: env!("CARGO_PKG_VERSION"),
         public_url: settings.public_url.clone(),
         auth_origin: settings.auth_uri.clone(),

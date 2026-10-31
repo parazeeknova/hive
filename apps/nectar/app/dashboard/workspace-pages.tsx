@@ -183,11 +183,17 @@ export const ActivityPanel = ({
   activity,
   catalog,
   onRefresh,
+  onLoadMore,
+  hasMore,
+  loadingMore,
 }: {
   token: string;
   activity: Activity | null;
   catalog: RegistryCapability[];
   onRefresh: () => void;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  loadingMore: boolean;
 }) => {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState("");
@@ -296,8 +302,15 @@ export const ActivityPanel = ({
           </button>
         </div>
         <p className="ws-muted">
-          Up to 100 recent invocations for this credential.
+          Recent account activity. Updates every 3 seconds while this page is
+          open.
         </p>
+        {activity?.counts && (
+          <p className="ws-muted">
+            {activity.counts.total} invocations · {activity.counts.succeeded}{" "}
+            succeeded · {activity.counts.failed} failed
+          </p>
+        )}
         {activity?.invocations.length ? (
           <div className="ws-history">
             {activity.invocations.map((item) => (
@@ -311,12 +324,19 @@ export const ActivityPanel = ({
               >
                 <span>
                   <strong>
-                    {catalog.find((tool) => tool.id === item.capability_id)
-                      ?.name ?? shortId(item.capability_id)}
+                    {item.capability_name ??
+                      catalog.find((tool) => tool.id === item.capability_id)
+                        ?.name ??
+                      shortId(item.capability_id)}
                   </strong>
                   <small>
                     {new Date(item.created_at * 1000).toLocaleString()} ·{" "}
                     {item.payment_method ?? "Unpaid"}
+                  </small>
+                  <small>
+                    {item.agent_name ?? "Unknown agent"} ·{" "}
+                    {item.client_context?.harness ?? "Unknown harness"} ·{" "}
+                    {item.client_context?.model ?? "Model not reported"}
                   </small>
                 </span>
                 <Status state={item.state} />
@@ -333,6 +353,16 @@ export const ActivityPanel = ({
             Quote a capability from Discover. Receipts and results will appear
             here.
           </EmptyState>
+        )}
+        {hasMore && (
+          <button
+            className="ws-button"
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? "Loading…" : "Load older activity"}
+          </button>
         )}
       </section>
       <section className="ws-panel">

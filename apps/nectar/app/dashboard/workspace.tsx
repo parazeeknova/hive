@@ -1,11 +1,11 @@
 "use client";
-
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +15,14 @@ import { Icon } from "../../components/icon";
 import type { IconName } from "../../components/icon";
 import type { Profile } from "../../lib/account";
 import { capabilityDisplayName } from "../../lib/capability-name";
+import type {
+  CatalogMetadata,
+  Activity,
+  Credential,
+  RegistryCapability,
+  Runtime,
+  Sale,
+} from "../../lib/hiveway";
 import {
   atomicMoney,
   errorMessage,
@@ -22,17 +30,11 @@ import {
   runtimeLabels,
   shortId,
 } from "../../lib/hiveway";
-import type {
-  Activity,
-  Credential,
-  RegistryCapability,
-  Runtime,
-  Sale,
-} from "../../lib/hiveway";
 import { useHiveSession } from "../../lib/providers";
 import AccountPanel from "./account-panel";
 import type { AccountTab } from "./account-panel";
 import { SidebarBalance } from "./account-payments";
+import { PublisherSummary } from "./publisher";
 import {
   ActivityPanel,
   EmptyState,
@@ -148,6 +150,7 @@ const Inspector = ({
         <h2>{tool.name}</h2>
       </div>
       <p className="ws-capability-description">{tool.description}</p>
+      <PublisherSummary metadata={tool.metadata} />
       <div className="ws-capability-tags">
         <span>{runtimeLabels[tool.runtime]}</span>
         <span>{tool.runtime === "wasm" ? "Sandboxed" : "GitHub"}</span>
@@ -365,11 +368,40 @@ const Workspace = () => {
     queryKey: ["hive-account", "profile"],
   });
 
-  const history = useQuery({
+  const history = useInfiniteQuery<
+    Activity,
+    Error,
+    InfiniteData<Activity>,
+    readonly unknown[],
+    string
+  >({
     enabled: Boolean(token && credential?.scopes.includes("receipts:read")),
-    queryFn: ({ signal }) =>
-      hiveway<Activity>("/v1/activity", token, { signal }),
+    getNextPageParam: (page) =>
+      page.next_cursor
+        ? new URLSearchParams({
+            before_id: page.next_cursor.before_id,
+            before_time: String(page.next_cursor.before_time),
+          }).toString()
+        : undefined,
+    initialPageParam: "",
+    queryFn: ({ signal, pageParam }) =>
+      hiveway<Activity>(
+        `/v1/activity${pageParam ? `?${pageParam}` : ""}`,
+        token,
+        { signal }
+      ),
     queryKey: ["hive", sessionKey, "activity"],
+    refetchInterval: view === "executions" ? 3000 : 15_000,
+  });
+  const plan = useQuery({
+    queryFn: ({ signal }) =>
+      hiveway<{ tier: string; build_credits: { available: number } | null }>(
+        "/v1/account/plan",
+        "session",
+        { signal }
+      ),
+    queryKey: ["hive-account", "plan"],
+    refetchInterval: 15_000,
   });
   const earnings = useQuery({
     enabled: Boolean(token && credential?.scopes.includes("sales:read")),
@@ -429,15 +461,47 @@ const Workspace = () => {
       filter,
     ],
   });
-  const catalog = token
-    ? (registry.data?.pages.flatMap((page) =>
-        page.items.map((tool) => ({
-          ...tool,
-          name: capabilityDisplayName(tool.name),
-        }))
-      ) ?? [])
+  const rawCatalog = token
+    ? (registry.data?.pages.flatMap((page) => page.items) ?? [])
     : [];
-  const activity = history.data ?? null;
+  const metadataIds = rawCatalog.map((tool) => tool.id);
+  const metadata = useQuery({
+    enabled: Boolean(token && metadataIds.length),
+    queryFn: async ({ signal }) => {
+      const batches: string[][] = [];
+      for (let index = 0; index < metadataIds.length; index += 100) {
+        batches.push(metadataIds.slice(index, index + 100));
+      }
+      const pages = await Promise.all(
+        batches.map((ids) =>
+          hiveway<CatalogMetadata[]>("/v1/catalog/metadata", token, {
+            body: JSON.stringify({ ids }),
+            method: "POST",
+            signal,
+          })
+        )
+      );
+      return pages.flat();
+    },
+    queryKey: ["hive", sessionKey, "catalog-metadata", metadataIds],
+    refetchInterval: 10_000,
+  });
+  const byId = new Map(
+    metadata.data?.map((item) => [item.capability_id, item])
+  );
+  const catalog = rawCatalog.map((tool) => ({
+    ...tool,
+    metadata: byId.get(tool.id),
+    name: capabilityDisplayName(tool.name),
+  }));
+  const latestActivity = history.data?.pages[0];
+  const activity = latestActivity
+    ? {
+        ...latestActivity,
+        invocations:
+          history.data?.pages.flatMap((page) => page.invocations) ?? [],
+      }
+    : null;
   const sales = earnings.data ?? [];
   const loading = registry.isFetching;
   const failure = me.error ?? registry.error ?? history.error ?? earnings.error;
@@ -619,7 +683,18 @@ const Workspace = () => {
             onClick={() => navigate("settings")}
           >
             <span className="ws-avatar dark">
-              <Icon name="wallet" size={16} />
+              {accountProfile.data?.avatar ? (
+                <Image
+                  unoptimized
+                  src={accountProfile.data.avatar}
+                  alt=""
+                  width={32}
+                  height={32}
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <span aria-hidden="true">H</span>
+              )}
             </span>
             <span>
               <strong>
@@ -652,14 +727,15 @@ const Workspace = () => {
             </strong>
           </div>
           <div className="ws-topbar-actions">
-            <button
-              type="button"
-              className="ws-button ws-primary ws-small"
-              onClick={() => setConnectOpen(true)}
+            <span className="ws-account-tier">{plan.data?.tier ?? "…"}</span>
+            <span
+              className="ws-account-credits"
+              title="Daily hosted build credits; separate from wallet funds"
             >
-              <Icon name="wallet" size={14} />
-              {credential ? "Change session" : "Connect wallet"}
-            </button>
+              {plan.data?.build_credits
+                ? `${plan.data.build_credits.available} build credits`
+                : "Build credits unavailable"}
+            </span>
           </div>
         </header>
         <main id="workspace-content" className="ws-content">
@@ -812,6 +888,9 @@ const Workspace = () => {
                       : "Illustrative prices · no live execution"}
                   </span>
                 </div>
+                {metadata.error && (
+                  <p role="alert">{errorMessage(metadata.error)}</p>
+                )}
                 <div className="ws-list" aria-busy={loading}>
                   {results.map((tool, index) => (
                     <button
@@ -836,6 +915,7 @@ const Workspace = () => {
                         </span>
                         <span className="ws-row-meta">
                           <span>{runtimeLabels[tool.runtime]}</span>
+                          <PublisherSummary metadata={tool.metadata} />
                         </span>
                       </span>
                       <span className="ws-row-price">
@@ -913,6 +993,11 @@ const Workspace = () => {
               key={credential?.id ?? "preview"}
               token={token}
               activity={activity}
+              hasMore={history.hasNextPage}
+              loadingMore={history.isFetchingNextPage}
+              onLoadMore={() => {
+                void history.fetchNextPage();
+              }}
               catalog={catalog}
               onRefresh={refreshData}
             />

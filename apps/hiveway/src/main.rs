@@ -31,7 +31,7 @@ async fn serve() -> anyhow::Result<()> {
     );
     let (stop_worker, worker_shutdown) = tokio::sync::oneshot::channel();
     let (stop_server, server_shutdown) = tokio::sync::oneshot::channel();
-    let mut worker = tokio::spawn(recovery_worker(state.clone(), worker_shutdown));
+    let mut worker = tokio::spawn(background_workers(state.clone(), worker_shutdown));
     let server = axum::serve(
         listener,
         router
@@ -49,20 +49,20 @@ async fn serve() -> anyhow::Result<()> {
     let (result, worker_result) = tokio::select! {
         result = &mut server => {
             let _ = stop_worker.send(());
-            (result, worker.await.context("Pollen recovery task failed"))
+            (result, worker.await.context("Background worker task failed"))
         }
         outcome = &mut worker => {
             let error = match outcome {
-                Ok(()) => anyhow::anyhow!("Pollen recovery task stopped unexpectedly"),
-                Err(error) => anyhow::Error::new(error).context("Pollen recovery task failed"),
+                Ok(()) => anyhow::anyhow!("Background worker task stopped unexpectedly"),
+                Err(error) => anyhow::Error::new(error).context("Background worker task failed"),
             };
-            tracing::error!(%error, "Pollen recovery stopped");
+            tracing::error!(%error, "Background workers stopped");
             let _ = stop_server.send(());
             (server.await, Err(error))
         }
     };
     if let Err(error) = &worker_result {
-        tracing::error!(%error, "Pollen recovery task failed");
+        tracing::error!(%error, "Background worker task failed");
     }
     let drained = drain
         .wait(std::time::Duration::from_secs(
@@ -79,6 +79,31 @@ async fn serve() -> anyhow::Result<()> {
     redis.context("closing Redis connection")?;
     let _drained = drained.context("draining Hiveway handlers")?;
     worker_result
+}
+
+async fn background_workers(state: AppState, shutdown: tokio::sync::oneshot::Receiver<()>) {
+    let (stop_recovery, recovery_shutdown) = tokio::sync::oneshot::channel();
+    let (stop_builder, mut builder_shutdown) = tokio::sync::oneshot::channel();
+    let builder = async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! { biased; _ = &mut builder_shutdown => break, _ = interval.tick() => {} }
+            if let Err(error) = hiveway::features::builder::worker::tick(&state).await {
+                tracing::error!(error = error.code, "Hosted builder cycle failed");
+            }
+        }
+    };
+    let stop = async {
+        let _ = shutdown.await;
+        let _ = stop_recovery.send(());
+        let _ = stop_builder.send(());
+    };
+    tokio::join!(
+        recovery_worker(state.clone(), recovery_shutdown),
+        builder,
+        stop
+    );
 }
 
 async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Receiver<()>) {

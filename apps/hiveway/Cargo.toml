@@ -86,8 +86,7 @@ wasmi = { version = "^2.0.0", default-features = false, features = [
 ] }
 jsonschema = { version = "^0.60.2", default-features = false }
 
+wat = "^1.262.0"
+
 [lints]
 workspace = true
-
-[dev-dependencies]
-wat = "^1.262.0"

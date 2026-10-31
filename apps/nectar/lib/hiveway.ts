@@ -4,7 +4,19 @@ export type Runtime =
   | "dependency_inventory"
   | "workflow"
   | "wasm";
+export interface CatalogMetadata {
+  capability_id: string;
+  invocation_count: number;
+  publisher: {
+    name: string | null;
+    username: string | null;
+    avatar: string | null;
+    verified: boolean;
+    total_tools: number;
+  };
+}
 export interface RegistryCapability {
+  metadata?: CatalogMetadata | undefined;
   id: string;
   creator_wallet: string;
   name: string;
@@ -27,6 +39,9 @@ export interface Credential {
   expires_at: number;
 }
 export interface Invocation {
+  capability_name?: string;
+  agent_name?: string;
+  client_context?: { agent?: string; model?: string; harness?: string } | null;
   id: string;
   capability_id: string;
   state: string;
@@ -49,6 +64,8 @@ export interface Receipt {
   settlement: { transaction: string; network: string } | null;
 }
 export interface Activity {
+  counts?: { total: number; succeeded: number; failed: number };
+  next_cursor?: { before_time: number; before_id: string } | null;
   invocations: Invocation[];
   budget: { limit: string; spent: string; reserved: string };
 }
@@ -131,18 +148,31 @@ const requestUrl = (path: string, token: string) =>
     : `${apiOrigin}${path}`;
 const hasBearerToken = (token: string) => Boolean(token) && token !== "session";
 
-export const hiveway = async <T>(
+const isBrowserQuote = (path: string) =>
+  typeof window !== "undefined" && path === "/v1/quotes";
+const prepareHeaders = (
   path: string,
-  token = "",
-  init: RequestInit = {}
-): Promise<T> => {
-  const headers = new Headers(init.headers);
+  headers: Headers,
+  token: string,
+  init: RequestInit
+) => {
+  if (isBrowserQuote(path)) {
+    headers.set("x-hive-harness", "Nectar web");
+  }
   if (hasBearerToken(token)) {
     headers.set("Authorization", `Bearer ${token}`);
   }
   if (init.body) {
     headers.set("Content-Type", "application/json");
   }
+};
+export const hiveway = async <T>(
+  path: string,
+  token = "",
+  init: RequestInit = {}
+): Promise<T> => {
+  const headers = new Headers(init.headers);
+  prepareHeaders(path, headers, token, init);
   const response = await fetch(requestUrl(path, token), {
     signal: init.signal ?? AbortSignal.timeout(180_000),
     ...init,

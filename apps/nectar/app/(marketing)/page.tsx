@@ -7,6 +7,7 @@ import CreatorSection from "./creator-section";
 import EarningsSection from "./earnings-section";
 import ExecutionComparison from "./execution-comparison";
 import Hero from "./hero";
+import McpSection from "./mcp-section";
 import NetworkSection from "./network-section";
 
 export const metadata = publicMetadata(
@@ -39,6 +40,7 @@ const Home = () => (
     />
     <Hero />
     <NetworkSection />
+    <McpSection />
     <ExecutionComparison />
     <EarningsSection />
     <CreatorSection />
