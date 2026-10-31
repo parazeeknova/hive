@@ -4,6 +4,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
 
 pub(super) async fn exercise(app: Router, bearer: &str) -> Result {
+    scaffold_catalog(&app, bearer).await?;
     let headers = [("authorization", bearer)];
     let (status, invalid) = attack(app.clone(), "POST", "/mcp", json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"scaffold_project","arguments":{"project_name":"new-app","repository_url":"http://127.0.0.1/private","revision":"a".repeat(40)}}}).to_string(), &headers).await?;
     assert_eq!(status, StatusCode::OK, "{invalid}");
@@ -60,5 +61,33 @@ pub(super) async fn exercise(app: Router, bearer: &str) -> Result {
     let (status, error) =
         attack(app, "POST", "/v1/workflows", workflow.to_string(), &headers).await?;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{error}");
+    Ok(())
+}
+
+async fn scaffold_catalog(app: &Router, bearer: &str) -> Result {
+    let headers = [("authorization", bearer)];
+    let (status,cap)=attack(app.clone(),"POST","/v1/capabilities",json!({"name":"Pinned starter artifact","description":"Catalog scaffold plan","runtime":"repository_scaffold","price":"0"}).to_string(),&headers).await?;
+    assert_eq!(status, StatusCode::OK, "{cap}");
+    let key = uuid::Uuid::new_v4().to_string();
+    let headers = [("authorization", bearer), ("idempotency-key", key.as_str())];
+    let (status,quote)=attack(app.clone(),"POST","/v1/quotes",json!({"capability_id":cap["id"],"input":{"project_name":"new-app","repository_url":"https://github.com/any/starter","revision":"a".repeat(40)}}).to_string(),&headers).await?;
+    assert_eq!(status, StatusCode::CREATED, "{quote}");
+    let (_, tools) = attack(
+        app.clone(),
+        "POST",
+        "/mcp",
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string(),
+        &[("authorization", bearer)],
+    )
+    .await?;
+    let id = cap["id"]
+        .as_str()
+        .ok_or("missing scaffold capability")?
+        .parse::<uuid::Uuid>()?;
+    assert!(tools["result"]["tools"].as_array().is_some_and(|items| {
+        items
+            .iter()
+            .any(|tool| tool["name"] == format!("hive_{}", id.simple()))
+    }));
     Ok(())
 }

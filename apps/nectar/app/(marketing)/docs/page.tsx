@@ -117,14 +117,18 @@ const Docs = () => (
             its download URL, checksum, and local setup instructions.
           </p>
           <p className="mt-3 leading-7 text-stone-600">
-            Your agent downloads and verifies the archive, then uses its local
-            filesystem MCP or shell tools to create a new directory. Existing
-            directories are preserved, and source package names stay unchanged.
-            Read the source README for its prerequisites and installation steps.
-            Source scripts and dependency installation are never executed by
-            Hive. Archives are limited to 8 MiB compressed, 32 MiB expanded and
-            2,000 files. Links and unsafe paths are rejected by the local
-            installer.
+            Publish a free capability with runtime repository_scaffold to list
+            this operation in Discover and invoke it with normal quotes and
+            receipts. Its input contains project_name, repository_url and
+            revision. The scaffold_project MCP name remains available for
+            existing clients. Your agent downloads and verifies the archive,
+            then uses its local filesystem MCP or shell tools to create a new
+            directory. Existing directories are preserved, and source package
+            names stay unchanged. Read the source README for its prerequisites
+            and installation steps. Source scripts and dependency installation
+            are never executed by Hive. Archives are limited to 8 MiB
+            compressed, 32 MiB expanded and 2,000 files. Links and unsafe paths
+            are rejected by the local installer.
           </p>
           <p className="mt-3 leading-7 text-stone-600">
             From a Hive checkout, run{" "}

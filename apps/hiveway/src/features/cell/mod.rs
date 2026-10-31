@@ -377,6 +377,9 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
         .one(&state.postgres)
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "repository_scaffold" {
+        return crate::features::scaffold::validate_request(input.clone());
+    }
     if capability.runtime == "wasm" {
         let artifact = artifact_for(state, &capability).await?;
         state
@@ -412,6 +415,9 @@ pub async fn execute_capability(
         .one(&state.postgres)
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "repository_scaffold" {
+        return crate::features::scaffold::plan(state, input.clone()).await;
+    }
     if capability.runtime == "wasm" {
         let artifact = artifact_for(state, &capability).await?;
         state

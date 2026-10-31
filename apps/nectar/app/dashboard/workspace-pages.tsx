@@ -542,7 +542,15 @@ export const QuoteForm = ({
 }) => {
   const [url, setUrl] = useState("");
   const [revision, setRevision] = useState("");
-  const [jsonInput, setJsonInput] = useState("{}");
+  const [jsonInput, setJsonInput] = useState(
+    tool.runtime === "repository_scaffold"
+      ? JSON.stringify(
+          { project_name: "my-app", repository_url: "", revision: "" },
+          null,
+          2
+        )
+      : "{}"
+  );
   const [freeReceipt, setFreeReceipt] = useState<Receipt | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [copied, setCopied] = useState(false);
@@ -573,13 +581,13 @@ export const QuoteForm = ({
     setNow(Date.now());
     setError("");
     try {
-      if (tool.runtime !== "wasm") {
+      if (tool.runtime !== "wasm" && tool.runtime !== "repository_scaffold") {
         validateRepository(url.trim(), revision.trim());
       }
       const body = JSON.stringify({
         capability_id: tool.id,
         input:
-          tool.runtime === "wasm"
+          tool.runtime === "wasm" || tool.runtime === "repository_scaffold"
             ? (JSON.parse(jsonInput) as unknown)
             : { repository_url: url.trim(), revision: revision.trim() },
       });
@@ -615,7 +623,7 @@ export const QuoteForm = ({
         void submit(e);
       }}
     >
-      {tool.runtime === "wasm" ? (
+      {tool.runtime === "wasm" || tool.runtime === "repository_scaffold" ? (
         <label className="ws-field">
           JSON input
           <textarea
@@ -763,7 +771,7 @@ const SampleForm = ({
 }) => {
   const [input, setInput] = useState(
     JSON.stringify(
-      tool.runtime === "wasm"
+      tool.runtime === "wasm" || tool.runtime === "repository_scaffold"
         ? (tool.definition.sample_input ?? {})
         : {
             repository_url: "https://github.com/octocat/Hello-World",
@@ -804,7 +812,7 @@ const SampleForm = ({
         Run editable input against the actual runtime. Paid sample tests require
         the creator’s wallet session.
       </p>
-      {tool.runtime === "wasm" &&
+      {(tool.runtime === "wasm" || tool.runtime === "repository_scaffold") &&
         typeof tool.definition.artifact_id === "string" && (
           <button
             className="ws-button"
