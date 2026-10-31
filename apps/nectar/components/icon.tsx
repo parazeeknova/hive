@@ -1,5 +1,3 @@
-import type { CSSProperties } from "react";
-
 const paths = {
   activity: "M3 12h4l3-8 4 16 3-8h4",
   arrow: "M5 12h14m-6-6 6 6-6 6",
@@ -38,19 +36,16 @@ export const Icon = ({
   name,
   size = 20,
   className,
-  style,
 }: {
   name: IconName;
   size?: number;
   className?: string;
-  style?: CSSProperties;
 }) => (
   <svg
     aria-hidden="true"
     width={size}
     height={size}
     className={className}
-    style={style}
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"

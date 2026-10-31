@@ -95,13 +95,13 @@ pub async fn quote(
         .one(&tx)
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
-    if cap.runtime == "wasm" && identity::invocation_scope(&c)? != "capabilities:invoke" {
+    if matches!(cap.runtime.as_str(), "wasm" | "repository_scaffold")
+        && identity::invocation_scope(&c)? != "capabilities:invoke"
+    {
         return Err(ApiError::forbidden());
     }
     reserve(&tx, c.id, cap.price).await?;
-    let id = Uuid::new_v4();
-    let at = now();
-    let expires_at = at + 120;
+    let (id, at) = (Uuid::new_v4(), now());
     let requirements = PaymentRequirements {
         scheme: "exact".into(),
         network: state.settings.runtime.payment.network(),
@@ -128,7 +128,7 @@ pub async fn quote(
         resource: sea_orm::Set(serde_json::to_value(&resource)?),
         state: sea_orm::Set("quoted".into()),
         price: sea_orm::Set(cap.price),
-        expires_at: sea_orm::Set(expires_at),
+        expires_at: sea_orm::Set(at + 120),
         created_at: sea_orm::Set(at),
         updated_at: sea_orm::Set(at),
         creator_wallet: sea_orm::Set(requirements.pay_to.clone()),
@@ -141,7 +141,7 @@ pub async fn quote(
         StatusCode::CREATED,
         Json(QuoteResponse {
             id,
-            expires_at,
+            expires_at: at + 120,
             payment: PaymentRequired {
                 x402_version: 2,
                 resource,

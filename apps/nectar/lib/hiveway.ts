@@ -1,5 +1,6 @@
 /** Hiveway's current REST contract. Amounts remain atomic decimal strings. */
 export type Runtime =
+  | "repository_scaffold"
   | "repository_stack"
   | "dependency_inventory"
   | "workflow"
@@ -91,6 +92,7 @@ export interface Quote {
 }
 export const runtimeLabels: Record<Runtime, string> = {
   dependency_inventory: "Dependencies",
+  repository_scaffold: "Project scaffold",
   repository_stack: "Stack report",
   wasm: "Hosted Wasm",
   workflow: "Workflow",

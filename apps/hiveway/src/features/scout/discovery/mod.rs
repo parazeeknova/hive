@@ -114,7 +114,11 @@ async fn resolve(
     if request.runtime.as_ref().is_some_and(|runtime| {
         !matches!(
             runtime.as_str(),
-            "wasm" | "repository_stack" | "dependency_inventory" | "workflow"
+            "wasm"
+                | "repository_stack"
+                | "dependency_inventory"
+                | "repository_scaffold"
+                | "workflow"
         )
     }) {
         return Err(ApiError::bad("invalid_runtime_filter"));

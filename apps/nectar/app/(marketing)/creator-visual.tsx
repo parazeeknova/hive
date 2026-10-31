@@ -1,6 +1,5 @@
 "use client";
 
-import "./creator-visual.css";
 import { Icon } from "../../components/icon";
 import { useLoopInView } from "../../lib/hooks/use-loop-in-view";
 import { SceneHexagon } from "./scenes/scene-hexagon";
@@ -18,7 +17,7 @@ const CreatorVisual = () => {
     <figure
       ref={ref}
       data-loop="idle"
-      className="publisher-stage m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)]"
+      className="publisher-stage m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)] [&[data-loop='idle']_:is(.publisher-story,_.publisher-call)]:opacity-[0] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call]:[animation:publisher-first-call_7s_cubic-bezier(0.22,_1,_0.36,_1)_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call-1]:[animation-name:publisher-second-call] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call-2]:[animation-name:publisher-third-call] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-return]:[animation:publisher-return_7s_cubic-bezier(0.22,_1,_0.36,_1)_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-story]:[animation:publisher-story_7s_ease-in-out_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&[data-loop='paused']_*]:[animation-play-state:paused]!"
       aria-label="Illustrative publishing activity: one Repository Analyzer capability serves three different repositories at five cents per call, for fifteen cents in total call value."
     >
       <div

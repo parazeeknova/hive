@@ -1,6 +1,5 @@
 "use client";
 
-import "./earnings-section.css";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -75,7 +74,7 @@ const EarningsSection = () => {
             </p>
             <h2
               id="earnings-heading"
-              className="mt-5 text-[clamp(1.9rem,3.1vw,2.75rem)] leading-[1.2] font-semibold tracking-[-0.045em] text-neutral-900"
+              className="font-display mt-5 text-[clamp(1.9rem,3.1vw,2.75rem)] leading-[1.2] font-semibold tracking-[-0.045em] text-neutral-900"
             >
               Your API. Your price.
               <span className="mt-1 block text-neutral-400">
@@ -144,7 +143,7 @@ const EarningsSection = () => {
                 </span>
                 <span
                   key={mode}
-                  className="earnings-amount font-mono text-[32px] leading-none tracking-[-0.06em] text-neutral-800"
+                  className="earnings-amount font-mono text-[32px] leading-none tracking-[-0.06em] text-neutral-800 [@media_(prefers-reduced-motion:no-preference)]:[animation:earnings-amount-in_300ms_cubic-bezier(0.22,_1,_0.36,_1)_both]"
                 >
                   {isPaid ? "$5.00" : "$0.00"}
                 </span>
@@ -159,7 +158,7 @@ const EarningsSection = () => {
             </p>
             <Link
               href="/dashboard?view=settings"
-              className="surface-dark mt-6 inline-flex min-h-12 items-center justify-center gap-3 rounded-full px-5 py-3 text-[13px] font-medium text-white transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0 motion-reduce:transform-none"
+              className="surface-dark mt-6 inline-flex min-h-12 items-center justify-center gap-3 rounded-full px-5 py-3 text-[13px] font-medium text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] transition-transform duration-200 [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] hover:-translate-y-0.5 active:translate-y-0 motion-reduce:transform-none"
             >
               Start earning <Icon name="arrow" size={17} />
             </Link>

@@ -44,6 +44,12 @@ fn source(args: Value) -> ApiResult<(Request, String)> {
     );
     Ok((request, url))
 }
+/// Validate scaffold inputs before quote admission.
+/// # Errors
+/// Rejects unsafe names, repository URLs and revisions.
+pub fn validate_request(args: Value) -> ApiResult<()> {
+    source(args).map(|_| ())
+}
 /// Verify a dynamic pinned source and return an authenticated-client install plan.
 /// # Errors
 /// Rejects unsafe names, non-public-GitHub URLs, non-commit revisions and failed/oversized archives.

@@ -112,7 +112,10 @@ export const ConnectionGuide = () => {
               setSelected(client);
               setMessage("");
             }}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm transition-colors ${selected.id === client.id ? "border-stone-800 bg-white text-stone-950 shadow-sm" : "border-transparent text-stone-500 hover:bg-white"}`}
+            className={
+              "cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.45] " +
+              `inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm transition-colors ${selected.id === client.id ? "border-stone-800 bg-white text-stone-950 shadow-sm" : "border-transparent text-stone-500 hover:bg-white"}`
+            }
           >
             <Image
               src={`/clients/${client.id}.svg`}
@@ -151,7 +154,7 @@ export const ConnectionGuide = () => {
           onClick={() => {
             void copy();
           }}
-          className="surface-dark rounded-full px-4 py-2 text-xs text-white"
+          className="surface-dark cursor-pointer rounded-full px-4 py-2 text-xs text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] disabled:cursor-not-allowed disabled:opacity-[0.45]"
         >
           Copy config
         </button>

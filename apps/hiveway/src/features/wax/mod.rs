@@ -30,7 +30,7 @@ pub async fn publish(
         || request.description.len() > 1000
         || !matches!(
             request.runtime.as_str(),
-            "repository_stack" | "dependency_inventory" | "wasm"
+            "repository_stack" | "dependency_inventory" | "repository_scaffold" | "wasm"
         )
     {
         return Err(ApiError::bad("invalid_capability"));
