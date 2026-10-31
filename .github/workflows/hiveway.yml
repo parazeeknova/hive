@@ -62,7 +62,6 @@ jobs:
       - name: Nectar contract tests and production build
         run: |
           devenv shell -- bun test scripts/tests
-          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           devenv shell -- bun --cwd apps/nectar next build
       - name: PostgreSQL and security integration tests
         run: devenv shell -- cargo test --locked --workspace --all-targets --all-features -- --include-ignored
@@ -122,6 +121,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.4"
       - name: Deploy immutable release and verify health
         env:
           DOKPLOY_URL: ${{ vars.DOKPLOY_URL }}
@@ -133,4 +135,4 @@ jobs:
           HIVEWAY_PUBLIC_URL: ${{ vars.HIVEWAY_PUBLIC_URL }}
           NECTAR_PUBLIC_URL: ${{ vars.NECTAR_PUBLIC_URL }}
           RELEASE_REVISION: ${{ github.sha }}
-        run: python3 scripts/deploy.py
+        run: bun scripts/deploy.ts

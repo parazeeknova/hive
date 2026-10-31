@@ -33,6 +33,8 @@ const Docs = () => (
           <a href="#connect">Connect your agent</a>
           <a href="#credentials">Get a credential</a>
           <a href="#workflow">Your first invocation</a>
+          <a href="#scaffold">Start a project</a>
+          <a href="#build">Build with Hive</a>
           <a href="#publish">Publish an artifact</a>
           <a href="#boundaries">Payments &amp; limits</a>
         </nav>
@@ -100,6 +102,69 @@ const Docs = () => (
             Try this: “Search Hive for a capability that matches my task. Show
             me its price and schema, then invoke it with my approval. Keep its
             invocation ID so I can inspect the result.”
+          </p>
+        </section>
+        <section id="scaffold" className="scroll-mt-32">
+          <h2 className="font-display text-2xl">
+            Start from any public GitHub starter.
+          </h2>
+          <p className="mt-4 leading-7 text-stone-600">
+            Ask your connected agent to call <code>scaffold_project</code> with
+            <code> repository_url</code>, a full 40-character commit
+            <code> revision</code>, and <code>project_name</code>. The source is
+            your choice: Hive has no built-in repository or template snapshot.
+            This free tool verifies a bounded public source archive and returns
+            its download URL, checksum, and local setup instructions.
+          </p>
+          <p className="mt-3 leading-7 text-stone-600">
+            Your agent downloads and verifies the archive, then uses its local
+            filesystem MCP or shell tools to create a new directory. Existing
+            directories are preserved, and source package names stay unchanged.
+            Read the source README for its prerequisites and installation steps.
+            Source scripts and dependency installation are never executed by
+            Hive. Archives are limited to 8 MiB compressed, 32 MiB expanded and
+            2,000 files. Links and unsafe paths are rejected by the local
+            installer.
+          </p>
+          <p className="mt-3 leading-7 text-stone-600">
+            From a Hive checkout, run{" "}
+            <code>
+              bun scripts/scaffold.ts REPOSITORY_URL COMMIT_SHA my-app
+            </code>{" "}
+            with <code>HIVE_API_KEY</code> set. The installer verifies and
+            writes the files and initializes local Git. Creating and pushing a
+            GitHub repository uses your local GitHub CLI or GitHub MCP
+            authorization separately. Never send the Hive API key to the source
+            archive host.
+          </p>
+        </section>
+        <section id="build" className="scroll-mt-32">
+          <h2 className="font-display text-2xl">Ask Hive to build a tool.</h2>
+          <p className="mt-4 leading-7 text-stone-600">
+            Open Account settings → Capabilities → Build with Hive, or call{" "}
+            <code>build_capability</code> over MCP with a new UUID{" "}
+            <code>idempotency_key</code>, a name, description, task and one to
+            eight examples containing <code>input</code> and{" "}
+            <code>expected</code>. Poll <code>get_build</code> with the returned{" "}
+            <code>build_id</code>. Hive generates Wasm code, compiles it and
+            runs every supplied example. When they pass, it publishes a free
+            artifact under your account. No wallet needed.
+          </p>
+          <p className="mt-3 leading-7 text-stone-600">
+            These tools process JSON in an isolated runtime without filesystem
+            or network access. For example, build a validator, formatter or
+            calculator. Review generated source and test more inputs: passing
+            examples is not a correctness guarantee. Builds are asynchronous,
+            limited per account and across the server, and may fail without
+            publishing. Reuse the same idempotency key and request when retrying
+            a submission.
+          </p>
+          <p className="mt-3 leading-7 text-stone-600">
+            Tasks, examples and generated code go to the server&apos;s
+            configured model provider. Meta Contributor mode may use this
+            content for training. Model and account limit appear in the
+            dashboard. Your Hive API key and the server&apos;s model key are
+            never included in generation prompts.
           </p>
         </section>
         <section id="publish" className="scroll-mt-32">

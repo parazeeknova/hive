@@ -1,6 +1,7 @@
 //! Persistent account identity and authenticated, read-only wallet information.
 pub mod balance;
 pub mod credentials;
+pub mod plan;
 use crate::{
     entities::account_profiles::{self, Entity},
     features::{
@@ -112,6 +113,7 @@ async fn ensure(state: &AppState, c: &Credential) -> ApiResult<account_profiles:
     for username in [username, fallback] {
         Entity::insert(account_profiles::ActiveModel {
             owner: Set(c.wallet.clone()),
+            publisher_verified: Set(false),
             name: Set(c.name.chars().take(60).collect()),
             username: Set(username),
             avatar: Set(c

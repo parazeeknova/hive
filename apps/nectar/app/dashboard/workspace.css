@@ -2252,3 +2252,34 @@
     font-size: 14px;
   }
 }
+
+.ws-publisher {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.ws-publisher img,
+.ws-avatar img {
+  border-radius: 50%;
+  object-fit: cover;
+}
+.ws-publisher-verified {
+  color: #437427;
+}
+.ws-account-tier {
+  padding: 5px 11px;
+  border: 1px solid #d8dfcf;
+  border-radius: 7px;
+  background: #f5f8ef;
+  color: #44602b;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.ws-account-credits {
+  font-size: 12px;
+  color: #6b7166;
+}

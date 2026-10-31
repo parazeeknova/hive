@@ -1,6 +1,6 @@
 {
   "name": "hive",
-  "version": "0.0.38",
+  "version": "0.0.41",
   "private": true,
   "description": "Hive: an agent-native capability network. Hiveway API and Nectar web app.",
   "license": "MIT",
@@ -25,6 +25,7 @@
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
     "sherif": "^1.13.0",
+    "tar": "^7.5.22",
     "typescript": "^7.0.2",
     "ultracite": "^8.1.0"
   },

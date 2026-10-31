@@ -39,6 +39,8 @@ async fn manager(state: &AppState, headers: &HeaderMap) -> ApiResult<Credential>
 pub struct CreateKey {
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    expires_in: Option<i64>,
 }
 /// Create a named key restricted to free-use scopes already held by the browser session.
 /// # Errors
@@ -75,7 +77,11 @@ pub async fn issue(
         .collect();
     let token = format!("hwa_{}", hex::encode(rand::random::<[u8; 32]>()));
     let id = Uuid::new_v4();
-    let expires_at = parent.expires_at.min(now() + 3600);
+    let lifetime = request.expires_in.unwrap_or(3600);
+    if ![3600, 86400, 604_800, 2_592_000, 7_776_000].contains(&lifetime) {
+        return Err(ApiError::bad("invalid_api_key_expiry"));
+    }
+    let expires_at = now() + lifetime;
     let tx = state.postgres.begin().await?;
     crate::entities::account_profiles::Entity::find_by_id(parent.wallet.clone())
         .lock_exclusive()

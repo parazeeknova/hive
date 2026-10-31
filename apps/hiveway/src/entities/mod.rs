@@ -12,3 +12,5 @@ pub mod wasm_artifacts;
 pub mod account_profiles;
 
 pub mod account_api_keys;
+
+pub mod build_jobs;

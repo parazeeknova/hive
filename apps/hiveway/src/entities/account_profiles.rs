@@ -7,6 +7,8 @@ pub struct Model {
     #[sea_orm(unique)]
     pub username: String,
     pub name: String,
+    #[sea_orm(default_value = false)]
+    pub publisher_verified: bool,
     pub avatar: String,
     pub updated_at: i64,
 }

@@ -10,6 +10,7 @@ pub struct Model {
     pub idempotency_key: Uuid,
     pub request_hash: Vec<u8>,
     pub input: Json,
+    pub client_context: Option<Json>,
     pub requirements: Json,
     pub resource: Json,
     pub state: String,

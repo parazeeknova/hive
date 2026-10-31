@@ -1,5 +1,6 @@
 pub mod detail;
 pub mod discovery;
+pub mod metadata;
 use crate::entities::capabilities::Column as CapabilitiesColumn;
 use crate::entities::capabilities::Entity as CapabilitiesEntity;
 use crate::{

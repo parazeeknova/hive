@@ -1,6 +1,6 @@
 //! Immutable, owned executable artifacts with bounded schemas and no host capabilities.
 pub mod model;
-mod repository;
+pub(crate) mod repository;
 use crate::{
     entities::wasm_artifacts::{Column, Entity},
     features::{

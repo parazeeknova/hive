@@ -1,10 +1,14 @@
 #![cfg(not(miri))]
 #[path = "security/account.rs"]
 mod account;
+#[path = "security/activity.rs"]
+mod activity;
 #[path = "security/api_keys.rs"]
 mod api_keys;
 #[path = "security/artifacts.rs"]
 mod artifacts;
+#[path = "security/builder.rs"]
+mod builder;
 #[path = "security/catalog.rs"]
 mod catalog;
 #[path = "security/dodo.rs"]
@@ -221,7 +225,12 @@ async fn probe_quotes(app: Router, bearer: &str) -> Result {
         .ok_or("missing capability")?;
     let key = Uuid::new_v4().to_string();
     let body=json!({"capability_id":cap["id"],"input":{"repository_url":"https://github.com/a/b","revision":"1".repeat(40)}}).to_string();
-    let headers = [("authorization", bearer), ("idempotency-key", key.as_str())];
+    let headers = [
+        ("authorization", bearer),
+        ("idempotency-key", key.as_str()),
+        ("x-hive-model", "fixture-model"),
+        ("x-hive-harness", "fixture-harness"),
+    ];
     let (status, first) = attack(app.clone(), "POST", "/v1/quotes", body.clone(), &headers).await?;
     assert_eq!(
         status,
@@ -290,6 +299,14 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     settings.runtime.http.requests_per_minute = 1000;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     settings.facilitator_url = format!("http://{}", listener.local_addr()?);
+    settings.builder = Some(hiveway::features::builder::config::Config {
+        url: format!("{}/chat/completions", settings.facilitator_url),
+        api_key: "fixture".into(),
+        model: "test-wasm-generator".into(),
+        reasoning_effort: None,
+        owner_daily: 3,
+        global_daily: 20,
+    });
     settings.dodo_api_url = settings.facilitator_url.clone();
     settings.dodo_api_key = Some("fixture".into());
     settings.dodo_product_id = Some("pdt_fixture".into());
@@ -304,7 +321,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let session_provider = provider.clone();
     settings.rpc_url = settings.facilitator_url.clone();
     let facilitator = tokio::spawn(async move {
-        let router = Router::new().merge(refunds::router(server_refunds))
+        let router = Router::new().route("/chat/completions", axum::routing::post(builder::provider)).merge(refunds::router(server_refunds))
             .route("/payments/{id}", axum::routing::get(dodo::payment).with_state(payment_provider))
             .route("/checkouts/{id}", axum::routing::get(dodo::session).with_state(session_provider))
             .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
@@ -660,6 +677,7 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
         ])
     );
     free_publishing::exercise(app.clone(), &bearer).await?;
+    Box::pin(builder::exercise(app.clone(), state, &bearer)).await?;
     free_agent_invocation(app.clone(), state, &bearer).await?;
     let (status, _) = attack(
         app.clone(),
@@ -674,6 +692,7 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
         StatusCode::FORBIDDEN,
         "free credentials must not gain creator permissions"
     );
+    Box::pin(activity::exercise(app.clone(), state, headers, &bearer)).await?;
     api_keys::exercise(app, state, headers, &issued, &bearer).await
 }
 
@@ -691,7 +710,12 @@ async fn free_agent_invocation(app: Router, state: &AppState, bearer: &str) -> R
     free.price = Set(0);
     free.insert(&state.postgres).await?;
     let key = Uuid::new_v4().to_string();
-    let headers = [("authorization", bearer), ("idempotency-key", key.as_str())];
+    let headers = [
+        ("authorization", bearer),
+        ("idempotency-key", key.as_str()),
+        ("x-hive-model", "fixture-model"),
+        ("x-hive-harness", "fixture-harness"),
+    ];
     let input = json!({"capability_id":id,"input":{"value":"free with GitHub"}});
     let (status, quote) = attack(
         app.clone(),

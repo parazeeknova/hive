@@ -13,6 +13,8 @@ mod m20261030_000009_free_capabilities;
 mod m20261030_000010_catalog_candidates;
 mod m20261030_000011_account_profiles;
 mod m20261030_000012_account_api_keys;
+mod m20261031_000013_build_jobs;
+mod m20261031_000014_publisher_activity;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -30,6 +32,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261030_000010_catalog_candidates::Migration),
             Box::new(m20261030_000011_account_profiles::Migration),
             Box::new(m20261030_000012_account_api_keys::Migration),
+            Box::new(m20261031_000013_build_jobs::Migration),
+            Box::new(m20261031_000014_publisher_activity::Migration),
         ]
     }
 }

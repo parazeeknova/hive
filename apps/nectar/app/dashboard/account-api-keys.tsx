@@ -36,6 +36,7 @@ const ApiKeys = () => {
     refetchInterval: 60_000,
   });
   const [name, setName] = useState("");
+  const [expiry, setExpiry] = useState(86_400);
   const [created, setCreated] = useState<NewKey | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -93,7 +94,7 @@ const ApiKeys = () => {
           try {
             setCreated(
               await hiveway<NewKey>("/v1/account/credentials", "session", {
-                body: JSON.stringify({ name: name.trim() }),
+                body: JSON.stringify({ expires_in: expiry, name: name.trim() }),
                 method: "POST",
               })
             );
@@ -115,6 +116,19 @@ const ApiKeys = () => {
             placeholder="e.g. Claude Code on my laptop"
           />
         </label>
+        <label className="ws-field">
+          Expires after
+          <select
+            value={expiry}
+            onChange={(event) => setExpiry(Number(event.target.value))}
+          >
+            <option value={3600}>1 hour</option>
+            <option value={86_400}>1 day</option>
+            <option value={604_800}>7 days</option>
+            <option value={2_592_000}>30 days</option>
+            <option value={7_776_000}>90 days</option>
+          </select>
+        </label>
         <button
           className="ws-button ws-primary"
           type="submit"
@@ -124,8 +138,8 @@ const ApiKeys = () => {
         </button>
       </form>
       <p className="ws-fine">
-        Keys can run free capabilities and expire within one hour. Your browser
-        login stays separate.
+        Choose when each key expires. Keys can run free capabilities. Your
+        browser login stays separate.
       </p>
       {created && (
         <div className="ws-api-key-secret">
