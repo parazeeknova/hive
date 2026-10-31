@@ -7,10 +7,11 @@ import { Icon } from "../../components/icon";
 
 import "./mcp-section.css";
 
-const clients = [
+export const clients = [
   {
     command:
-      'claude mcp add --transport http hive https://hiveway.itssingularity.com/mcp --header "Authorization: Bearer $HIVE_API_KEY"',
+      // oxlint-disable-next-line no-template-curly-in-string -- Claude resolves this stored environment reference.
+      'claude mcp add-json --scope project hive \'{"type":"http","url":"https://hiveway.itssingularity.com/mcp","headers":{"Authorization":"Bearer ${HIVE_API_KEY}"}}\'',
     id: "claude",
     name: "Claude Code",
   },
@@ -22,7 +23,7 @@ const clients = [
   },
   {
     command:
-      'opencode mcp add hive --url https://hiveway.itssingularity.com/mcp --header "Authorization=Bearer YOUR_HIVE_API_KEY" --global',
+      "opencode mcp add hive --url https://hiveway.itssingularity.com/mcp --header 'Authorization=Bearer {env:HIVE_API_KEY}' --global",
     id: "opencode",
     name: "OpenCode",
   },
@@ -110,6 +111,10 @@ const McpSection = () => {
         </div>
         <div className="hive-mcp-command">
           <span>$ connect hive</span>
+          <p className="mt-3 text-[10px] leading-5 text-stone-400">
+            Export HIVE_API_KEY in your shell before launching {client?.name}.
+            The command stores a reference to it.
+          </p>
           <pre>
             <code>{client?.command}</code>
           </pre>

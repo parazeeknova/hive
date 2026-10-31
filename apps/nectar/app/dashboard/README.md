@@ -20,7 +20,7 @@ The original Profile, Agent balance, and Capabilities tabs use shared server que
 
 Owned capabilities include paused listings, retain pagination, and use the authenticated availability mutation. Code and price remain immutable. Disconnecting a wallet restores the GitHub browser session; signing out revokes that browser session. HttpOnly session credentials cannot be copied as MCP credentials.
 
-Free MCP credentials can be created from a GitHub session with `POST /v1/account/credentials`; no wallet is required. Choose a 1-hour, 1-day, 7-day, 30-day, or 90-day expiry (the API defaults to one hour). These and contain only free-use scopes already held by the parent session. The GitHub identity binding prevents paid quotes, and the browser cookie is never copied or returned.
+Free MCP credentials can be created from a GitHub session with `POST /v1/account/credentials`; no wallet is required. Choose a 1-hour, 1-day, 7-day, 30-day, or 90-day expiry (the API defaults to one hour). These credentials contain only free-use scopes already held by the parent session. The GitHub identity binding prevents paid quotes, and the browser cookie is never copied or returned.
 
 ## API keys
 

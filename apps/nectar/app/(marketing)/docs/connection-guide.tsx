@@ -17,7 +17,7 @@ const clients = [
     file: "opencode.json",
     id: "opencode",
     name: "OpenCode",
-    note: "This is the documented JSON config. OpenCode 2.x also supports: opencode mcp add hive --url https://hiveway.itssingularity.com/mcp --header 'Authorization=Bearer YOUR_HIVE_API_KEY' --global. Confirm with opencode mcp list.",
+    note: "This is the documented JSON config. OpenCode 2.x also supports: opencode mcp add hive --url https://hiveway.itssingularity.com/mcp --header 'Authorization=Bearer {env:HIVE_API_KEY}' --global. Export HIVE_API_KEY before starting OpenCode. Confirm with opencode mcp list.",
     source: "https://opencode.ai/v2/docs/mcp-servers",
   },
   {

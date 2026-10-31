@@ -1,5 +1,6 @@
 "use client";
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useQuery,
   useQueryClient,
@@ -467,6 +468,7 @@ const Workspace = () => {
   const metadataIds = rawCatalog.map((tool) => tool.id);
   const metadata = useQuery({
     enabled: Boolean(token && metadataIds.length),
+    placeholderData: keepPreviousData,
     queryFn: async ({ signal }) => {
       const batches: string[][] = [];
       for (let index = 0; index < metadataIds.length; index += 100) {

@@ -143,6 +143,7 @@ export const verifyHealth = async (
   io = runtime
 ) => {
   const deadline = io.now() + timeout;
+  let lastError: unknown;
   while (io.now() < deadline) {
     try {
       const body = await requestJson<Health>(
@@ -171,12 +172,17 @@ export const verifyHealth = async (
         }
         return;
       }
-    } catch {
-      /* A malformed, empty, unavailable or stale health response is retryable. */
+      throw new Error(
+        `Unexpected health status or revision (expected ${revision}, received ${body.revision ?? "unknown"})`
+      );
+    } catch (error_) {
+      lastError = error_;
     }
     await io.sleep(10_000);
   }
-  throw new Error(`Health or revision verification failed for ${origin}`);
+  throw new Error(
+    `Health or revision verification failed for ${origin}: ${lastError instanceof Error ? lastError.message : "no valid response"}`
+  );
 };
 export const immutableImage = (image: string, app: string) => {
   if (

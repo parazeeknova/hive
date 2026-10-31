@@ -83,17 +83,11 @@ async fn serve() -> anyhow::Result<()> {
 
 async fn background_workers(state: AppState, shutdown: tokio::sync::oneshot::Receiver<()>) {
     let (stop_recovery, recovery_shutdown) = tokio::sync::oneshot::channel();
-    let (stop_builder, mut builder_shutdown) = tokio::sync::oneshot::channel();
-    let builder = async {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        loop {
-            tokio::select! { biased; _ = &mut builder_shutdown => break, _ = interval.tick() => {} }
-            if let Err(error) = hiveway::features::builder::worker::tick(&state).await {
-                tracing::error!(error = error.code, "Hosted builder cycle failed");
-            }
-        }
-    };
+    let (stop_builder, builder_shutdown) = tokio::sync::oneshot::channel();
+    let builder = builder_worker(
+        || hiveway::features::builder::worker::tick(&state),
+        builder_shutdown,
+    );
     let stop = async {
         let _ = shutdown.await;
         let _ = stop_recovery.send(());
@@ -104,6 +98,23 @@ async fn background_workers(state: AppState, shutdown: tokio::sync::oneshot::Rec
         builder,
         stop
     );
+}
+
+async fn builder_worker<F, Fut>(mut tick: F, mut shutdown: tokio::sync::oneshot::Receiver<()>)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = hiveway::features::common::error::ApiResult<()>>,
+{
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! { biased; _=&mut shutdown=>break, _=interval.tick()=>{} }
+        tokio::select! {
+            biased;
+            _=&mut shutdown=>break,
+            result=tick()=>{if let Err(error)=result {tracing::error!(error=error.code,"Hosted builder cycle failed");}}
+        }
+    }
 }
 
 async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Receiver<()>) {
@@ -144,4 +155,28 @@ async fn shutdown() {
     }
     #[cfg(not(unix))]
     interrupt.await;
+}
+
+#[cfg(all(test, not(miri)))]
+mod tests {
+    #[tokio::test]
+    async fn shutdown_cancels_a_running_builder_tick() -> anyhow::Result<()> {
+        let started = std::sync::Arc::new(tokio::sync::Notify::new());
+        let signal = started.clone();
+        let (stop, shutdown) = tokio::sync::oneshot::channel();
+        let worker = tokio::spawn(super::builder_worker(
+            move || {
+                let signal = signal.clone();
+                async move {
+                    signal.notify_one();
+                    std::future::pending().await
+                }
+            },
+            shutdown,
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(2), started.notified()).await?;
+        let _ = stop.send(());
+        tokio::time::timeout(std::time::Duration::from_secs(1), worker).await??;
+        Ok(())
+    }
 }

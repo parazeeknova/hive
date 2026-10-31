@@ -78,6 +78,7 @@ const ExecutionComparison = () => {
       <div className="overflow-hidden rounded-3xl border border-stone-200 bg-[#fafbf7]">
         <div
           className="flex flex-wrap gap-2 border-b border-stone-200 p-4 sm:p-6"
+          role="group"
           aria-label="Choose a workflow"
         >
           {scenarios.map((item, position) => (

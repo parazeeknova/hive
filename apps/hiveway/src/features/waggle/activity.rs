@@ -60,22 +60,11 @@ pub async fn get(
     let agent = identity::authenticate(&state, &headers, "receipts:read").await?;
     let scope = credential_scope(&state, &agent).await?;
     let all = runs::Entity::find().filter(scope);
-    let total = all
-        .clone()
-        .filter(runs::Column::StartedAt.is_not_null())
-        .count(&state.postgres)
-        .await?;
-    let succeeded = all
-        .clone()
-        .filter(runs::Column::State.is_in(["succeeded", "settled"]))
-        .count(&state.postgres)
-        .await?;
-    let failed = all
-        .clone()
-        .filter(runs::Column::StartedAt.is_not_null())
-        .filter(runs::Column::State.is_in(["execution_failed", "settlement_failed", "failed"]))
-        .count(&state.postgres)
-        .await?;
+    let counts = if query.before_time.is_none() && query.before_id.is_none() {
+        Some(history_counts(&state, all.clone()).await?)
+    } else {
+        None
+    };
     let filtered = match (query.before_time, query.before_id) {
         (Some(time), Some(id)) => all.filter(
             Condition::any().add(runs::Column::CreatedAt.lt(time)).add(
@@ -123,7 +112,29 @@ pub async fn get(
         .map(|c| (c.id, c.name))
         .collect();
     let invocations:Vec<Value>=records.into_iter().map(|r|json!({"id":r.id,"capability_id":r.capability_id,"capability_name":caps.get(&r.capability_id),"agent_name":agents.get(&r.credential_id),"client_context":r.client_context,"state":r.state,"price":r.price.to_string(),"payment_method":r.payment_method,"payment_issue":r.payment_issue,"execution_ms":r.execution_ms,"result_bytes":r.result_bytes,"created_at":r.created_at,"completed_at":r.completed_at})).collect();
-    Ok(Json(
-        json!({"invocations":invocations,"next_cursor":cursor,"counts":{"total":total,"succeeded":succeeded,"failed":failed},"budget":{"limit":agent.total_limit.to_string(),"spent":agent.spent.to_string(),"reserved":agent.reserved.to_string()}}),
-    ))
+    let mut response = json!({"invocations":invocations,"next_cursor":cursor,"budget":{"limit":agent.total_limit.to_string(),"spent":agent.spent.to_string(),"reserved":agent.reserved.to_string()}});
+    if let Some(counts) = counts {
+        response["counts"] = counts;
+    }
+    Ok(Json(response))
+}
+
+async fn history_counts(state: &AppState, all: sea_orm::Select<runs::Entity>) -> ApiResult<Value> {
+    let total = all
+        .clone()
+        .filter(runs::Column::StartedAt.is_not_null())
+        .count(&state.postgres)
+        .await?;
+    let succeeded = all
+        .clone()
+        .filter(runs::Column::State.is_in(["succeeded", "settled"]))
+        .count(&state.postgres)
+        .await?;
+    let failed = all
+        .clone()
+        .filter(runs::Column::StartedAt.is_not_null())
+        .filter(runs::Column::State.is_in(["execution_failed", "settlement_failed", "failed"]))
+        .count(&state.postgres)
+        .await?;
+    Ok(json!({"total":total,"succeeded":succeeded,"failed":failed}))
 }

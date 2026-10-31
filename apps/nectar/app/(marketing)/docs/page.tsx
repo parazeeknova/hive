@@ -127,11 +127,10 @@ const Docs = () => (
             installer.
           </p>
           <p className="mt-3 leading-7 text-stone-600">
-            From a Hive checkout, run
+            From a Hive checkout, run{" "}
             <code>
-              {" "}
               bun scripts/scaffold.ts REPOSITORY_URL COMMIT_SHA my-app
-            </code>
+            </code>{" "}
             with <code>HIVE_API_KEY</code> set. The installer verifies and
             writes the files and initializes local Git. Creating and pushing a
             GitHub repository uses your local GitHub CLI or GitHub MCP
@@ -142,8 +141,8 @@ const Docs = () => (
         <section id="build" className="scroll-mt-32">
           <h2 className="font-display text-2xl">Ask Hive to build a tool.</h2>
           <p className="mt-4 leading-7 text-stone-600">
-            Open Account settings → Capabilities → Build with Hive, or call
-            <code>build_capability</code> over MCP with a new UUID
+            Open Account settings → Capabilities → Build with Hive, or call{" "}
+            <code>build_capability</code> over MCP with a new UUID{" "}
             <code>idempotency_key</code>, a name, description, task and one to
             eight examples containing <code>input</code> and{" "}
             <code>expected</code>. Poll <code>get_build</code> with the returned{" "}

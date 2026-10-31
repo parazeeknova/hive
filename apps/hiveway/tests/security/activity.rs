@@ -59,6 +59,7 @@ pub(super) async fn exercise(
     )
     .await?;
     assert_eq!(status, StatusCode::OK, "{history}");
+    cursor_omits_counts(&app, browser_headers, &history).await?;
     let records = history["invocations"].as_array().ok_or("missing history")?;
     assert!(records.iter().any(|r| r["id"] == row.id.to_string()));
     assert!(records.iter().any(|r| r["id"] == second_id.to_string()));
@@ -238,6 +239,35 @@ async fn expiry_choices(app: &Router, headers: &[(&str, &str)]) -> Result {
         listed["keys"]
             .as_array()
             .is_some_and(|rows| rows.iter().all(|row| row.get("token").is_none()))
+    );
+    Ok(())
+}
+
+async fn cursor_omits_counts(
+    app: &Router,
+    headers: &[(&str, &str)],
+    history: &serde_json::Value,
+) -> Result {
+    let first = &history["invocations"][0];
+    let time = first["created_at"].as_i64().ok_or("missing time")?;
+    let id = first["id"].as_str().ok_or("missing ID")?;
+    let (status, page) = attack(
+        app.clone(),
+        "GET",
+        &format!("/v1/activity?before_time={time}&before_id={id}"),
+        String::new(),
+        headers,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert!(
+        page.get("counts").is_none(),
+        "later pages must not repeat account-wide counts"
+    );
+    assert!(
+        page["invocations"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().all(|row| row["id"] != id))
     );
     Ok(())
 }

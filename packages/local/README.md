@@ -22,10 +22,10 @@ OpenCode v2 uses `mcp.servers.hive`. To add the hosted server:
 
 ```sh
 opencode mcp add hive --url https://hiveway.itssingularity.com/mcp \
-  --header 'Authorization=Bearer YOUR_HIVE_API_KEY' --global
+  --header 'Authorization=Bearer {env:HIVE_API_KEY}' --global
 ```
 
-Replace the placeholder with your Hive API key and keep the resulting config private. Other clients and environment-variable examples are available in the [connection guide](https://hive.itssingularity.com/docs#connect). Refresh expired keys in Account settings. Existing MCP connections may need `opencode reload`.
+Export HIVE_API_KEY in your shell before starting OpenCode. The single-quoted reference is stored literally and resolved from the environment at launch; keep the variable private. Other clients and environment-variable examples are available in the [connection guide](https://hive.itssingularity.com/docs#connect). Refresh expired keys in Account settings. Existing MCP connections may need `opencode reload`.
 
 The local acceptance fixtures above still use a loopback server and their own disposable credentials. They do not configure a hosted account.
 
@@ -65,7 +65,7 @@ The endpoint is configurable and must accept OpenAI-compatible chat completions 
 
 Use `POST /v1/builds` or MCP `build_capability` with `idempotency_key`, `name`, `description`, `task`, and 1–8 `{input, expected}` examples with object inputs and outputs. Read an owned build through `GET /v1/builds/{id}` / `get_build`; `GET /v1/builds` returns the latest twenty. A publishing-scoped GitHub identity can build without a wallet. Validation compiles generated WAT inside Hive, verifies the existing Wasm ABI and sandbox, and runs every supplied example. Only passing candidates publish zero-price artifacts and capabilities, atomically with the job's final state. No shell, native compiler, imports, WASI, network or filesystem are available to generated code. JSON validators, transformations and calculations fit this runtime; external side effects need a separate runtime.
 
-Provider credentials are checked before generation and publication. Revoked or expired Hive credentials cannot finish publication. Queued jobs survive restarts; generating jobs without an update for ten minutes fail as interrupted rather than silently repeating model calls. Job details, source and reports are owner-only. Published capability schemas and results follow normal catalog visibility. Poll `queued` / `generating` until `published` or `failed`.
+The submitting Hive credential is checked before each generation attempt and before publication. Revoked or expired Hive credentials cannot finish publication. Queued jobs survive restarts; generating jobs without an update for ten minutes fail as interrupted rather than silently repeating model calls. Job details, source and reports are owner-only. Published capability schemas and results follow normal catalog visibility. Poll `queued` / `generating` until `published` or `failed`.
 
 To explicitly fund an isolated live-provider acceptance test, set `HIVE_TEST_DATABASE_URL` and the three builder variables, then run:
 

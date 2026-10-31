@@ -68,6 +68,49 @@ describe("immutable releases and Dokploy queues", () => {
     expect(sleeps).toEqual([10_000, 10_000]);
     expect(calls.at(-1)).toBe("https://api.example/api/ready");
   });
+  test("health timeouts retain the final readiness, mismatch and stale-revision failure", async () => {
+    const cases = [
+      {
+        expected: "Backend dependencies are not ready",
+        frontend: false,
+        responses: [
+          { revision: "new", status: "ok" },
+          { status: "unavailable" },
+        ],
+      },
+      {
+        expected: "Frontend is connected to a different backend release",
+        frontend: true,
+        responses: [
+          { hiveway: { revision: "old" }, nectar: "ok", revision: "new" },
+        ],
+      },
+      {
+        expected: "expected new, received old",
+        frontend: false,
+        responses: [{ revision: "old", status: "ok" }],
+      },
+    ];
+    await Promise.all(
+      cases.map(async (item) => {
+        const { io, sleeps } = fixture(item.responses);
+        await expect(
+          verifyHealth(
+            "https://service.example",
+            "new",
+            item.frontend,
+            10_000,
+            io
+          )
+        ).rejects.toThrow(item.expected);
+        expect(sleeps).toEqual([10_000]);
+      })
+    );
+    const { io } = fixture([]);
+    await expect(
+      verifyHealth("https://service.example", "new", false, 0, io)
+    ).rejects.toThrow("no valid response");
+  });
   test("requires matching immutable image digests", () => {
     const image = `ghcr.io/parazeeknova/hive-nectar@sha256:${"a".repeat(64)}`;
     expect(immutableImage(image, "nectar")).toBe(image);
