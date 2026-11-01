@@ -5,6 +5,10 @@ import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import {
+  connectedCapability,
+  capabilityInput,
+} from "../../lib/capability-input";
+import {
   publicApiOrigin as apiOrigin,
   atomicMoney,
   errorMessage,
@@ -574,13 +578,7 @@ export const QuoteForm = ({
   const [url, setUrl] = useState("");
   const [revision, setRevision] = useState("");
   const [jsonInput, setJsonInput] = useState(
-    tool.runtime === "repository_scaffold"
-      ? JSON.stringify(
-          { project_name: "my-app", repository_url: "", revision: "" },
-          null,
-          2
-        )
-      : "{}"
+    JSON.stringify(capabilityInput(tool), null, 2)
   );
   const [freeReceipt, setFreeReceipt] = useState<Receipt | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -612,13 +610,21 @@ export const QuoteForm = ({
     setNow(Date.now());
     setError("");
     try {
-      if (tool.runtime !== "wasm" && tool.runtime !== "repository_scaffold") {
+      if (
+        tool.runtime !== "wasm" &&
+        tool.runtime !== "repository_scaffold" &&
+        tool.runtime !== "connected_mcp" &&
+        !Array.isArray(tool.definition.mcp_tools)
+      ) {
         validateRepository(url.trim(), revision.trim());
       }
       const body = JSON.stringify({
         capability_id: tool.id,
         input:
-          tool.runtime === "wasm" || tool.runtime === "repository_scaffold"
+          tool.runtime === "wasm" ||
+          tool.runtime === "repository_scaffold" ||
+          tool.runtime === "connected_mcp" ||
+          Array.isArray(tool.definition.mcp_tools)
             ? (JSON.parse(jsonInput) as unknown)
             : { repository_url: url.trim(), revision: revision.trim() },
       });
@@ -808,23 +814,20 @@ const SampleForm = ({
   token: string;
 }) => {
   const [input, setInput] = useState(
-    JSON.stringify(
-      tool.runtime === "wasm"
-        ? (tool.definition.sample_input ?? {})
-        : {
-            ...(tool.runtime === "repository_scaffold"
-              ? { project_name: "my-project" }
-              : {}),
-            repository_url: "https://github.com/octocat/Hello-World",
-            revision: "7fd1a60b01f91b314f59955a4e4d4c63fbd0fa49",
-          },
-      null,
-      2
-    )
+    JSON.stringify(sampleInput(tool), null, 2)
   );
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  if (connectedCapability(tool)) {
+    return (
+      <p className="mt-4 text-sm leading-7 text-stone-600">
+        Use Invoke with your connection bindings to run this artifact. Connected
+        tools use recorded invocations and local approval rather than unrecorded
+        sample tests.
+      </p>
+    );
+  }
   return (
     <form
       className="ws-form mt-[18px] flex flex-col items-stretch gap-[18px] max-[760px]:[&>.ws-button]:min-h-[44px]"

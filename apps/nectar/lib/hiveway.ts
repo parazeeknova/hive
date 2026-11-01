@@ -1,6 +1,7 @@
 /** Hiveway's current REST contract. Amounts remain atomic decimal strings. */
 export type Runtime =
   | "repository_scaffold"
+  | "connected_mcp"
   | "repository_stack"
   | "dependency_inventory"
   | "workflow"
@@ -91,6 +92,7 @@ export interface Quote {
   };
 }
 export const runtimeLabels: Record<Runtime, string> = {
+  connected_mcp: "Connected MCP",
   dependency_inventory: "Dependencies",
   repository_scaffold: "Project scaffold",
   repository_stack: "Stack report",

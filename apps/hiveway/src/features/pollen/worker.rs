@@ -43,7 +43,7 @@ async fn execute_paid(state: &AppState, inv: Invocation) -> ApiResult<()> {
     let input = inv.input.clone();
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
-        cell::execute_capability(state, inv.capability_id, &input),
+        cell::execute_for_invocation(state, inv.capability_id, &input, inv.credential_id, inv.id),
     )
     .await;
     let result = match result {

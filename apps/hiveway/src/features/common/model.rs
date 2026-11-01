@@ -111,6 +111,7 @@ impl From<Credential> for CredentialStatus {
 #[derive(Deserialize, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PublishCapability {
+    pub mcp_tool: Option<String>,
     pub name: String,
     pub description: String,
     /// Supports `repository_stack` and `dependency_inventory`.

@@ -1,5 +1,8 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 /* eslint-disable no-await-in-loop, no-unmodified-loop-condition -- A sequential worker must finish one leased mutation before claiming the next; signals stop it. */
-import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   Client,
@@ -7,11 +10,14 @@ import {
 } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
+import { Directories } from "./directories";
+
 type Config = {
   name: string;
   hive: string;
   keyFile: string;
   connectionId?: string;
+  workingDirectory?: string;
 } & (
   | {
       transport: "stdio";
@@ -19,6 +25,7 @@ type Config = {
       args: string[];
       env?: Record<string, string>;
     }
+  | { transport: "filesystem" }
   | { transport: "http"; url: string; headers?: Record<string, string> }
 );
 const config = JSON.parse(
@@ -39,6 +46,9 @@ if (hive.username || hive.password) {
 }
 const keyContents = await readFile(config.keyFile, "utf-8");
 const key = keyContents.trim();
+class FatalHiveError extends Error {
+  override name = "FatalHiveError";
+}
 const rpc = async (name: string, args: Record<string, unknown>) => {
   const response = await fetch(hive, {
     body: JSON.stringify({
@@ -57,6 +67,9 @@ const rpc = async (name: string, args: Record<string, unknown>) => {
     redirect: "error",
     signal: AbortSignal.timeout(40_000),
   });
+  if (response.status === 401 || response.status === 403) {
+    throw new FatalHiveError("Hive credentials rejected");
+  }
   if (!response.ok) {
     throw new Error(`Hive request failed (${response.status})`);
   }
@@ -69,27 +82,72 @@ const rpc = async (name: string, args: Record<string, unknown>) => {
     value.result?.isError ||
     !value.result?.structuredContent
   ) {
+    if (
+      ["forbidden", "invalid_connection_id"].includes(
+        String(value.result?.structuredContent?.error)
+      )
+    ) {
+      throw new FatalHiveError("Hive connection is unavailable or revoked");
+    }
     throw new Error("Hive connector operation failed");
   }
   return value.result.structuredContent;
 };
 // Only local, explicitly trusted configuration can select executables or upstream URLs.
 // Hive credentials are never passed to the upstream process or remote MCP.
-const transport =
-  config.transport === "stdio"
-    ? new StdioClientTransport({
-        args: config.args,
-        command: config.command,
-        env: config.env ?? {},
-        maxBufferSize: 524_288,
-        stderr: "ignore",
-      })
-    : new StreamableHTTPClientTransport(new URL(config.url), {
-        requestInit: { headers: config.headers ?? {}, redirect: "error" },
-      });
-const client = new Client({ name: "hive-connector", version: "1.0.0" });
+const directories = new Directories(config.keyFile);
+if (config.transport === "filesystem") {
+  await directories.allow(config.workingDirectory ?? process.cwd());
+}
+const quarantine =
+  config.transport === "filesystem"
+    ? await mkdtemp(path.join(os.tmpdir(), "hive-filesystem-"))
+    : null;
+let transport;
+if (config.transport === "filesystem") {
+  transport = new StdioClientTransport({
+    args: [
+      fileURLToPath(
+        import.meta
+          .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
+      ),
+      ...directories.approved,
+      ...(quarantine ? [quarantine] : []),
+    ],
+    command: process.execPath,
+    env: {},
+    maxBufferSize: 524_288,
+    stderr: "ignore",
+  });
+} else if (config.transport === "stdio") {
+  transport = new StdioClientTransport({
+    args: config.args,
+    command: config.command,
+    env: config.env ?? {},
+    maxBufferSize: 524_288,
+    stderr: "ignore",
+  });
+} else {
+  transport = new StreamableHTTPClientTransport(new URL(config.url), {
+    requestInit: { headers: config.headers ?? {}, redirect: "error" },
+  });
+}
+let client = new Client({ name: "hive-connector", version: "1.0.0" });
 await client.connect(transport);
 const { tools } = await client.listTools();
+if (config.transport === "filesystem") {
+  tools.push({
+    description:
+      "Request local human approval for an absolute working directory. No access is granted by a remote agent confirmation. Without a local interactive terminal, approval is required and access stays denied.",
+    inputSchema: {
+      additionalProperties: false,
+      properties: { directory: { type: "string" } },
+      required: ["directory"],
+      type: "object",
+    },
+    name: "request_directory_access",
+  });
+}
 const allowed = new Set(tools.map((tool) => tool.name));
 let { connectionId } = config;
 if (!connectionId) {
@@ -114,44 +172,99 @@ process.on("SIGTERM", () => {
 });
 try {
   while (running) {
-    const { job } = await rpc("poll_mcp", { connection_id: connectionId });
-    if (!job) {
-      await Bun.sleep(1000);
-      continue;
-    }
-    const claimed = job as {
-      id: string;
-      lease: string;
-      request: { name: string; arguments: Record<string, unknown> };
-    };
-    let result;
     try {
-      if (!allowed.has(claimed.request.name)) {
-        throw new Error("Tool not in local allowlist");
+      const { job } = await rpc("poll_mcp", { connection_id: connectionId });
+      if (!job) {
+        await Bun.sleep(1000);
+        continue;
       }
-      result = await client.callTool(claimed.request, { timeout: 25_000 });
-      if (JSON.stringify(result).length > 524_288) {
-        throw new Error("Result exceeds Hive limit");
-      }
-    } catch {
-      result = {
-        content: [
-          {
-            text: "Upstream MCP call failed or exceeded limits. Execution outcome may be unknown; do not retry mutations automatically.",
-            type: "text",
-          },
-        ],
-        isError: true,
+      const claimed = job as {
+        id: string;
+        lease: string;
+        request: { name: string; arguments: Record<string, unknown> };
       };
+      let result;
+      try {
+        if (!allowed.has(claimed.request.name)) {
+          throw new Error("Tool not in local allowlist");
+        }
+        if (
+          config.transport === "filesystem" &&
+          claimed.request.name === "request_directory_access"
+        ) {
+          const { directory } = claimed.request.arguments;
+          if (typeof directory !== "string") {
+            throw new TypeError("directory is required");
+          }
+          const approved = await directories.allow(directory);
+          if (approved) {
+            await client.close();
+            const replacement = new StdioClientTransport({
+              args: [
+                fileURLToPath(
+                  import.meta
+                    .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
+                ),
+                ...directories.approved,
+              ],
+              command: process.execPath,
+              env: {},
+              maxBufferSize: 524_288,
+              stderr: "ignore",
+            });
+            client = new Client({ name: "hive-connector", version: "1.0.0" });
+            await client.connect(replacement);
+          }
+          result = {
+            content: [
+              {
+                text: JSON.stringify({
+                  approved,
+                  directory,
+                  reason: approved
+                    ? "approved_for_this_session"
+                    : "local_human_approval_required; run connector in an interactive terminal and request again",
+                }),
+                type: "text",
+              },
+            ],
+            isError: !approved,
+          };
+        } else {
+          result = await client.callTool(claimed.request, { timeout: 25_000 });
+        }
+        if (JSON.stringify(result).length > 524_288) {
+          throw new Error("Result exceeds Hive limit");
+        }
+      } catch {
+        result = {
+          content: [
+            {
+              text: "Upstream MCP call failed or exceeded limits. Execution outcome may be unknown; do not retry mutations automatically.",
+              type: "text",
+            },
+          ],
+          isError: true,
+        };
+      }
+      // No retries: repeating a mutation after an uncertain transport failure is unsafe.
+      await rpc("complete_mcp", {
+        connection_id: connectionId,
+        job_id: claimed.id,
+        lease: claimed.lease,
+        result,
+      });
+    } catch (error) {
+      if (error instanceof FatalHiveError) {
+        throw error;
+      }
+      // Continue polling after transport/stale-completion failures. Never repeat a claimed tool call.
+      await Bun.sleep(1000);
     }
-    // No retries: repeating a mutation after an uncertain transport failure is unsafe.
-    await rpc("complete_mcp", {
-      connection_id: connectionId,
-      job_id: claimed.id,
-      lease: claimed.lease,
-      result,
-    });
   }
 } finally {
   await client.close();
+  if (quarantine) {
+    await rm(quarantine, { force: true, recursive: true });
+  }
 }

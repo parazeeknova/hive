@@ -95,7 +95,7 @@ pub async fn quote(
         .one(&tx)
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "capability_not_found"))?;
-    if matches!(cap.runtime.as_str(), "wasm" | "repository_scaffold")
+    if crate::features::connections::artifacts::requires_scope(&cap)
         && identity::invocation_scope(&c)? != "capabilities:invoke"
     {
         return Err(ApiError::forbidden());

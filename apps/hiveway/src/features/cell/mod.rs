@@ -377,6 +377,25 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
         .one(&state.postgres)
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "connected_mcp" {
+        return crate::features::connections::artifacts::validate(input);
+    }
+    if capability.definition["mcp_tools"].is_array() {
+        let steps = input["steps"]
+            .as_array()
+            .ok_or_else(|| ApiError::bad("mcp_step_bindings_required"))?;
+        if steps.len()
+            != capability.definition["mcp_tools"]
+                .as_array()
+                .map_or(0, Vec::len)
+        {
+            return Err(ApiError::bad("invalid_mcp_steps"));
+        }
+        for step in steps {
+            crate::features::connections::artifacts::validate(step)?;
+        }
+        return Ok(());
+    }
     if capability.runtime == "repository_scaffold" {
         return crate::features::scaffold::validate_request(input.clone());
     }
@@ -415,6 +434,9 @@ pub async fn execute_capability(
         .one(&state.postgres)
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
+    if capability.runtime == "connected_mcp" || capability.definition["mcp_tools"].is_array() {
+        return Err(ApiError::bad("connected_mcp_requires_recorded_invocation"));
+    }
     if capability.runtime == "repository_scaffold" {
         return crate::features::scaffold::plan(state, input.clone()).await;
     }
@@ -434,6 +456,33 @@ pub async fn execute_capability(
             .map_err(|_| ApiError::bad("invalid_repository_input"))?;
         execute_repository_capability(state, id, &input).await
     }
+}
+
+/// Execute a capability with caller identity for explicitly connected MCP runtimes.
+/// # Errors
+/// Rejects invalid bindings and delegates runtime failures.
+pub async fn execute_for_invocation(
+    state: &AppState,
+    id: uuid::Uuid,
+    input: &Value,
+    credential: uuid::Uuid,
+    invocation: uuid::Uuid,
+) -> ApiResult<Value> {
+    let cap = CapabilitiesEntity::find_by_id(id)
+        .one(&state.postgres)
+        .await?
+        .ok_or_else(|| ApiError::bad("capability_not_found"))?;
+    if cap.runtime == "connected_mcp" || cap.definition["mcp_tools"].is_array() {
+        return crate::features::connections::artifacts::execute(
+            state,
+            &cap.definition,
+            input,
+            credential,
+            invocation,
+        )
+        .await;
+    }
+    execute_capability(state, id, input).await
 }
 
 #[cfg(test)]

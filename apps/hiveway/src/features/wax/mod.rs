@@ -30,12 +30,29 @@ pub async fn publish(
         || request.description.len() > 1000
         || !matches!(
             request.runtime.as_str(),
-            "repository_stack" | "dependency_inventory" | "repository_scaffold" | "wasm"
+            "repository_stack"
+                | "dependency_inventory"
+                | "repository_scaffold"
+                | "wasm"
+                | "connected_mcp"
         )
     {
         return Err(ApiError::bad("invalid_capability"));
     }
-    let definition = if request.runtime == "wasm" {
+    if request.runtime != "connected_mcp" && request.mcp_tool.is_some() {
+        return Err(ApiError::bad("mcp_tool_requires_connected_runtime"));
+    }
+    let definition = if request.runtime == "connected_mcp" {
+        if price != 0 || request.artifact_id.is_some() {
+            return Err(ApiError::bad("connected_mcp_must_be_free"));
+        }
+        let name = request
+            .mcp_tool
+            .as_deref()
+            .ok_or_else(|| ApiError::bad("mcp_tool_required"))?;
+        crate::features::connections::artifacts::tool_name(name)?;
+        serde_json::json!({"tool_name":name})
+    } else if request.runtime == "wasm" {
         let artifact_id = request
             .artifact_id
             .ok_or_else(|| ApiError::bad("artifact_id_required"))?;

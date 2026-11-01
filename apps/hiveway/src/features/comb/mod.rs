@@ -53,7 +53,11 @@ pub async fn compose(
         .filter(Column::Id.is_in(request.steps.clone()))
         .filter(Column::Active.eq(true))
         .filter(Column::CreatorWallet.eq(&creator.wallet))
-        .filter(Column::Runtime.is_in(["repository_stack", "dependency_inventory"]))
+        .filter(Column::Runtime.is_in([
+            "repository_stack",
+            "dependency_inventory",
+            "connected_mcp",
+        ]))
         .all(&tx)
         .await?;
     if steps.len() != request.steps.len() {
@@ -61,6 +65,25 @@ pub async fn compose(
             "workflow_steps_must_be_active_owned_leaf_capabilities",
         ));
     }
+    let connected = steps.iter().any(|s| s.runtime == "connected_mcp");
+    if connected && (price != 0 || steps.iter().any(|s| s.runtime != "connected_mcp")) {
+        return Err(ApiError::bad(
+            "connected_workflow_requires_free_mcp_steps_only",
+        ));
+    }
+    let definition = if connected {
+        let mut names = Vec::new();
+        for id in &request.steps {
+            let step = steps
+                .iter()
+                .find(|s| s.id == *id)
+                .ok_or_else(|| ApiError::bad("missing_mcp_step"))?;
+            names.push(step.definition["tool_name"].clone());
+        }
+        serde_json::json!({"steps":request.steps,"mcp_tools":names})
+    } else {
+        serde_json::json!({"steps":request.steps})
+    };
     let capability = crate::entities::capabilities::ActiveModel {
         id: Set(Uuid::new_v4()),
         creator_wallet: Set(creator.wallet),
@@ -71,7 +94,7 @@ pub async fn compose(
         price: Set(price),
         active: Set(true),
         created_at: Set(now()),
-        definition: Set(serde_json::json!({"steps":request.steps})),
+        definition: Set(definition),
     }
     .insert(&tx)
     .await?;

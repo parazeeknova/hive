@@ -121,6 +121,24 @@ const Docs = () => (
             Connections are private to your account and do not become public
             artifacts.
           </p>
+          <p className="mt-4 text-sm leading-7 text-[#77796f]">
+            Use the filesystem connector preset to request the current working
+            directory. Approval happens in your local terminal and lasts for
+            that connector session. Switching projects requires approval for the
+            new directory. Headless connectors deny new directories.
+          </p>
+          <p className="mt-4 text-sm leading-7 text-[#77796f]">
+            Publish a free connected_mcp artifact bound to an upstream tool
+            name, then invoke it with your own connection_id and arguments.
+            Compose up to four owned connected artifacts into a free ordered
+            workflow. Wasm artifacts keep their pure sandbox ABI.
+          </p>
+          <p className="mt-4 text-sm leading-7 text-[#77796f]">
+            Hive asks connected agents to search for capabilities at each new
+            subtask, including mid-session. If your harness ignores MCP server
+            instructions, add the reusable guidance from the connector
+            documentation to its persistent agent instructions.
+          </p>
           <a
             className="mt-4 inline-flex text-sm font-semibold text-[#52664b] underline underline-offset-4"
             href="https://github.com/parazeeknova/hive/tree/main/packages/connector"

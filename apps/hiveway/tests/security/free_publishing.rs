@@ -211,6 +211,7 @@ async fn connector_roundtrip(
         called["structuredContent"]["content"][0]["text"],
         "fixture content"
     );
+    exercise_mcp_artifacts(app, bearer, &id, state).await?;
     let deleted = connector_rpc(
         app.clone(),
         bearer,
@@ -221,5 +222,99 @@ async fn connector_roundtrip(
     assert_eq!(deleted["isError"], false);
     let removed = connector_rpc(app.clone(), bearer, &name, json!({})).await?;
     assert_eq!(removed["isError"], true);
+    Ok(())
+}
+
+async fn complete_jobs(app: Router, bearer: &str, connection: &str, count: usize) -> Result {
+    let mut completed = 0;
+    for _ in 0..500 {
+        let response = connector_rpc(
+            app.clone(),
+            bearer,
+            "poll_mcp",
+            json!({"connection_id":connection}),
+        )
+        .await?;
+        let job = &response["structuredContent"]["job"];
+        if !job.is_null() {
+            let result=connector_rpc(app.clone(),bearer,"complete_mcp",json!({"connection_id":connection,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":"artifact output"}]}})).await?;
+            assert_eq!(result["isError"], false);
+            completed += 1;
+            if completed == count {
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    Err("artifact jobs timed out".into())
+}
+async fn exercise_mcp_artifacts(
+    app: &Router,
+    bearer: &str,
+    connection: &str,
+    state: &hiveway::state::AppState,
+) -> Result {
+    let headers = [("authorization", bearer)];
+    let mut caps = Vec::new();
+    for name in ["Read connected file", "Read another file"] {
+        let (_,cap)=attack(app.clone(),"POST","/v1/capabilities",json!({"name":name,"description":"Caller-bound file read","runtime":"connected_mcp","mcp_tool":"read_file","price":"0"}).to_string(),&headers).await?;
+        caps.push(cap["id"].clone());
+    }
+    let (status,workflow)=attack(app.clone(),"POST","/v1/workflows",json!({"name":"Connected filesystem workflow","description":"Two explicit caller bindings","steps":caps,"price":"0"}).to_string(),&headers).await?;
+    assert_eq!(status, StatusCode::OK, "{workflow}");
+    let binding = json!({"connection_id":connection,"arguments":{"path":"example.txt"}});
+    assert!(
+        hiveway::features::cell::execute_capability(
+            state,
+            caps[0].as_str().ok_or("missing cap")?.parse()?,
+            &binding
+        )
+        .await
+        .is_err()
+    );
+    for (id, input, count) in [
+        (caps[0].clone(), binding.clone(), 1),
+        (
+            workflow["id"].clone(),
+            json!({"steps":[binding.clone(),binding.clone()]}),
+            2,
+        ),
+    ] {
+        let key = uuid::Uuid::new_v4().to_string();
+        let (status, quote) = attack(
+            app.clone(),
+            "POST",
+            "/v1/quotes",
+            json!({"capability_id":id,"input":input}).to_string(),
+            &[("authorization", bearer), ("idempotency-key", key.as_str())],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CREATED, "{quote}");
+        let invocation = quote["id"].as_str().ok_or("missing invocation")?;
+        let path = format!("/v1/invocations/{invocation}");
+        let (called, worker) = tokio::join!(
+            attack(app.clone(), "POST", &path, String::new(), &headers),
+            complete_jobs(app.clone(), bearer, connection, count)
+        );
+        worker?;
+        let (status, result) = called?;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        assert!(result.to_string().contains("artifact output"), "{result}");
+        let mut auth = axum::http::HeaderMap::new();
+        auth.insert("authorization", bearer.parse()?);
+        let credential = hiveway::features::identity::authenticate(state, &auth, "").await?;
+        let replay = hiveway::features::cell::execute_for_invocation(
+            state,
+            id.as_str().ok_or("missing cap")?.parse()?,
+            &input,
+            credential.id,
+            invocation.parse()?,
+        )
+        .await;
+        assert!(
+            replay.is_err(),
+            "must not repeat a dispatched MCP operation"
+        );
+    }
     Ok(())
 }
