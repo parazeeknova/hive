@@ -1,102 +1,135 @@
 "use client";
 
-import { Icon } from "../../components/icon";
-import { useLoopInView } from "../../lib/hooks/use-loop-in-view";
-import { SceneHexagon } from "./scenes/scene-hexagon";
+import { useState } from "react";
 
-const calls = [
-  { input: "repo-a / main", output: "Stack report A" },
-  { input: "repo-b / release", output: "Stack report B" },
-  { input: "repo-c / v2.0", output: "Stack report C" },
-];
+import { Icon } from "../../components/icon";
+import { darkSurface, lightSurface } from "./surfaces";
+
+const examples = [
+  {
+    calls: [
+      { input: "0 failed · 92% coverage", output: "Ready to release" },
+      { input: "2 critical findings", output: "Hold the release" },
+      { input: "1 failed test", output: "Fix before shipping" },
+    ],
+    detail: "Turn CI signals into a repeatable release decision.",
+    footer: "Pure JSON in. A clear decision out.",
+    label: "Release checks",
+    name: "Release readiness gate",
+    runtime: "Hosted Wasm",
+  },
+  {
+    calls: [
+      { input: "Repository + full SHA", output: "Stack report" },
+      { input: "Manifest files", output: "Dependency inventory" },
+      { input: "Versioned workflow", output: "Combined report" },
+    ],
+    detail: "One call for a stack report and dependency inventory.",
+    footer: "Compose capabilities. Reuse the workflow.",
+    label: "Onboarding",
+    name: "Repository onboarding dossier",
+    runtime: "Workflow",
+  },
+  {
+    calls: [
+      { input: "Working directory", output: "Local approval" },
+      { input: "Caller-owned connection", output: "Scoped file access" },
+      { input: "Explicit arguments", output: "Recorded invocation" },
+    ],
+    detail: "Package a tool call with explicit connection bindings.",
+    footer: "Your connection. Your approved directories.",
+    label: "Connected MCP",
+    name: "Private workspace tools",
+    runtime: "Connected MCP",
+  },
+] as const;
 
 const CreatorVisual = () => {
-  const ref = useLoopInView();
-
+  const [selected, setSelected] = useState(0);
+  const example = examples[selected] ?? examples[0];
   return (
     <figure
-      ref={ref}
-      data-loop="idle"
-      className="publisher-stage m-0 min-w-0 overflow-hidden rounded-[1.75rem] bg-linear-160 from-stone-50 to-stone-100 p-[clamp(14px,3vw,36px)] [&[data-loop='idle']_:is(.publisher-story,_.publisher-call)]:opacity-[0] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call]:[animation:publisher-first-call_7s_cubic-bezier(0.22,_1,_0.36,_1)_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call-1]:[animation-name:publisher-second-call] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-call-2]:[animation-name:publisher-third-call] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-return]:[animation:publisher-return_7s_cubic-bezier(0.22,_1,_0.36,_1)_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&:is([data-loop='running'],_[data-loop='paused'])_.publisher-story]:[animation:publisher-story_7s_ease-in-out_infinite] [@media_(prefers-reduced-motion:no-preference)]:[&[data-loop='paused']_*]:[animation-play-state:paused]!"
-      aria-label="Illustrative publishing activity: one Repository Analyzer capability serves three different repositories at five cents per call, for fifteen cents in total call value."
+      className="m-0 min-w-0 rounded-[1.75rem] bg-linear-160 from-neutral-50 to-neutral-100 p-4 sm:p-7"
+      aria-label="Explore examples of reusable Hive capabilities"
     >
-      <div
-        className="publisher-story mx-auto w-full max-w-[420px]"
-        aria-hidden="true"
+      <fieldset
+        className="mb-6 flex min-w-0 flex-wrap gap-1.5 border-0 p-0"
+        aria-label="Choose a capability example"
       >
-        <div className="mb-5 flex items-center justify-between gap-3 px-1 text-[11px] text-neutral-400">
-          <span className="font-medium">One implementation. Fresh inputs.</span>
-          <span className="font-mono">EXAMPLE</span>
-        </div>
-        <div className="rounded-3xl bg-white p-4 shadow-[inset_0_1px_0_var(--color-white),var(--shadow-sm),var(--shadow-soft)] sm:p-6">
-          <div className="flex items-center gap-3">
-            <span className="relative block size-11 shrink-0">
-              <SceneHexagon className="size-full text-amber-200" />
-              <Icon
-                name="code"
-                size={20}
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-amber-900"
-              />
+        {examples.map((item, index) => (
+          <button
+            key={item.name}
+            type="button"
+            onClick={() => setSelected(index)}
+            aria-pressed={selected === index}
+            className={`cursor-pointer rounded-full px-3 py-2 text-[10px] font-medium transition-[filter,box-shadow] ${selected === index ? `${darkSurface} text-white` : "text-neutral-500 hover:bg-white"}`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </fieldset>
+      <div className="relative isolate pt-3">
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-5 top-0 -z-10 h-24 rounded-[22px] border border-neutral-200 bg-white/60"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-x-2.5 top-1.5 -z-10 h-24 rounded-[22px] border border-neutral-200 bg-white/80"
+        />
+        <div className={`relative rounded-[22px] p-5 sm:p-6 ${lightSurface}`}>
+          <div className="flex items-center justify-between gap-3">
+            <span
+              className={`flex size-10 items-center justify-center rounded-xl text-white ${darkSurface}`}
+            >
+              <Icon name="code" size={19} />
             </span>
-            <div className="min-w-0">
-              <p className="text-[13px] leading-snug font-semibold text-neutral-800 sm:text-[15px]">
-                Repository Analyzer
-              </p>
-              <p className="mt-1 font-mono text-[11px] text-neutral-400">
-                repository_analyzer / v1.0
-              </p>
-            </div>
+            <span className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 font-mono text-[9px] text-neutral-500">
+              {example.runtime}
+            </span>
           </div>
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-800">
-              <Icon name="check" size={13} /> Published
-            </span>
-            <p className="text-[11px] text-neutral-400">
-              <span className="font-mono text-neutral-700">$0.05</span> / call
+          <div className="mt-5 min-h-24">
+            <p className="text-[16px] font-semibold tracking-tight text-neutral-800">
+              {example.name}
+            </p>
+            <p className="mt-2 text-xs leading-6 text-neutral-500">
+              {example.detail}
             </p>
           </div>
-          <div className="mt-5 border-t border-neutral-100 pt-5">
-            <div className="mb-2 grid grid-cols-[minmax(0,1fr)_13px_minmax(0,1fr)] items-center gap-1.5 px-2 font-mono text-[11px] text-neutral-400">
+          <div className="mt-2 border-t border-neutral-200/70 pt-4">
+            <div className="mb-3 flex justify-between font-mono text-[9px] tracking-widest text-neutral-400">
               <span>INPUT</span>
-              <span className="col-span-2 text-right">OUTPUT</span>
+              <span>RESULT</span>
             </div>
             <div className="space-y-2">
-              {calls.map(({ input, output }, index) => (
+              {example.calls.map((call) => (
                 <div
-                  key={input}
-                  className={`publisher-call publisher-call-${index} grid grid-cols-[minmax(0,1fr)_13px_minmax(0,1fr)] items-center gap-1.5 rounded-xl bg-neutral-50 px-2 py-3`}
+                  key={call.input}
+                  className="grid min-h-[60px] grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)] items-center gap-2 rounded-xl border border-neutral-200/70 bg-white/80 px-3 py-3.5 text-[10px] sm:text-[11px]"
                 >
-                  <span className="min-w-0 font-mono text-[11px] wrap-anywhere text-neutral-500">
-                    {input}
-                  </span>
+                  <span className="min-w-0 text-neutral-500">{call.input}</span>
                   <Icon name="arrow" size={13} className="text-neutral-300" />
-                  <span className="min-w-0 text-right text-[11px] font-medium wrap-anywhere text-neutral-600 sm:text-xs">
-                    {output}
+                  <span className="min-w-0 text-right font-medium text-neutral-700">
+                    {call.output}
                   </span>
                 </div>
               ))}
             </div>
           </div>
-          <div className="publisher-return mt-5 flex items-end justify-between gap-3 border-t border-neutral-100 pt-5">
-            <div>
-              <p className="text-[11px] font-medium text-neutral-500">
-                Same tool. Three calls.
-              </p>
-              <p className="mt-1 text-[11px] text-neutral-400">
-                Total example call value
-              </p>
-            </div>
-            <span className="font-mono text-[25px] leading-none tracking-[-0.06em] text-neutral-800 sm:text-[28px]">
-              $0.15
+          <div className="mt-5 flex items-center justify-between gap-3 border-t border-neutral-200/70 pt-4">
+            <span className="text-[10px] leading-5 text-neutral-500">
+              {example.footer}
+            </span>
+            <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[10px] font-medium text-neutral-700">
+              Free
             </span>
           </div>
         </div>
-        <p className="mt-5 text-center text-[11px] font-medium text-neutral-400">
-          Hosted once. Ready for the next call.
-        </p>
       </div>
+      <figcaption className="mt-4 text-center text-[10px] text-neutral-400">
+        Capability examples · ready for a fresh input
+      </figcaption>
     </figure>
   );
 };
-
 export default CreatorVisual;
