@@ -5,6 +5,11 @@ import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import {
+  usesJsonInput,
+  connectedCapability,
+  capabilityInput,
+} from "../../lib/capability-input";
+import {
   publicApiOrigin as apiOrigin,
   atomicMoney,
   errorMessage,
@@ -574,13 +579,7 @@ export const QuoteForm = ({
   const [url, setUrl] = useState("");
   const [revision, setRevision] = useState("");
   const [jsonInput, setJsonInput] = useState(
-    tool.runtime === "repository_scaffold"
-      ? JSON.stringify(
-          { project_name: "my-app", repository_url: "", revision: "" },
-          null,
-          2
-        )
-      : "{}"
+    JSON.stringify(capabilityInput(tool), null, 2)
   );
   const [freeReceipt, setFreeReceipt] = useState<Receipt | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -612,15 +611,14 @@ export const QuoteForm = ({
     setNow(Date.now());
     setError("");
     try {
-      if (tool.runtime !== "wasm" && tool.runtime !== "repository_scaffold") {
+      if (!usesJsonInput(tool)) {
         validateRepository(url.trim(), revision.trim());
       }
       const body = JSON.stringify({
         capability_id: tool.id,
-        input:
-          tool.runtime === "wasm" || tool.runtime === "repository_scaffold"
-            ? (JSON.parse(jsonInput) as unknown)
-            : { repository_url: url.trim(), revision: revision.trim() },
+        input: usesJsonInput(tool)
+          ? (JSON.parse(jsonInput) as unknown)
+          : { repository_url: url.trim(), revision: revision.trim() },
       });
       if (request.current.fingerprint !== body) {
         request.current = { fingerprint: body, key: crypto.randomUUID() };
@@ -654,7 +652,7 @@ export const QuoteForm = ({
         void submit(e);
       }}
     >
-      {tool.runtime === "wasm" || tool.runtime === "repository_scaffold" ? (
+      {usesJsonInput(tool) ? (
         <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           JSON input
           <textarea
@@ -808,23 +806,20 @@ const SampleForm = ({
   token: string;
 }) => {
   const [input, setInput] = useState(
-    JSON.stringify(
-      tool.runtime === "wasm"
-        ? (tool.definition.sample_input ?? {})
-        : {
-            ...(tool.runtime === "repository_scaffold"
-              ? { project_name: "my-project" }
-              : {}),
-            repository_url: "https://github.com/octocat/Hello-World",
-            revision: "7fd1a60b01f91b314f59955a4e4d4c63fbd0fa49",
-          },
-      null,
-      2
-    )
+    JSON.stringify(sampleInput(tool), null, 2)
   );
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  if (connectedCapability(tool)) {
+    return (
+      <p className="mt-4 text-sm leading-7 text-stone-600">
+        Use Invoke with your connection bindings to run this artifact. Connected
+        tools use recorded invocations and local approval rather than unrecorded
+        sample tests.
+      </p>
+    );
+  }
   return (
     <form
       className="ws-form mt-[18px] flex flex-col items-stretch gap-[18px] max-[760px]:[&>.ws-button]:min-h-[44px]"

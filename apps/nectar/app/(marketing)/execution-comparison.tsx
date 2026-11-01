@@ -1,6 +1,8 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role -- SVG charts require image semantics. */
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
+
+import { darkSurface, lightSurface } from "./surfaces";
 
 const scenarios = [
   {
@@ -48,6 +50,7 @@ const formatTime = (seconds: number) =>
 const width = (seconds: number) => Math.max(8, (seconds / 1200) * 550);
 const ExecutionComparison = () => {
   const [index, setIndex] = useState(0);
+  const gradientId = useId();
   const scenario = scenarios[index] ?? scenarios[0];
   if (!scenario) {
     return null;
@@ -75,7 +78,7 @@ const ExecutionComparison = () => {
           Your agent spends more time on the parts that are yours.
         </p>
       </div>
-      <div className="overflow-hidden rounded-3xl border border-stone-200 bg-[#fafbf7]">
+      <div className={`overflow-hidden rounded-[28px] ${lightSurface}`}>
         <div
           className="flex flex-wrap gap-2 border-b border-stone-200 p-4 sm:p-6"
           role="group"
@@ -89,7 +92,7 @@ const ExecutionComparison = () => {
               onClick={() => setIndex(position)}
               className={
                 "cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.45] " +
-                `rounded-lg px-4 py-2.5 text-xs transition-colors ${index === position ? "bg-[#26351e] text-white" : "bg-white text-stone-500 hover:bg-stone-100"}`
+                `rounded-full px-4 py-2.5 text-xs transition-[filter,box-shadow] ${index === position ? `${darkSurface} text-white` : "text-neutral-500 hover:bg-white"}`
               }
             >
               {item.short}
@@ -97,7 +100,10 @@ const ExecutionComparison = () => {
           ))}
         </div>
         <div className="grid gap-8 p-5 sm:p-8 lg:grid-cols-[1.45fr_1fr] lg:gap-12">
-          <figure className="min-w-0" aria-labelledby="workflow-chart-title">
+          <figure
+            className="min-w-0 rounded-2xl border border-neutral-200/70 bg-white/80 p-5 sm:p-6"
+            aria-labelledby="workflow-chart-title"
+          >
             <p className="text-[10px] tracking-widest text-stone-400 uppercase">
               Scenario projection
             </p>
@@ -118,32 +124,51 @@ const ExecutionComparison = () => {
                 </p>
               </div>
               <div>
-                <p className="text-[10px] text-[#829166]">With Hive + agent</p>
-                <p className="mt-1 text-2xl font-medium tracking-tight text-[#5f7a3c]">
+                <p className="text-[10px] text-[#737373]">With Hive + agent</p>
+                <p className="mt-1 text-2xl font-medium tracking-tight text-[#171717]">
                   {formatTime(scenario.withHive)}
                 </p>
               </div>
             </div>
-            {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- This SVG chart needs image semantics. */}
             <svg
-              viewBox="0 0 640 230"
+              viewBox="0 0 640 235"
               role="img"
               aria-label={`From scratch ${formatTime(scenario.withoutHive)}; with Hive ${formatTime(scenario.withHive)}. Projected workflow times.`}
-              className="mt-8 block h-auto w-full overflow-visible"
+              className="mt-7 block h-auto w-full max-sm:[&_text]:text-[24px]"
             >
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#333" />
+                  <stop offset="24%" stopColor="#222" />
+                  <stop offset="58%" stopColor="#151515" />
+                  <stop offset="80%" stopColor="#101010" />
+                  <stop offset="100%" stopColor="#1b1b1b" />
+                </linearGradient>
+                <linearGradient
+                  id={`${gradientId}-light`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop stopColor="#eee" />
+                  <stop offset="100%" stopColor="#d4d4d4" />
+                </linearGradient>
+              </defs>
               {[0, 5, 10, 15, 20].map((minute) => (
                 <g key={minute}>
                   <line
                     x1={30 + (minute / 20) * 550}
                     x2={30 + (minute / 20) * 550}
-                    y1="20"
-                    y2="193"
-                    stroke="#e5e8dc"
+                    y1="43"
+                    y2="192"
+                    stroke="#e5e5e5"
+                    strokeDasharray="2 7"
                   />
                   <text
                     x={30 + (minute / 20) * 550}
-                    y="220"
-                    fill="#9aa08f"
+                    y="221"
+                    fill="#737373"
                     fontSize="11"
                     textAnchor="middle"
                   >
@@ -151,44 +176,79 @@ const ExecutionComparison = () => {
                   </text>
                 </g>
               ))}
-              <text x="30" y="40" fill="#7c8275" fontSize="12">
-                From scratch
-              </text>
-              <rect
-                x="30"
-                y="53"
-                width={width(scenario.withoutHive)}
-                height="33"
-                rx="5"
-                fill="#b5bcaa"
-              />
-              <text
-                x={40 + width(scenario.withoutHive)}
-                y="75"
-                fill="#68705d"
-                fontSize="12"
-              >
-                {formatTime(scenario.withoutHive)}
-              </text>
-              <text x="30" y="124" fill="#586d3d" fontSize="12">
+              <text x="30" y="23" fill="#262626" fontSize="12" fontWeight="600">
                 With Hive + your agent
               </text>
-              <rect
-                x="30"
-                y="138"
-                width={width(scenario.withHive)}
-                height="33"
-                rx="5"
-                fill="#8fa85d"
-              />
               <text
-                x={40 + width(scenario.withHive)}
-                y="160"
-                fill="#536b31"
-                fontSize="12"
+                x="580"
+                y="23"
+                fill="#262626"
+                fontSize="13"
+                textAnchor="end"
+                fontWeight="600"
               >
                 {formatTime(scenario.withHive)}
               </text>
+              <rect
+                x="30"
+                y="48"
+                width="550"
+                height="36"
+                rx="18"
+                fill="#f5f5f5"
+                stroke="#e5e5e5"
+              />
+              <rect
+                x="30"
+                y="48"
+                width={width(scenario.withHive)}
+                height="36"
+                rx="18"
+                fill={`url(#${gradientId})`}
+                stroke="#404040"
+              />
+              <circle
+                cx={30 + width(scenario.withHive) / 2}
+                cy="66"
+                r={Math.min(4, width(scenario.withHive) / 4)}
+                fill="#fff"
+              />
+              <text x="30" y="132" fill="#737373" fontSize="12">
+                From scratch
+              </text>
+              <text
+                x="580"
+                y="132"
+                fill="#737373"
+                fontSize="13"
+                textAnchor="end"
+              >
+                {formatTime(scenario.withoutHive)}
+              </text>
+              <rect
+                x="30"
+                y="157"
+                width="550"
+                height="36"
+                rx="18"
+                fill="#f5f5f5"
+                stroke="#e5e5e5"
+              />
+              <rect
+                x="30"
+                y="157"
+                width={width(scenario.withoutHive)}
+                height="36"
+                rx="18"
+                fill={`url(#${gradientId}-light)`}
+                stroke="#ccc"
+              />
+              <circle
+                cx={30 + width(scenario.withoutHive) - 18}
+                cy="175"
+                r="4"
+                fill="#a3a3a3"
+              />
             </svg>
             <figcaption className="mt-4 text-[11px] leading-6 text-stone-400">
               Planning figures for these scenarios, rather than recorded
@@ -196,14 +256,16 @@ const ExecutionComparison = () => {
               starter; your agent handles customization and local checks.
             </figcaption>
           </figure>
-          <div className="rounded-2xl border border-[#dfe5d5] bg-white p-5 sm:p-6">
+          <div className="rounded-2xl border border-[#e5e5e5] bg-white p-5 sm:p-6">
             <p className="text-[10px] tracking-widest text-stone-400 uppercase">
               The workflow walkthrough
             </p>
             <div className="mt-6 space-y-6">
               {scenario.steps.map((step, position) => (
                 <div key={step} className="flex items-start gap-3">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#eff3e7] font-mono text-[9px] text-[#829361]">
+                  <span
+                    className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full font-mono text-[9px] text-white ${darkSurface}`}
+                  >
                     {position + 1}
                   </span>
                   <p className="text-xs leading-6 text-stone-500">{step}</p>
@@ -211,7 +273,7 @@ const ExecutionComparison = () => {
               ))}
             </div>
             <div className="mt-7 border-t border-stone-100 pt-5">
-              <p className="text-xs font-medium text-[#52663c]">
+              <p className="text-xs font-medium text-[#404040]">
                 Same version. Same input. Same tool output.
               </p>
               <p className="mt-2 text-[11px] leading-6 text-stone-400">

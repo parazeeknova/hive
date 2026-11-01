@@ -18,7 +18,13 @@ pub(super) async fn invoke(state: &AppState, tx: Tx, inv: Invocation) -> ApiResu
     let start = std::time::Instant::now();
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
-        cell::execute_capability(state, inv.capability_id, &inv.input),
+        cell::execute_for_invocation(
+            state,
+            inv.capability_id,
+            &inv.input,
+            inv.credential_id,
+            inv.id,
+        ),
     )
     .await;
     let output = match output {

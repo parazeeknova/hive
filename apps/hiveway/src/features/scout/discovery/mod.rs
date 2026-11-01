@@ -118,6 +118,7 @@ async fn resolve(
                 | "repository_stack"
                 | "dependency_inventory"
                 | "repository_scaffold"
+                | "connected_mcp"
                 | "workflow"
         )
     }) {

@@ -29,6 +29,7 @@ pub(super) async fn exercise(
         .parse::<Uuid>()?;
     let row = invocations::Entity::find()
         .filter(invocations::Column::CredentialId.eq(key_id))
+        .filter(invocations::Column::StartedAt.is_not_null())
         .one(&state.postgres)
         .await?
         .ok_or("missing invocation")?;

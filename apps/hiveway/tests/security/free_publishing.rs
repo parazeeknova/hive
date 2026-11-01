@@ -3,8 +3,13 @@ use axum::{Router, http::StatusCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
 
-pub(super) async fn exercise(app: Router, bearer: &str) -> Result {
+pub(super) async fn exercise(
+    app: Router,
+    bearer: &str,
+    state: &hiveway::state::AppState,
+) -> Result {
     scaffold_catalog(&app, bearer).await?;
+    connector_roundtrip(&app, bearer, state).await?;
     let headers = [("authorization", bearer)];
     let (status, invalid) = attack(app.clone(), "POST", "/mcp", json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"scaffold_project","arguments":{"project_name":"new-app","repository_url":"http://127.0.0.1/private","revision":"a".repeat(40)}}}).to_string(), &headers).await?;
     assert_eq!(status, StatusCode::OK, "{invalid}");
@@ -109,5 +114,207 @@ async fn scaffold_catalog(app: &Router, bearer: &str) -> Result {
             .as_str()
             .is_some_and(|pattern| pattern.contains("github"))
     );
+    Ok(())
+}
+
+async fn connector_rpc(
+    app: Router,
+    bearer: &str,
+    name: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let (_, result)=attack(app,"POST","/mcp",json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}}).to_string(),&[("authorization",bearer)]).await?;
+    Ok(result["result"].clone())
+}
+async fn connector_roundtrip(
+    app: &Router,
+    bearer: &str,
+    state: &hiveway::state::AppState,
+) -> Result {
+    let registered = connector_rpc(
+        app.clone(),
+        bearer,
+        "register_mcp_connection",
+        json!({"name":"fixture","tools":[{"name":"read_file","inputSchema":{"type":"object"}}]}),
+    )
+    .await?;
+    assert_eq!(registered["isError"], false, "{registered}");
+    let id = registered["structuredContent"]["id"]
+        .as_str()
+        .ok_or("missing connector id")?
+        .to_owned();
+    let name = format!("external_{}_read_file", id.replace('-', ""));
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("authorization", bearer.parse()?);
+    let mut foreign = hiveway::features::identity::authenticate(state, &headers, "").await?;
+    foreign.wallet = "github:connector-foreign".into();
+    assert_eq!(
+        hiveway::features::connections::list(state, &foreign, true).await?,
+        json!([])
+    );
+    assert!(
+        hiveway::features::connections::invoke(state, &foreign, &name, json!({}))
+            .await
+            .is_err()
+    );
+    assert!(
+        hiveway::features::connections::manage(
+            state,
+            &foreign,
+            "poll_mcp",
+            json!({"connection_id":id})
+        )
+        .await
+        .is_err()
+    );
+    let worker_app = app.clone();
+    let worker_bearer = bearer.to_owned();
+    let worker_id = id.clone();
+    let worker = async move {
+        for _ in 0..40 {
+            let polled = connector_rpc(
+                worker_app.clone(),
+                &worker_bearer,
+                "poll_mcp",
+                json!({"connection_id":worker_id}),
+            )
+            .await?;
+            let job = &polled["structuredContent"]["job"];
+            if !job.is_null() {
+                assert_eq!(job["request"]["name"], "read_file");
+                let args = json!({"connection_id":worker_id,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":"fixture content"}]}});
+                let done = connector_rpc(
+                    worker_app.clone(),
+                    &worker_bearer,
+                    "complete_mcp",
+                    args.clone(),
+                )
+                .await?;
+                assert_eq!(done["isError"], false);
+                let replay =
+                    connector_rpc(worker_app, &worker_bearer, "complete_mcp", args).await?;
+                assert_eq!(replay["isError"], true);
+                return Ok::<(), Box<dyn std::error::Error>>(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        Err("worker found no job".into())
+    };
+    let (called, completed) = tokio::join!(
+        connector_rpc(app.clone(), bearer, &name, json!({"path":"example.txt"})),
+        worker
+    );
+    completed?;
+    let called = called?;
+    assert_eq!(called["isError"], false, "{called}");
+    assert_eq!(
+        called["structuredContent"]["content"][0]["text"],
+        "fixture content"
+    );
+    exercise_mcp_artifacts(app, bearer, &id, state).await?;
+    let deleted = connector_rpc(
+        app.clone(),
+        bearer,
+        "disconnect_mcp",
+        json!({"connection_id":id}),
+    )
+    .await?;
+    assert_eq!(deleted["isError"], false);
+    let removed = connector_rpc(app.clone(), bearer, &name, json!({})).await?;
+    assert_eq!(removed["isError"], true);
+    Ok(())
+}
+
+async fn complete_jobs(app: Router, bearer: &str, connection: &str, count: usize) -> Result {
+    let mut completed = 0;
+    for _ in 0..500 {
+        let response = connector_rpc(
+            app.clone(),
+            bearer,
+            "poll_mcp",
+            json!({"connection_id":connection}),
+        )
+        .await?;
+        let job = &response["structuredContent"]["job"];
+        if !job.is_null() {
+            let result=connector_rpc(app.clone(),bearer,"complete_mcp",json!({"connection_id":connection,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":"artifact output"}]}})).await?;
+            assert_eq!(result["isError"], false);
+            completed += 1;
+            if completed == count {
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    Err("artifact jobs timed out".into())
+}
+async fn exercise_mcp_artifacts(
+    app: &Router,
+    bearer: &str,
+    connection: &str,
+    state: &hiveway::state::AppState,
+) -> Result {
+    let headers = [("authorization", bearer)];
+    let mut caps = Vec::new();
+    for name in ["Read connected file", "Read another file"] {
+        let (_,cap)=attack(app.clone(),"POST","/v1/capabilities",json!({"name":name,"description":"Caller-bound file read","runtime":"connected_mcp","mcp_tool":"read_file","price":"0"}).to_string(),&headers).await?;
+        caps.push(cap["id"].clone());
+    }
+    let (status,workflow)=attack(app.clone(),"POST","/v1/workflows",json!({"name":"Connected filesystem workflow","description":"Two explicit caller bindings","steps":caps,"price":"0"}).to_string(),&headers).await?;
+    assert_eq!(status, StatusCode::OK, "{workflow}");
+    let binding = json!({"connection_id":connection,"arguments":{"path":"example.txt"}});
+    assert!(
+        hiveway::features::cell::execute_capability(
+            state,
+            caps[0].as_str().ok_or("missing cap")?.parse()?,
+            &binding
+        )
+        .await
+        .is_err()
+    );
+    for (id, input, count) in [
+        (caps[0].clone(), binding.clone(), 1),
+        (
+            workflow["id"].clone(),
+            json!({"steps":[binding.clone(),binding.clone()]}),
+            2,
+        ),
+    ] {
+        let key = uuid::Uuid::new_v4().to_string();
+        let (status, quote) = attack(
+            app.clone(),
+            "POST",
+            "/v1/quotes",
+            json!({"capability_id":id,"input":input}).to_string(),
+            &[("authorization", bearer), ("idempotency-key", key.as_str())],
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CREATED, "{quote}");
+        let invocation = quote["id"].as_str().ok_or("missing invocation")?;
+        let path = format!("/v1/invocations/{invocation}");
+        let (called, worker) = tokio::join!(
+            attack(app.clone(), "POST", &path, String::new(), &headers),
+            complete_jobs(app.clone(), bearer, connection, count)
+        );
+        worker?;
+        let (status, result) = called?;
+        assert_eq!(status, StatusCode::OK, "{result}");
+        assert!(result.to_string().contains("artifact output"), "{result}");
+        let mut auth = axum::http::HeaderMap::new();
+        auth.insert("authorization", bearer.parse()?);
+        let credential = hiveway::features::identity::authenticate(state, &auth, "").await?;
+        let replay = hiveway::features::cell::execute_for_invocation(
+            state,
+            id.as_str().ok_or("missing cap")?.parse()?,
+            &input,
+            credential.id,
+            invocation.parse()?,
+        )
+        .await;
+        assert!(
+            replay.is_err(),
+            "must not repeat a dispatched MCP operation"
+        );
+    }
     Ok(())
 }

@@ -396,7 +396,7 @@ async fn execute_and_settle(
     let input = inv.input.clone();
     let result = match tokio::time::timeout(
         std::time::Duration::from_secs(state.settings.runtime.worker.execution_timeout_seconds),
-        cell::execute_capability(state, inv.capability_id, &input),
+        cell::execute_for_invocation(state, inv.capability_id, &input, inv.credential_id, inv.id),
     )
     .await
     {

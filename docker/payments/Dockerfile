@@ -4,6 +4,7 @@ COPY package.json bun.lock bunfig.toml ./
 COPY apps/hiveway/package.json apps/hiveway/package.json
 COPY apps/nectar/package.json apps/nectar/package.json
 COPY packages/local/package.json packages/local/package.json
+COPY packages/connector/package.json packages/connector/package.json
 RUN bun install --frozen-lockfile --ignore-scripts
 COPY packages/local/src packages/local/src
 COPY packages/local/contracts packages/local/contracts
