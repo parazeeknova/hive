@@ -11,6 +11,7 @@ import {
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 import { Directories } from "./directories";
+import { withinResultLimit } from "./limits";
 
 type Config = {
   name: string;
@@ -164,6 +165,7 @@ console.log(
   `Connected ${config.name}: ${connectionId}. Save connectionId in your config to reuse it.`
 );
 let running = true;
+let retryDelay = 1000;
 process.on("SIGINT", () => {
   running = false;
 });
@@ -174,6 +176,7 @@ try {
   while (running) {
     try {
       const { job } = await rpc("poll_mcp", { connection_id: connectionId });
+      retryDelay = 1000;
       if (!job) {
         await Bun.sleep(1000);
         continue;
@@ -233,7 +236,7 @@ try {
         } else {
           result = await client.callTool(claimed.request, { timeout: 25_000 });
         }
-        if (JSON.stringify(result).length > 524_288) {
+        if (!withinResultLimit(result)) {
           throw new Error("Result exceeds Hive limit");
         }
       } catch {
@@ -259,7 +262,8 @@ try {
         throw error;
       }
       // Continue polling after transport/stale-completion failures. Never repeat a claimed tool call.
-      await Bun.sleep(1000);
+      await Bun.sleep(retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 10_000);
     }
   }
 } finally {
