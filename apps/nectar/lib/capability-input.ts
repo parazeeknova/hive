@@ -3,6 +3,11 @@ import type { RegistryCapability } from "./hiveway";
 export const connectedCapability = (tool: RegistryCapability) =>
   tool.runtime === "connected_mcp" || Array.isArray(tool.definition.mcp_tools);
 
+export const usesJsonInput = (tool: RegistryCapability) =>
+  tool.runtime === "wasm" ||
+  tool.runtime === "repository_scaffold" ||
+  connectedCapability(tool);
+
 export const capabilityInput = (tool: RegistryCapability): unknown => {
   const binding = {
     arguments: {},

@@ -12,6 +12,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 import { Directories } from "./directories";
 import { withinResultLimit } from "./limits";
+import { FatalHiveError, reconnect } from "./session";
 
 type Config = {
   name: string;
@@ -47,9 +48,6 @@ if (hive.username || hive.password) {
 }
 const keyContents = await readFile(config.keyFile, "utf-8");
 const key = keyContents.trim();
-class FatalHiveError extends Error {
-  override name = "FatalHiveError";
-}
 const rpc = async (name: string, args: Record<string, unknown>) => {
   const response = await fetch(hive, {
     body: JSON.stringify({
@@ -216,7 +214,7 @@ try {
               stderr: "ignore",
             });
             client = new Client({ name: "hive-connector", version: "1.0.0" });
-            await client.connect(replacement);
+            await reconnect(client, replacement);
           }
           result = {
             content: [
@@ -239,7 +237,10 @@ try {
         if (!withinResultLimit(result)) {
           throw new Error("Result exceeds Hive limit");
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof FatalHiveError) {
+          throw error;
+        }
         result = {
           content: [
             {

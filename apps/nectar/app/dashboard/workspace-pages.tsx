@@ -5,6 +5,7 @@ import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import {
+  usesJsonInput,
   connectedCapability,
   capabilityInput,
 } from "../../lib/capability-input";
@@ -610,23 +611,14 @@ export const QuoteForm = ({
     setNow(Date.now());
     setError("");
     try {
-      if (
-        tool.runtime !== "wasm" &&
-        tool.runtime !== "repository_scaffold" &&
-        tool.runtime !== "connected_mcp" &&
-        !Array.isArray(tool.definition.mcp_tools)
-      ) {
+      if (!usesJsonInput(tool)) {
         validateRepository(url.trim(), revision.trim());
       }
       const body = JSON.stringify({
         capability_id: tool.id,
-        input:
-          tool.runtime === "wasm" ||
-          tool.runtime === "repository_scaffold" ||
-          tool.runtime === "connected_mcp" ||
-          Array.isArray(tool.definition.mcp_tools)
-            ? (JSON.parse(jsonInput) as unknown)
-            : { repository_url: url.trim(), revision: revision.trim() },
+        input: usesJsonInput(tool)
+          ? (JSON.parse(jsonInput) as unknown)
+          : { repository_url: url.trim(), revision: revision.trim() },
       });
       if (request.current.fingerprint !== body) {
         request.current = { fingerprint: body, key: crypto.randomUUID() };
@@ -660,7 +652,7 @@ export const QuoteForm = ({
         void submit(e);
       }}
     >
-      {tool.runtime === "wasm" || tool.runtime === "repository_scaffold" ? (
+      {usesJsonInput(tool) ? (
         <label className="ws-field flex flex-col gap-[7px] text-[10px] [font-weight:650] text-[#667655] [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-[8px] [&_input]:bg-white [&_input]:px-[11px] [&_input]:py-2.5 [&_input]:text-[12px] [&_input]:font-normal [&_input]:text-[#4e5c40] [&_input]:[border:1px_solid_#dfe4d5] max-[760px]:[&_input]:text-[16px] [&_input::placeholder]:text-[#686f60] [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-[8px] [&_select]:bg-white [&_select]:px-[11px] [&_select]:py-2.5 [&_select]:text-[12px] [&_select]:font-normal [&_select]:text-[#4e5c40] [&_select]:[border:1px_solid_#dfe4d5] max-[760px]:[&_select]:text-[16px] [&_small]:text-[10px] [&_small]:leading-[1.7] [&_small]:font-normal [&_small]:text-[#686f60] [&_textarea]:w-full [&_textarea]:min-w-0 [&_textarea]:[resize:vertical] [&_textarea]:rounded-[8px] [&_textarea]:bg-white [&_textarea]:px-[11px] [&_textarea]:py-2.5 [&_textarea]:text-[12px] [&_textarea]:font-normal [&_textarea]:text-[#4e5c40] [&_textarea]:[border:1px_solid_#dfe4d5] max-[760px]:[&_textarea]:text-[16px] [&_textarea::placeholder]:text-[#686f60]">
           JSON input
           <textarea

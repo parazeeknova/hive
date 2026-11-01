@@ -27,12 +27,12 @@ test("directory approval is local, canonical, session scoped and excludes creden
     await expect(
       directories.allow(path.join(workspace, "escape"))
     ).rejects.toThrow("credential");
-    expect(directories.allow(root)).rejects.toThrow("credential");
+    await expect(directories.allow(root)).rejects.toThrow("credential");
     const denied = new Directories(key, () => false);
     expect(await denied.allow(workspace)).toBe(false);
     expect(denied.approved.size).toBe(0);
     expect(contains(workspace, `${workspace}-other`)).toBe(false);
-    expect(directories.allow("relative")).rejects.toThrow("absolute");
+    await expect(directories.allow("relative")).rejects.toThrow("absolute");
   } finally {
     await rm(root, { force: true, recursive: true });
   }
