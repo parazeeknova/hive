@@ -1,4 +1,5 @@
-//! Bounded process-local admission control. Proxy forwarding headers are never identity.
+//! Bounded process-local admission control. Only the edge-verified
+//! `CF-Connecting-IP` identifies a client; generic proxy headers never do.
 use crate::state::AppState;
 use axum::{
     body::{Body, to_bytes},
@@ -56,6 +57,19 @@ fn peer_key(ip: IpAddr) -> IpAddr {
         ),
     }
 }
+/// Resolve the accountable client address.
+///
+/// All public traffic arrives through Cloudflare, so the edge-verified
+/// `CF-Connecting-IP` identifies the real client. Direct-to-origin traffic
+/// (health checks, loopback, operator tooling) falls back to the TCP peer.
+fn client_ip(request: &Request, peer: std::net::SocketAddr) -> IpAddr {
+    request
+        .headers()
+        .get("cf-connecting-ip")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(peer.ip())
+}
 fn admit(
     peers: &mut HashMap<IpAddr, (Instant, u32)>,
     ip: IpAddr,
@@ -110,10 +124,14 @@ pub(super) async fn guard(
     else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let allowed = admission
-        .peers
-        .lock()
-        .is_ok_and(|mut peers| admit(&mut peers, peer_key(peer.ip()), Instant::now(), limits));
+    let allowed = admission.peers.lock().is_ok_and(|mut peers| {
+        admit(
+            &mut peers,
+            peer_key(client_ip(&request, *peer)),
+            Instant::now(),
+            limits,
+        )
+    });
     if !allowed {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
@@ -167,12 +185,33 @@ async fn finish_handler(
 }
 #[cfg(test)]
 mod tests {
-    use super::{admit, peer_key};
+    use super::{admit, client_ip, peer_key};
     use std::{
         collections::HashMap,
-        net::{IpAddr, Ipv4Addr},
+        net::{IpAddr, Ipv4Addr, SocketAddr},
         time::{Duration, Instant},
     };
+    #[test]
+    fn edge_verified_ip_identifies_the_client() -> anyhow::Result<()> {
+        fn req(header: Option<(&str, &str)>) -> anyhow::Result<axum::extract::Request> {
+            let mut builder = axum::http::Request::builder();
+            if let Some((name, value)) = header {
+                builder = builder.header(name, value);
+            }
+            Ok(builder.body(axum::body::Body::empty())?)
+        }
+        let peer: SocketAddr = "203.0.113.7:54321".parse()?;
+        assert_eq!(client_ip(&req(None)?, peer), peer.ip());
+        assert_eq!(
+            client_ip(&req(Some(("CF-Connecting-IP", "198.51.100.23")))?, peer),
+            "198.51.100.23".parse::<IpAddr>()?
+        );
+        assert_eq!(
+            client_ip(&req(Some(("CF-Connecting-IP", "not-an-ip")))?, peer),
+            peer.ip()
+        );
+        Ok(())
+    }
     #[test]
     fn peers_share_mapped_addresses_and_ipv6_prefixes() -> anyhow::Result<()> {
         let v4: IpAddr = "192.0.2.1".parse()?;
