@@ -68,7 +68,7 @@ const ProfileForm = ({
         </div>
       </div>
       <div className="ws-profile-identity mb-5 flex items-center gap-3.5 pb-5 [border-bottom:1px_solid_var(--ws-line)] [&_p]:mt-1 [&_p]:text-[12px] [&_p]:text-[#727c67]">
-        <span className="ws-profile-avatar grid h-[56px] w-[56px] shrink-0 [place-items:center] overflow-hidden rounded-full bg-[#eff2e7] text-[21px] font-semibold text-[#59674d] [border:1px_solid_#dfe6d4] [&_img]:h-full [&_img]:w-full [&_img]:object-cover">
+        <span className="ws-profile-avatar grid h-[56px] w-[56px] shrink-0 [place-items:center] overflow-hidden rounded-full bg-[#fdf3d2] text-[21px] font-semibold text-[#59674d] [border:1px_solid_#dfe6d4] [&_img]:h-full [&_img]:w-full [&_img]:object-cover">
           {draft.avatar ? (
             <Image
               src={draft.avatar}
@@ -133,7 +133,7 @@ const ProfileForm = ({
           <output>{message || "Your public profile on the hive."}</output>
           <button
             type="submit"
-            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
             disabled={pending}
           >
             {pending ? "Saving…" : "Save profile"}
@@ -333,7 +333,7 @@ const AccountSession = ({
           </p>
           <button
             type="button"
-            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
             onClick={onConnect}
           >
             <Icon name="wallet" size={14} />{" "}
@@ -342,7 +342,7 @@ const AccountSession = ({
           {token !== "session" && (
             <button
               type="button"
-              className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+              className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
               onClick={onDisconnect}
             >
               <Icon name="logout" size={14} /> Disconnect wallet
@@ -352,7 +352,7 @@ const AccountSession = ({
       ) : (
         <button
           type="button"
-          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
           onClick={onConnect}
         >
           <Icon name="wallet" size={15} /> Connect wallet (optional)
@@ -361,7 +361,7 @@ const AccountSession = ({
       <form action="/api/auth/logout" method="POST">
         <button
           type="submit"
-          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
         >
           <Icon name="logout" size={14} /> Sign out of Hive
         </button>
@@ -530,7 +530,7 @@ const AccountPanel = ({
           >
             {profile.error ? errorMessage(profile.error) : ""}
             <button
-              className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+              className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
               type="button"
               onClick={() => {
                 void profile.refetch();
@@ -702,7 +702,7 @@ const AccountPanel = ({
             {hasMore && (
               <button
                 type="button"
-                className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+                className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
                 disabled={loading}
                 onClick={onLoadMore}
               >

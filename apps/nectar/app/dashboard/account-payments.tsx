@@ -117,7 +117,7 @@ const AccountPaymentDialog = ({
         </button>
       </div>
       <div className="ws-payment-provider mx-0 my-[22px] flex items-center gap-3 rounded-[12px] bg-[#fafbf7] p-[15px] [border:1px_solid_var(--ws-line)] [&_.ws-badge]:text-[10px] [&_small]:mt-[5px] [&_small]:block [&_small]:text-[10px] [&_small]:text-[color:var(--ws-muted)] [&_strong]:block [&_strong]:text-[13px] [&>div]:[flex:1]">
-        <span className="ws-payment-provider-icon grid h-[38px] w-[38px] shrink-0 [place-items:center] rounded-[10px] bg-[#eff2e7] text-[#657654]">
+        <span className="ws-payment-provider-icon grid h-[38px] w-[38px] shrink-0 [place-items:center] rounded-[10px] bg-[#fdf3d2] text-[#657654]">
           <Icon name="wallet" size={21} />
         </span>
         <div>
@@ -157,7 +157,7 @@ const AccountPaymentDialog = ({
           </p>
           <button
             type="submit"
-            className="ws-button ws-primary inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button ws-primary inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
             disabled={busy || Boolean(hash)}
           >
             {busy ? "Waiting for wallet…" : "Review in wallet"}
@@ -175,7 +175,7 @@ const AccountPaymentDialog = ({
             {balance.wallet}
           </code>
           <button
-            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
             type="button"
             onClick={async () => {
               try {
@@ -190,7 +190,7 @@ const AccountPaymentDialog = ({
           </button>
           {balance.chain_id === 84_532 && (
             <a
-              className="ws-button ws-primary inline-flex min-h-[38px] items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
+              className="ws-button ws-primary inline-flex min-h-[38px] items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
               href="https://faucet.circle.com/"
               target="_blank"
               rel="noreferrer"
@@ -210,7 +210,7 @@ const AccountPaymentDialog = ({
             {hash}
           </code>
           <button
-            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
             type="button"
             onClick={onRefresh}
           >
@@ -257,7 +257,7 @@ const PaymentConnection = ({
         </div>
       </div>
       <div className="ws-account-provider mx-0 mt-0 mb-[18px] flex items-center gap-2.5 [&_small]:mt-1 [&_small]:block [&_small]:text-[11px] [&_small]:text-[color:var(--ws-muted)] [&_strong]:block [&_strong]:text-[13px] [&_strong]:font-semibold [&_strong]:text-[#303a27]">
-        <span className="ws-payment-provider-icon grid h-[38px] w-[38px] shrink-0 [place-items:center] rounded-[10px] bg-[#eff2e7] text-[#657654]">
+        <span className="ws-payment-provider-icon grid h-[38px] w-[38px] shrink-0 [place-items:center] rounded-[10px] bg-[#fdf3d2] text-[#657654]">
           <Icon name="wallet" size={20} />
         </span>
         <div>
@@ -369,7 +369,7 @@ export const AccountBalance = ({
             )}
           </div>
           <button
-            className="ws-button ws-primary inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
+            className="ws-button ws-primary inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
             type="button"
             onClick={() => (connected ? setAction("topup") : onConnect())}
           >

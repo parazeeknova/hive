@@ -14,7 +14,10 @@ export const capabilityInput = (tool: RegistryCapability): unknown => {
     connection_id: "00000000-0000-0000-0000-000000000000",
   };
   if (tool.runtime === "connected_mcp") {
-    return binding;
+    return {
+      ...binding,
+      ...(tool.definition.provider ? { tool: tool.definition.tool_name } : {}),
+    };
   }
   if (Array.isArray(tool.definition.mcp_tools)) {
     return { steps: tool.definition.mcp_tools.map(() => binding) };

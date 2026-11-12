@@ -6,7 +6,21 @@ export type Runtime =
   | "dependency_inventory"
   | "workflow"
   | "wasm";
+export interface McpIntegration {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  default_tool: string;
+  tools: string[];
+  byok: boolean;
+  guidance: string;
+  previews: { slug: string; title: string; src: string }[];
+  legacy_ids: string[];
+  shared_owner?: string | null;
+}
 export interface CatalogMetadata {
+  integration?: McpIntegration | null;
   capability_id: string;
   invocation_count: number;
   publisher: {
@@ -14,10 +28,13 @@ export interface CatalogMetadata {
     username: string | null;
     avatar: string | null;
     verified: boolean;
+    /** Published and maintained by Hive itself. */
+    official?: boolean;
     total_tools: number;
   };
 }
 export interface RegistryCapability {
+  members?: RegistryCapability[];
   metadata?: CatalogMetadata | undefined;
   id: string;
   creator_wallet: string;

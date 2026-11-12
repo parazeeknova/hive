@@ -104,7 +104,7 @@ const CreatorTools = ({
         />
       </label>
       <button
-        className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:#20231e] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_1px_#ffffff20] [&.ws-primary]:[background:linear-gradient(#353831,_#20231e)] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+        className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
         type="submit"
         disabled={busy}
       >
