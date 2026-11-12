@@ -102,37 +102,56 @@ const quarantine =
   config.transport === "filesystem"
     ? await mkdtemp(path.join(os.tmpdir(), "hive-filesystem-"))
     : null;
-let transport;
-if (config.transport === "filesystem") {
-  transport = new StdioClientTransport({
-    args: [
-      fileURLToPath(
-        import.meta
-          .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
-      ),
-      ...directories.approved,
-      ...(quarantine ? [quarantine] : []),
-    ],
-    command: process.execPath,
-    env: {},
-    maxBufferSize: 524_288,
-    stderr: "ignore",
-  });
-} else if (config.transport === "stdio") {
-  transport = new StdioClientTransport({
-    args: config.args,
-    command: config.command,
-    env: config.env ?? {},
-    maxBufferSize: 524_288,
-    stderr: "ignore",
-  });
-} else {
-  transport = new StreamableHTTPClientTransport(new URL(config.url), {
+const buildTransport = () => {
+  if (config.transport === "filesystem") {
+    return new StdioClientTransport({
+      args: [
+        fileURLToPath(
+          import.meta
+            .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
+        ),
+        ...directories.approved,
+        ...(quarantine ? [quarantine] : []),
+      ],
+      command: process.execPath,
+      env: {},
+      maxBufferSize: 524_288,
+      stderr: "ignore",
+    });
+  }
+  if (config.transport === "stdio") {
+    return new StdioClientTransport({
+      args: config.args,
+      command: config.command,
+      env: config.env ?? {},
+      maxBufferSize: 524_288,
+      stderr: "ignore",
+    });
+  }
+  return new StreamableHTTPClientTransport(new URL(config.url), {
     requestInit: { headers: config.headers ?? {}, redirect: "error" },
   });
-}
+};
+let transport = buildTransport();
 let client = new Client({ name: "hive-connector", version: "1.0.0" });
 await client.connect(transport);
+// Re-handshake the upstream without repeating the failed call: server
+// restarts invalidate sessions, and the next job must not inherit a dead one.
+const repairUpstream = async () => {
+  if (config.transport === "filesystem") {
+    return;
+  }
+  try {
+    await client.close();
+  } catch {
+    // Already broken; replace it unconditionally below.
+  }
+  const replacement = buildTransport();
+  const fresh = new Client({ name: "hive-connector", version: "1.0.0" });
+  await fresh.connect(replacement);
+  transport = replacement;
+  client = fresh;
+};
 const { tools } = await client.listTools();
 if (config.transport === "filesystem") {
   tools.push({
@@ -236,7 +255,19 @@ try {
             isError: !approved,
           };
         } else {
-          result = await client.callTool(claimed.request, { timeout: 25_000 });
+          try {
+            result = await client.callTool(claimed.request, {
+              timeout: 25_000,
+            });
+          } catch (error) {
+            if (error instanceof FatalHiveError) {
+              throw error;
+            }
+            // Heal a dead upstream session; the failed call is still
+            // reported once and never repeated.
+            await repairUpstream();
+            throw error;
+          }
         }
         if (!withinResultLimit(result)) {
           throw new Error("Result exceeds Hive limit");
