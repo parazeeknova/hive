@@ -67,3 +67,66 @@ export const websiteSchema = {
   name: "Hive",
   url: siteUrl.href,
 };
+
+export const publisher = {
+  "@type": "Organization",
+  name: "Singularity Works",
+  url: "https://itssingularity.com",
+} as const;
+
+export const organizationSchema = {
+  "@context": "https://schema.org",
+  ...publisher,
+  logo: new URL("/icon.png", siteUrl).href,
+  sameAs: ["https://github.com/parazeeknova/hive"],
+};
+
+export const applicationSchema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  applicationCategory: "DeveloperApplication",
+  description,
+  name: "Hive",
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  operatingSystem: "Any",
+  publisher,
+  url: siteUrl.href,
+};
+
+/** FAQPage data must mirror the visible answers in plain text. */
+export const faqSchema = (items: { question: string; answer: string }[]) => ({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: items.map(({ question, answer }) => ({
+    "@type": "Question",
+    acceptedAnswer: { "@type": "Answer", text: answer },
+    name: question,
+  })),
+});
+
+export const docsSchema = [
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    about: "Connecting AI agents to Hive over MCP",
+    description:
+      "Connect Claude Code, OpenCode, Codex, Pi, and Antigravity to Hive with scoped MCP API keys, then discover, run and publish reusable capabilities.",
+    headline: "A head start for every agent",
+    inLanguage: "en",
+    mainEntityOfPage: new URL("/docs", siteUrl).href,
+    publisher,
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", item: siteUrl.href, name: "Hive", position: 1 },
+      {
+        "@type": "ListItem",
+        item: new URL("/docs", siteUrl).href,
+        name: "Docs",
+        position: 2,
+      },
+    ],
+  },
+];
