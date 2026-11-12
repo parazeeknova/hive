@@ -11,7 +11,8 @@ dodo_api_url = "https://test.dodopayments.com"
 concurrency = 32
 requests_per_minute = 120
 tracked_peers = 4096
-body_bytes = 131072
+# Allow a 512 KiB connector result plus its JSON-RPC envelope.
+body_bytes = 1048576
 body_timeout_seconds = 5
 request_timeout_seconds = 180
 shutdown_drain_timeout_seconds = 300

@@ -32,7 +32,9 @@ For a hosted private workspace, run one connector per account in a container wit
 
 [templr](https://github.com/parazeeknova/templr) (private repo) serves 106 single-file website templates and 19 demos as MCP tools over Streamable HTTP. It runs as a private Dokploy application in the hive environment — no public domain — reachable inside the hive network at `http://templr-vhzbnk:8080/mcp`. `packages/connector/examples/templr.http.json` is a ready-made trusted configuration for it.
 
-Host it with the connector image on the same network:
+Templr's container can run this worker internally: set `TEMPLR_HIVE_KEY` and `TEMPLR_AUTH_TOKEN` on the templr app, leave `HIVE_POLL_MS` unset, and it registers as `templr` using its loopback MCP endpoint. No separate connector app or shared workspace volume is required. Both processes restart together if either exits. See templr's `hive/README.md` for its bundled worker snapshot and lifecycle.
+
+For a separately managed upstream, host it with the connector image on the same network:
 
 ```bash
 docker run -d --name hive-connector-templr --network <hive-network> \

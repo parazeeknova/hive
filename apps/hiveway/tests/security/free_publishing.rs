@@ -182,7 +182,8 @@ async fn connector_roundtrip(
             let job = &polled["structuredContent"]["job"];
             if !job.is_null() {
                 assert_eq!(job["request"]["name"], "read_file");
-                let args = json!({"connection_id":worker_id,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":"fixture content"}]}});
+                // A realistic preview exceeds the former 128 KiB HTTP body limit.
+                let args = json!({"connection_id":worker_id,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":"fixture content"},{"type":"image","mimeType":"image/webp","data":"aW1h".repeat(40_000)}]}});
                 let done = connector_rpc(
                     worker_app.clone(),
                     &worker_bearer,
@@ -207,6 +208,11 @@ async fn connector_roundtrip(
     completed?;
     let called = called?;
     assert_eq!(called["isError"], false, "{called}");
+    assert_eq!(called["content"][1]["type"], "image");
+    assert_eq!(
+        called["content"][1]["data"].as_str().map(str::len),
+        Some(160_000)
+    );
     assert_eq!(
         called["structuredContent"]["content"][0]["text"],
         "fixture content"

@@ -42,6 +42,19 @@ fn error(id: Value, status: StatusCode, code: i32, message: &str, data: Value) -
     body["error"]["data"] = data;
     (status, Json(body)).into_response()
 }
+/// Preserve connected MCP content blocks so clients can display images and resources.
+fn tool_result(name: &str, mut value: Value, failed: bool) -> ApiResult<Value> {
+    if name.starts_with("external_") && value["content"].is_array() {
+        if value.get("structuredContent").is_none() {
+            value["structuredContent"] = value.clone();
+        }
+        value["isError"] = json!(failed);
+        return Ok(value);
+    }
+    Ok(
+        json!({"content":[{"type":"text","text":serde_json::to_string(&value)?}],"structuredContent":if value.is_object(){value.clone()}else{json!({"data":value})},"isError":failed}),
+    )
+}
 fn metadata(headers: &HeaderMap, request: &Rpc) -> Result<bool, Box<Response>> {
     let id = request.id.clone().unwrap_or(Value::Null);
     let version = headers
@@ -584,7 +597,7 @@ pub async fn gateway(
                 }
                 Err(error) => (json!({"error":error.code}), true),
             };
-            json!({"content":[{"type":"text","text":serde_json::to_string(&value)?}],"structuredContent":if value.is_object(){value.clone()}else{json!({"data":value})},"isError":failed})
+            tool_result(name, value, failed)?
         }
         _ => {
             return Ok(error(
@@ -607,6 +620,26 @@ mod tests {
     use super::{MODERN, Rpc, metadata};
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use serde_json::json;
+    #[test]
+    fn connected_content_blocks_reach_mcp_clients() -> super::ApiResult<()> {
+        let upstream = json!({"content":[{"type":"text","text":"Preview"},{"type":"image","mimeType":"image/webp","data":"aW1hZ2U="}],"isError":false});
+        let result =
+            super::tool_result("external_connection_get_preview", upstream.clone(), false)?;
+        assert_eq!(result["content"][1]["type"], "image");
+        assert_eq!(result["content"], upstream["content"]);
+        assert_eq!(result["structuredContent"], upstream);
+        // Ordinary Hive JSON output must still be wrapped as a text result.
+        let result = super::tool_result("poll_mcp", json!({"job":null}), false)?;
+        assert_eq!(result["structuredContent"]["job"], serde_json::Value::Null);
+        assert_eq!(result["content"][0]["type"], "text");
+        let result = super::tool_result(
+            "external_connection_get_preview",
+            json!({"error":"offline"}),
+            true,
+        )?;
+        assert_eq!(result["isError"], true);
+        Ok(())
+    }
     fn request() -> Rpc {
         Rpc {
             jsonrpc: "2.0".into(),
