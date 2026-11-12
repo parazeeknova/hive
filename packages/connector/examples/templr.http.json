@@ -1,0 +1,7 @@
+{
+  "name": "templr",
+  "hive": "https://hiveway.itssingularity.com/mcp",
+  "keyFile": "/run/secrets/hive-key",
+  "transport": "http",
+  "url": "http://templr-vhzbnk:8080/mcp"
+}

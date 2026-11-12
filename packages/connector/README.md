@@ -28,6 +28,36 @@ For a hosted private workspace, run one connector per account in a container wit
 
 ## Other MCP servers
 
+### Bundled private upstream: templr
+
+[templr](https://github.com/parazeeknova/templr) (private repo) serves 106
+single-file website templates and 19 demos as MCP tools over Streamable HTTP.
+It runs as a private Dokploy application in the hive environment — no public
+domain — reachable inside the hive network at
+`http://templr-vhzbnk:8080/mcp`. `packages/connector/examples/templr.http.json`
+is a ready-made trusted configuration for it.
+
+Host it with the connector image on the same network:
+
+```bash
+docker run -d --name hive-connector-templr --network <hive-network> \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --memory 256m --cpus 1 --pids-limit 64 \
+  -v templr-workspace:/workspace \
+  --mount type=bind,source=/run/secrets/templr-connector.json,target=/run/secrets/connector.json,readonly \
+  --mount type=bind,source=/run/secrets/hive-key,target=/run/secrets/hive-key,readonly \
+  hive-connector
+```
+
+`/run/secrets/templr-connector.json` holds the example config (edit `keyFile`
+only if your key lives elsewhere); `/run/secrets/hive-key` holds your
+account's `hwa_…` invoke key. The connector registers the connection under
+your account, then `connect_mcp` exposes it as
+`external_<connection-id>_<tool>` tools. Publish a `runtime: "connected_mcp"`
+capability against the saved `connectionId` to share it through the catalog.
+Disconnecting or changing templr's tools requires re-registering (remove the
+saved `connectionId`, restart, save the new one).
+
 For stdio, replace `command`, `args` and optional `env` in trusted local configuration. Only explicitly provided environment overrides are passed alongside the SDK's minimal inherited environment. For HTTP, use `"transport": "http"`, `"url": "https://your-server.example/mcp"` and optional `headers`. Upstream secrets remain with the connector; Hive's key is never forwarded. There is no OAuth enrollment UI; complete any upstream authorization separately.
 
 ## Operation and limits
