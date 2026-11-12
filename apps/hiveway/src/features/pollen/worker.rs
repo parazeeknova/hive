@@ -182,6 +182,7 @@ async fn complete_paid(
 /// Returns database errors; individual provider failures are logged and retried.
 pub async fn tick(state: &AppState) -> ApiResult<()> {
     crate::features::identity::cleanup_challenges(state).await?;
+    crate::features::connections::cleanup_cache(state).await?;
     dodo::queue_stale_checkouts(state).await?;
     if state.settings.dodo_api_key.is_some()
         && let Err(error) = dodo::refunds::tick(state).await

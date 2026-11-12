@@ -94,7 +94,7 @@ pub fn observe<S: Clone + Send + Sync + 'static>(router: Router<S>) -> Router<S>
 
 #[utoipa::path(get, path = "/api/health", responses((status = 200, body = Health)))]
 async fn health() -> Json<Health> {
-    tracing::info!(service = "hiveway", "Health request");
+    tracing::debug!(service = "hiveway", "Health request");
     Json(Health {
         status: "ok".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),

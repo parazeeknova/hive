@@ -13,6 +13,7 @@ pub struct RuntimeConfig {
     pub http: HttpLimits,
     pub infrastructure: Infrastructure,
     pub worker: Worker,
+    pub cache: Cache,
     pub payment: Payment,
     pub sandbox: SandboxLimits,
 }
@@ -43,6 +44,12 @@ pub struct Worker {
     pub webhook_max_attempts: u32,
     pub execution_timeout_seconds: u64,
     pub stale_after_seconds: i64,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cache {
+    pub connected_tool_ttl_seconds: u64,
+    pub connected_tool_max_bytes: usize,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,6 +153,7 @@ impl RuntimeConfig {
         let h = &self.http;
         let i = &self.infrastructure;
         let w = &self.worker;
+        let c = &self.cache;
         // These are security ceilings, not runtime tuning defaults.
         if !(1..=1024).contains(&h.concurrency)
             || !(1..=100_000).contains(&h.requests_per_minute)
@@ -167,6 +175,8 @@ impl RuntimeConfig {
                     .unwrap_or(i64::MAX)
             || h.request_timeout_seconds
                 < w.execution_timeout_seconds + i.outbound_timeout_seconds * 2
+            || c.connected_tool_ttl_seconds > 3600
+            || !(1024..=524_288).contains(&c.connected_tool_max_bytes)
         {
             bail!("invalid or inconsistent Hiveway resource limits");
         }

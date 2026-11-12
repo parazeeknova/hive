@@ -29,6 +29,10 @@ webhook_max_attempts = 20
 execution_timeout_seconds = 60
 stale_after_seconds = 180
 
+[cache]
+connected_tool_ttl_seconds = 60
+connected_tool_max_bytes = 65536
+
 [payment]
 decimals = 6
 settlement_finality = "finalized"

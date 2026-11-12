@@ -30,7 +30,7 @@ export const GET = () =>
       ) {
         throw new Error("Hiveway returned an invalid health response");
       }
-      logger.info("Hiveway health request completed");
+      logger.debug("Hiveway health request completed");
       return Response.json({
         hiveway: health,
         nectar: "ok",

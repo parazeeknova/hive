@@ -18,6 +18,53 @@ fn id(args: &Value, key: &str) -> ApiResult<Uuid> {
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| ApiError::bad("invalid_connection_id"))
 }
+
+/// Insert a brand-new owner-private connection after enforcing the per-account cap.
+async fn insert_connection(
+    txn: &sea_orm::DatabaseTransaction,
+    owner: &str,
+    label: &str,
+    tools: &Value,
+) -> ApiResult<Uuid> {
+    let row = txn
+        .query_one_raw(statement(
+            "SELECT count(*) AS count FROM mcp_connections WHERE owner=$1",
+            vec![owner.into()],
+        ))
+        .await?
+        .ok_or_else(|| ApiError::unavailable("connection_count"))?;
+    if row.try_get::<i64>("", "count")? >= 8 {
+        return Err(ApiError::bad("mcp_connection_limit"));
+    }
+    let id = Uuid::new_v4();
+    txn.execute_raw(statement(
+        "INSERT INTO mcp_connections VALUES($1,$2,$3,$4,$5)",
+        vec![
+            id.into(),
+            owner.into(),
+            label.into(),
+            tools.clone().into(),
+            now().into(),
+        ],
+    ))
+    .await?;
+    Ok(id)
+}
+/// Find an owner-private connection by name for idempotent re-registration.
+async fn find_connection_by_name(
+    txn: &sea_orm::DatabaseTransaction,
+    owner: &str,
+    name: &str,
+) -> ApiResult<Option<Uuid>> {
+    Ok(txn
+        .query_one_raw(statement(
+            "SELECT id FROM mcp_connections WHERE owner=$1 AND name=$2",
+            vec![owner.into(), name.into()],
+        ))
+        .await?
+        .map(|row| row.try_get("", "id"))
+        .transpose()?)
+}
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
@@ -40,6 +87,94 @@ fn validate_tools(value: &Value) -> ApiResult<()> {
         }
     }
     Ok(())
+}
+/// Canonicalize a JSON value so semantically identical arguments hash identically.
+fn canonical_args(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object({
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            entries
+                .into_iter()
+                .map(|(key, item)| (key.clone(), canonical_args(item)))
+                .collect()
+        }),
+        Value::Array(items) => Value::Array(items.iter().map(canonical_args).collect()),
+        _ => value.clone(),
+    }
+}
+
+/// Whether the snapshotted upstream tool is safe to cache.
+fn tool_is_read_only(tools: &Value, tool: &str) -> bool {
+    tools.as_array().is_some_and(|list| {
+        list.iter()
+            .any(|item| item["name"] == tool && item["annotations"]["readOnlyHint"] == true)
+    })
+}
+
+/// Drop expired connected-tool cache entries.
+/// # Errors
+/// Returns database errors.
+pub async fn cleanup_cache(state: &AppState) -> ApiResult<()> {
+    state
+        .postgres
+        .execute_raw(statement(
+            "DELETE FROM mcp_cache WHERE expires_at<$1",
+            vec![now().into()],
+        ))
+        .await?;
+    Ok(())
+}
+
+/// Fetch a cached read-only tool result, if a live entry exists.
+async fn lookup_cache(
+    state: &AppState,
+    connection: Uuid,
+    tool: &str,
+    canonical: &str,
+) -> ApiResult<Option<Value>> {
+    Ok(state
+        .postgres
+        .query_one_raw(statement(
+            "SELECT result FROM mcp_cache WHERE connection_id=$1 AND tool=$2 AND args_hash=md5($3) AND expires_at>$4",
+            vec![
+                connection.into(),
+                tool.into(),
+                canonical.to_owned().into(),
+                now().into(),
+            ],
+        ))
+        .await?
+        .map(|row| row.try_get("", "result"))
+        .transpose()?)
+}
+
+/// Best-effort cache insert for small, successful read-only results.
+async fn store_cache(
+    state: &AppState,
+    connection: Uuid,
+    tool: &str,
+    canonical: &str,
+    result: &Value,
+    ttl_seconds: u64,
+    max_bytes: usize,
+) {
+    if result.get("isError") == Some(&Value::Bool(true)) || result.to_string().len() > max_bytes {
+        return;
+    }
+    let _ = state
+        .postgres
+        .execute_raw(statement(
+            "INSERT INTO mcp_cache(connection_id,tool,args_hash,result,expires_at) VALUES($1,$2,md5($3),$4,$5) ON CONFLICT (connection_id,tool,args_hash) DO UPDATE SET result=EXCLUDED.result,expires_at=EXCLUDED.expires_at",
+            vec![
+                connection.into(),
+                tool.into(),
+                canonical.to_owned().into(),
+                result.clone().into(),
+                (now() + i64::try_from(ttl_seconds).unwrap_or(60)).into(),
+            ],
+        ))
+        .await;
 }
 /// List owner-private connections or tool definitions.
 /// # Errors
@@ -90,28 +225,18 @@ pub async fn manage(state: &AppState, c: &Credential, name: &str, args: Value) -
             vec![c.wallet.clone().into()],
         ))
         .await?;
-        let row = txn
-            .query_one_raw(statement(
-                "SELECT count(*) AS count FROM mcp_connections WHERE owner=$1",
-                vec![c.wallet.clone().into()],
+        // Re-registering under an existing name reuses that connection: the
+        // tool snapshot refreshes and stale duplicates never accumulate.
+        if let Some(id) = find_connection_by_name(&txn, &c.wallet, label).await? {
+            txn.execute_raw(statement(
+                "UPDATE mcp_connections SET tools=$2,updated_at=$3 WHERE id=$1",
+                vec![id.into(), args["tools"].clone().into(), now().into()],
             ))
-            .await?
-            .ok_or_else(|| ApiError::unavailable("connection_count"))?;
-        if row.try_get::<i64>("", "count")? >= 8 {
-            return Err(ApiError::bad("mcp_connection_limit"));
+            .await?;
+            txn.commit().await?;
+            return Ok(json!({"id":id}));
         }
-        let id = Uuid::new_v4();
-        txn.execute_raw(statement(
-            "INSERT INTO mcp_connections VALUES($1,$2,$3,$4,$5)",
-            vec![
-                id.into(),
-                c.wallet.clone().into(),
-                label.into(),
-                args["tools"].clone().into(),
-                now().into(),
-            ],
-        ))
-        .await?;
+        let id = insert_connection(&txn, &c.wallet, label, &args["tools"]).await?;
         txn.commit().await?;
         return Ok(json!({"id":id}));
     }
@@ -201,6 +326,17 @@ pub async fn invoke(state: &AppState, c: &Credential, name: &str, args: Value) -
     {
         return Err(ApiError::bad("mcp_tool_offline_or_unknown"));
     }
+    let cache = state.settings.runtime.cache.clone();
+    let canonical = if cache.connected_tool_ttl_seconds > 0 && tool_is_read_only(&tools, tool) {
+        Some(canonical_args(&args).to_string())
+    } else {
+        None
+    };
+    if let Some(canonical) = &canonical
+        && let Some(cached) = lookup_cache(state, connection, tool, canonical).await?
+    {
+        return Ok(cached);
+    }
     let count = txn
         .query_one_raw(statement(
             "SELECT count(*) AS count FROM mcp_jobs WHERE connection_id=$1 AND expires_at>$2",
@@ -223,6 +359,17 @@ pub async fn invoke(state: &AppState, c: &Credential, name: &str, args: Value) -
     ))
     .await?;
     txn.commit().await?;
+    await_job_result(state, job, connection, tool, canonical.as_ref(), &cache).await
+}
+/// Wait for a claimed job exactly once, caching small read-only results.
+async fn await_job_result(
+    state: &AppState,
+    job: Uuid,
+    connection: Uuid,
+    tool: &str,
+    canonical: Option<&String>,
+    cache: &crate::runtime::Cache,
+) -> ApiResult<Value> {
     for _ in 0..120 {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         let row = state
@@ -234,6 +381,18 @@ pub async fn invoke(state: &AppState, c: &Credential, name: &str, args: Value) -
             .await?;
         if let Some(row) = row {
             if let Some(result) = row.try_get::<Option<Value>>("", "result")? {
+                if let Some(canonical) = canonical {
+                    store_cache(
+                        state,
+                        connection,
+                        tool,
+                        canonical,
+                        &result,
+                        cache.connected_tool_ttl_seconds,
+                        cache.connected_tool_max_bytes,
+                    )
+                    .await;
+                }
                 state
                     .postgres
                     .execute_raw(statement(
@@ -266,6 +425,24 @@ mod tests {
         ] {
             assert!(validate_tools(&value).is_err());
         }
+    }
+    #[test]
+    fn cache_keys_ignore_argument_order() {
+        let left = canonical_args(&json!({"b": 2, "a": {"y": [1], "x": 0}}));
+        let right = canonical_args(&json!({"a": {"x": 0, "y": [1]}, "b": 2}));
+        assert_eq!(left, right);
+    }
+    #[test]
+    fn cache_only_applies_to_read_only_tools() {
+        let tools = json!([
+            {"name": "search", "annotations": {"readOnlyHint": true}},
+            {"name": "write", "annotations": {"readOnlyHint": false}},
+            {"name": "legacy"}
+        ]);
+        assert!(tool_is_read_only(&tools, "search"));
+        assert!(!tool_is_read_only(&tools, "write"));
+        assert!(!tool_is_read_only(&tools, "legacy"));
+        assert!(!tool_is_read_only(&tools, "missing"));
     }
 }
 

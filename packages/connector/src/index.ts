@@ -171,12 +171,16 @@ process.on("SIGTERM", () => {
   running = false;
 });
 try {
+  const pollIntervalMs = Math.min(
+    10_000,
+    Math.max(100, Number(process.env.HIVE_POLL_MS ?? 1000) || 1000)
+  );
   while (running) {
     try {
       const { job } = await rpc("poll_mcp", { connection_id: connectionId });
       retryDelay = 1000;
       if (!job) {
-        await Bun.sleep(1000);
+        await Bun.sleep(pollIntervalMs);
         continue;
       }
       const claimed = job as {

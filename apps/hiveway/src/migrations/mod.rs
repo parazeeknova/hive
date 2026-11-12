@@ -18,6 +18,7 @@ mod m20261031_000014_publisher_activity;
 mod m20261031_000015_scaffold_capability;
 mod m20261101_000016_mcp_connections;
 mod m20261101_000017_mcp_artifacts;
+mod m20261112_000018_mcp_cache;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -40,6 +41,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261031_000015_scaffold_capability::Migration),
             Box::new(m20261101_000016_mcp_connections::Migration),
             Box::new(m20261101_000017_mcp_artifacts::Migration),
+            Box::new(m20261112_000018_mcp_cache::Migration),
         ]
     }
 }
