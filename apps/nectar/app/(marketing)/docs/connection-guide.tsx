@@ -101,8 +101,11 @@ export const ConnectionGuide = () => {
     }
   };
   return (
-    <div className="rounded-3xl border border-stone-200 bg-stone-50 p-5 sm:p-7">
-      <fieldset className="mb-7 flex flex-wrap gap-2" aria-label="MCP client">
+    <div className="flex min-w-0 flex-col gap-5 rounded-[var(--hive-radius)] bg-[#eeeee7] p-4 sm:p-7">
+      <fieldset
+        className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0"
+        aria-label="MCP client"
+      >
         {clients.map((client) => (
           <button
             key={client.id}
@@ -114,7 +117,7 @@ export const ConnectionGuide = () => {
             }}
             className={
               "cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.45] " +
-              `inline-flex items-center gap-2 rounded-full border px-4 py-3 text-sm transition-colors ${selected.id === client.id ? "border-stone-800 bg-white text-stone-950 shadow-sm" : "border-transparent text-stone-500 hover:bg-white"}`
+              `inline-flex min-h-[42px] items-center gap-2 rounded-full border-[1.5px] px-4 text-[15px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#24251f] ${selected.id === client.id ? "border-solid border-[#24251f] bg-[#fffefb] text-[#24251f]" : "border-dashed border-[#24251f]/35 text-[#3d4535] hover:border-[#24251f] hover:bg-[#fffefb]"}`
             }
           >
             <Image
@@ -129,24 +132,24 @@ export const ConnectionGuide = () => {
           </button>
         ))}
       </fieldset>
-      <p className="text-xs font-semibold tracking-wide text-stone-600">
-        HIVE MCP URL
-      </p>
-      <code className="mt-2 mb-5 block overflow-x-auto rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm">
-        {endpoint}
-      </code>
-      <p className="mb-5 text-sm leading-6 text-stone-500">
+      <div className="flex flex-col gap-2">
+        <p className="hive-text-4 text-[#727268]">HIVE MCP URL</p>
+        <code className="block overflow-x-auto rounded-xl bg-[#fffefb] px-4 py-3 font-mono text-[14px]">
+          {endpoint}
+        </code>
+      </div>
+      <p className="text-[15px] leading-relaxed text-[#3d4535]">
         Connect directly to Hive over HTTPS from your agent. Create an API key
         in Account settings → API keys, then set it as HIVE_API_KEY before
         launching your client. Requests authenticate with Authorization: Bearer
         YOUR_HIVE_API_KEY. Keep the key in your environment or private client
         config.
       </p>
-      <pre className="mb-5 overflow-x-auto rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm">
+      <pre className="m-0 overflow-x-auto rounded-xl bg-[#fffefb] px-4 py-3 font-mono text-[14px]">
         <code>export HIVE_API_KEY=&apos;YOUR_HIVE_API_KEY&apos;</code>
       </pre>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-sm font-medium text-stone-600">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="font-mono text-[14px] font-medium text-[#3d4535]">
           {selected.file}
         </span>
         <button
@@ -154,26 +157,28 @@ export const ConnectionGuide = () => {
           onClick={() => {
             void copy();
           }}
-          className="surface-dark cursor-pointer rounded-full px-4 py-2 text-xs text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] disabled:cursor-not-allowed disabled:opacity-[0.45]"
+          className="inline-flex min-h-[38px] cursor-pointer items-center rounded-full px-4 text-[14px] font-medium text-white shadow-[inset_0_1px_2px_rgb(255_255_255_/_0.2),_inset_0_-2px_4px_rgb(0_0_0_/_0.4),_inset_1px_0_3px_rgb(255_255_255_/_0.045)] transition-[filter] [background:radial-gradient(ellipse_at_50%_0%,_#ffffff0c,_transparent_70%)_padding-box,_linear-gradient(_180deg,_#333_0%,_#222_24%,_#151515_58%,_#101010_80%,_#1b1b1b_100%_)_padding-box,_linear-gradient(180deg,_#505050,_#171717_65%,_#080808)_border-box] [border:1px_solid_transparent] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#24251f] disabled:cursor-not-allowed disabled:opacity-[0.45]"
         >
           Copy config
         </button>
       </div>
       <pre
-        className="overflow-x-auto rounded-2xl bg-stone-900 p-5 text-xs leading-6 text-stone-100"
+        className="m-0 overflow-x-auto rounded-2xl bg-[#24251f] p-5 font-mono text-[13px] leading-6 text-[#fffefb]"
         aria-label={`${selected.name} MCP configuration`}
       >
         <code>{code}</code>
       </pre>
-      <output className="mt-3 block min-h-5 text-xs text-lime-800">
+      <output className="block text-[13px] text-[#3d4535] empty:hidden">
         {message}
       </output>
-      <p className="mt-2 text-sm leading-6 text-stone-500">{selected.note}</p>
+      <p className="text-[15px] leading-relaxed text-[#727268]">
+        {selected.note}
+      </p>
       <a
         href={selected.source}
         target="_blank"
         rel="noreferrer"
-        className="mt-4 inline-block text-sm underline underline-offset-4"
+        className="hive-link self-start text-[15px]"
       >
         Official {selected.name} setup ↗
       </a>

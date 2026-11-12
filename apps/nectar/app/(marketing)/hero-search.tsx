@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../components/icon";
 
 const prompts = [
+  "templr",
+  "Context7",
+  "Filesystem",
   "Repository stack",
-  "Dependency inventory",
-  "JSON echo",
-  "Repository workflow",
 ] as const;
 
 interface TypingFrame {
@@ -101,7 +101,6 @@ const HeroSearch = () => {
           required
           maxLength={200}
           autoComplete="off"
-          aria-describedby="hero-search-hint"
           value={query}
           onChange={(event) => {
             if (new TextEncoder().encode(event.target.value).length <= 200) {
@@ -121,12 +120,6 @@ const HeroSearch = () => {
           <Icon name="arrow" size={19} />
         </button>
       </form>
-      <p
-        id="hero-search-hint"
-        className="mt-4 text-center text-xs text-neutral-500"
-      >
-        Search capabilities by name or description.
-      </p>
     </search>
   );
 };

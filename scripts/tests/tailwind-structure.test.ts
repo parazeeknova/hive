@@ -3,7 +3,7 @@ import path from "node:path";
 
 const nectar = path.resolve(import.meta.dir, "../../apps/nectar");
 
-test("Nectar keeps only the shared Tailwind theme and animation stylesheet", async () => {
+test("Nectar keeps the shared Tailwind theme plus the scoped landing stylesheet", async () => {
   const files: string[] = [];
   for await (const file of new Bun.Glob("**/*.css").scan({
     cwd: nectar,
@@ -13,7 +13,11 @@ test("Nectar keeps only the shared Tailwind theme and animation stylesheet", asy
       files.push(file);
     }
   }
-  expect(files.toSorted()).toEqual(["app/globals.css"]);
+  // The landing page ships one scoped stylesheet for its scroll scenes.
+  expect(files.toSorted()).toEqual([
+    "app/(marketing)/landing.css",
+    "app/globals.css",
+  ]);
   const css = await Bun.file(path.join(nectar, "app/globals.css")).text();
   expect(css).toContain('@import "tailwindcss"');
   expect(css).not.toMatch(/@utility\s|\.(?:ws|scene|hive)-[\w-]+\s*[{:.]/u);

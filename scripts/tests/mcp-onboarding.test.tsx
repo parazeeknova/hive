@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { clients } from "../../apps/nectar/app/(marketing)/agent-clients";
 import Docs from "../../apps/nectar/app/(marketing)/docs/page";
-import { clients } from "../../apps/nectar/app/(marketing)/mcp-section";
 
 test("copied setup commands preserve credential references through the shell", async () => {
   const sample = "fixture-secret-that-must-not-enter-process-arguments";

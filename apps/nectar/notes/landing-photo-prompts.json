@@ -1,0 +1,62 @@
+[
+  {
+    "asset": "public/landing/workflow-find.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. One honeybee searching among a small cluster of white chamomile flowers. Bee on right, a pale softly blurred meadow behind. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/workflow-connect.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. Two real honeybees working on opposite sides of a single pale yellow flower, in a quiet meadow. Authentic small insects, botanical detail. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/workflow-run.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A real honeybee caught in flight just above a white daisy, wings subtly motion blurred, rich soft olive background. Crisp bee anatomy. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/workflow-share.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A real honeybee with visible golden pollen baskets on its hind legs on a small flowering clover. Soft cream and sage background. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/creator-build.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. An intimate natural close-up of fresh pale beeswax honeycomb, precisely built hexagonal cells with a single real honeybee at the edge. Soft sidelight, tactile wax. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/creator-publish.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A quiet documentary photograph of a weathered pale wooden beehive entrance, three small real honeybees arriving, in a softly out-of-focus meadow. No beekeeper. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/creator-earn.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A minimal macro photograph of one tiny drop of golden honey hanging from the lower edge of natural beeswax honeycomb. Warm cream background, subtle translucency, no jars or labels. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/creator-repeat.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. An understated editorial photograph of a flourishing chamomile and clover meadow, small white flowers and delicate grass stems at varied heights. Soft morning light, muted olive and cream. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/pill-thinking.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A real honeybee resting on a pale chamomile petal, close-up, with a softly blurred sage background. Fine anatomical detail. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/pill-tools.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. Natural pale gold beeswax hexagonal cells photographed close up, some open and some capped. Matte tactile texture, softly lit. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/pill-capability.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. Tiny golden grains of pollen on the center of a white daisy photographed in beautiful macro detail, muted warm tones. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  },
+  {
+    "asset": "public/landing/pill-next.webp",
+    "generator": "built-in image generation",
+    "prompt": "Use case: photorealistic-natural. Asset type: editorial website photograph for Hive. A simple new clover leaf and a white flower emerging from soft meadow grasses, diffused natural light, muted sage and cream. Visual direction: authentic quiet nature photography matching a real honeybee on chamomile hero, restrained warm cream, pale honey, muted olive, sage green, soft overcast light. Horizontal 3:2 composition with the subject toward the right and lower middle so text can sit on the left. Realistic insect size, fine organic detail, subtle film grain, natural depth of field. No fantasy, no toy bees, no 3D render, no neon, no glowing sparkles, no oversaturated orange sunset, no text, no watermarks."
+  }
+]
