@@ -159,7 +159,7 @@ async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
         app.clone(),
         "POST",
         "/v1/auth/verify",
-        json!({"challenge_id":Uuid::new_v4(),"signature":"f".repeat(140_000)}).to_string(),
+        json!({"challenge_id":Uuid::new_v4(),"signature":"f".repeat(hiveway::runtime::RuntimeConfig::load()?.http.body_bytes + 1)}).to_string(),
         &[],
     )
     .await?;

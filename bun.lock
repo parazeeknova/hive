@@ -21,11 +21,11 @@
     },
     "apps/hiveway": {
       "name": "@hive/hiveway",
-      "version": "0.0.56",
+      "version": "0.0.57",
     },
     "apps/nectar": {
       "name": "@hive/nectar",
-      "version": "0.0.56",
+      "version": "0.0.57",
       "dependencies": {
         "@opentelemetry/api": "^1.10.0",
         "@opentelemetry/exporter-logs-otlp-http": "^0.300.0",
@@ -50,7 +50,7 @@
     },
     "packages/connector": {
       "name": "@hive/connector",
-      "version": "0.0.56",
+      "version": "0.0.57",
       "dependencies": {
         "@modelcontextprotocol/client": "^2.4.0",
         "@modelcontextprotocol/server-filesystem": "^2.1.0",
@@ -58,7 +58,7 @@
     },
     "packages/local": {
       "name": "@hive/local",
-      "version": "0.0.56",
+      "version": "0.0.57",
       "dependencies": {
         "@modelcontextprotocol/client": "^2.4.0",
         "@openzeppelin/contracts": "^5.6.1",
