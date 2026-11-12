@@ -30,12 +30,7 @@ For a hosted private workspace, run one connector per account in a container wit
 
 ### Bundled private upstream: templr
 
-[templr](https://github.com/parazeeknova/templr) (private repo) serves 106
-single-file website templates and 19 demos as MCP tools over Streamable HTTP.
-It runs as a private Dokploy application in the hive environment — no public
-domain — reachable inside the hive network at
-`http://templr-vhzbnk:8080/mcp`. `packages/connector/examples/templr.http.json`
-is a ready-made trusted configuration for it.
+[templr](https://github.com/parazeeknova/templr) (private repo) serves 106 single-file website templates and 19 demos as MCP tools over Streamable HTTP. It runs as a private Dokploy application in the hive environment — no public domain — reachable inside the hive network at `http://templr-vhzbnk:8080/mcp`. `packages/connector/examples/templr.http.json` is a ready-made trusted configuration for it.
 
 Host it with the connector image on the same network:
 
@@ -49,14 +44,7 @@ docker run -d --name hive-connector-templr --network <hive-network> \
   hive-connector
 ```
 
-`/run/secrets/templr-connector.json` holds the example config (edit `keyFile`
-only if your key lives elsewhere); `/run/secrets/hive-key` holds your
-account's `hwa_…` invoke key. The connector registers the connection under
-your account, then `connect_mcp` exposes it as
-`external_<connection-id>_<tool>` tools. Publish a `runtime: "connected_mcp"`
-capability against the saved `connectionId` to share it through the catalog.
-Disconnecting or changing templr's tools requires re-registering (remove the
-saved `connectionId`, restart, save the new one).
+`/run/secrets/templr-connector.json` holds the example config (edit `keyFile` only if your key lives elsewhere); `/run/secrets/hive-key` holds your account's `hwa_…` invoke key. The connector registers the connection under your account, then `connect_mcp` exposes it as `external_<connection-id>_<tool>` tools. Publish a `runtime: "connected_mcp"` capability against the saved `connectionId` to share it through the catalog. Disconnecting or changing templr's tools requires re-registering (remove the saved `connectionId`, restart, save the new one).
 
 For stdio, replace `command`, `args` and optional `env` in trusted local configuration. Only explicitly provided environment overrides are passed alongside the SDK's minimal inherited environment. For HTTP, use `"transport": "http"`, `"url": "https://your-server.example/mcp"` and optional `headers`. Upstream secrets remain with the connector; Hive's key is never forwarded. There is no OAuth enrollment UI; complete any upstream authorization separately.
 
