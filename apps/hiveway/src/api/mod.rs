@@ -16,6 +16,10 @@ use tower_http::cors::CorsLayer;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/v1/account", get(account::get).post(account::save))
+        .route(
+            "/v1/connections",
+            get(crate::features::connections::api_list),
+        )
         .route("/v1/account/plan", get(account::plan::get))
         .route("/v1/account/balance", get(account::balance::get))
         .route(
@@ -93,6 +97,7 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
             header::HeaderName::from_static("mcp-protocol-version"),
             header::HeaderName::from_static("mcp-method"),
             header::HeaderName::from_static("mcp-name"),
+            header::HeaderName::from_static("x-hive-discovery"),
         ])
         .expose_headers([
             header::HeaderName::from_static("payment-required"),

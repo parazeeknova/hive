@@ -1,0 +1,140 @@
+[
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7001",
+    "slug": "templr",
+    "name": "templr",
+    "description": "Website design inspiration from a library of 106 templates and 19 demos across restaurants, cafes, shops, fashion, hotels, fitness, galleries, agencies, SaaS and local services. Search by business type, inspect real image previews, then download selected HTML and run it on your own computer with Hive Local. Includes template metadata and source files.",
+    "default_tool": "search_templates",
+    "tools": [
+      "search_templates",
+      "get_template",
+      "get_preview",
+      "read_template_file",
+      "search_demos",
+      "get_demo",
+      "read_demo_file",
+      "list_categories",
+      "get_index"
+    ],
+    "byok": false,
+    "guidance": "For website or landing-page ideas, inspiration, designs or previews, first search_templates with the business type. Present 3-5 real candidates with get_preview image blocks before generating new mockups. For clickable previews call the user's local-preview preview_templates tool: it downloads HTML to that computer and serves loopback URLs. Never present VPS localhost gallery links or 8b.com demo links as user-local previews. After the user chooses, read AGENTS.md and DESIGN.md, then index.html. If the local helper is unavailable, show images and explain how to enable Hive Local; do not claim a local server was started.",
+    "previews": [
+      {
+        "slug": "okapi",
+        "title": "Okapi Bakehouse · bakery",
+        "src": "/integrations/templr/okapi.webp"
+      },
+      {
+        "slug": "little-drum",
+        "title": "Little Drum · coffee roaster",
+        "src": "/integrations/templr/little-drum.webp"
+      },
+      {
+        "slug": "ostro",
+        "title": "Hotel Ostro · boutique hotel",
+        "src": "/integrations/templr/ostro.webp"
+      },
+      {
+        "slug": "murmur",
+        "title": "murmur · SaaS landing page",
+        "src": "/integrations/templr/murmur.webp"
+      },
+      {
+        "slug": "arcline",
+        "title": "Arcline · fitness",
+        "src": "/integrations/templr/arcline.webp"
+      },
+      {
+        "slug": "nocturna",
+        "title": "Nocturna · art gallery",
+        "src": "/integrations/templr/nocturna.webp"
+      },
+      {
+        "slug": "outre",
+        "title": "OUTRE · fashion brand",
+        "src": "/integrations/templr/outre.webp"
+      },
+      {
+        "slug": "scrawl",
+        "title": "SCRAWL · streetwear",
+        "src": "/integrations/templr/scrawl.webp"
+      }
+    ],
+    "legacy_ids": [
+      "45913cc5-ed0f-4850-9af1-20a92bbfe7c3",
+      "36b4cd50-0031-4099-8180-d2373e9f1146",
+      "0254cd86-7113-41bb-8466-7c196b6b63cc"
+    ],
+    "shared_owner": "github:117758952"
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7002",
+    "slug": "context7",
+    "name": "Context7",
+    "description": "Current library, framework, SDK and API documentation and code examples. Resolve a library ID, then query its documentation before relying on remembered APIs. Connect your own Context7 key with Hive Local; upstream limits belong to your account.",
+    "default_tool": "query-docs",
+    "tools": ["resolve-library-id", "query-docs"],
+    "byok": true,
+    "guidance": "For library/framework/SDK/API setup, usage, migration or version-specific questions, resolve-library-id first, then query-docs for the specific topic. Skip resolution only when an exact /org/project library ID is already provided. Keep queries focused and never put credentials or private source into documentation queries.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": null
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7003",
+    "slug": "tinyfish",
+    "name": "Tinyfish",
+    "description": "Remote web browsing, research and browser automation using your own Tinyfish account. Discover the connected server's current tools and their schemas before use. Your upstream usage and charges stay with your Tinyfish key.",
+    "default_tool": "search",
+    "tools": [
+      "search",
+      "fetch_content",
+      "create_monitor",
+      "list_monitors",
+      "get_monitor",
+      "pause_monitor",
+      "resume_monitor",
+      "update_monitor",
+      "run_monitor",
+      "cancel_monitor",
+      "run_deep_research_async",
+      "get_deep_research",
+      "cancel_deep_research",
+      "list_deep_research",
+      "create_dataset",
+      "plan_dataset",
+      "get_dataset",
+      "get_dataset_rows",
+      "list_datasets",
+      "populate_dataset",
+      "cancel_dataset_run",
+      "delete_dataset",
+      "run_deep_research",
+      "guide_next_step",
+      "run_web_automation",
+      "run_web_automation_async",
+      "create_browser_session",
+      "list_profiles",
+      "create_profile",
+      "start_profile_setup_session",
+      "save_profile_setup_session",
+      "cancel_profile_setup_session",
+      "get_run",
+      "list_runs",
+      "cancel_run",
+      "batch_status",
+      "batch_cancel",
+      "get_search_usage",
+      "list_browser_sessions",
+      "close_browser_session",
+      "list_fetch_usage",
+      "get_wallet",
+      "top_up_wallet"
+    ],
+    "byok": true,
+    "guidance": "Use Tinyfish when a task requires remote browsing or web interaction and its actual advertised tools fit. Inspect the current input schema. Respect the user's instruction about browsers and approvals; never submit purchases, messages or other consequential actions without authorization. Do not assume a tool name or invent a browser result.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": null
+  }
+]

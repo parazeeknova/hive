@@ -23,6 +23,8 @@ pub struct Publisher {
     pub username: Option<String>,
     pub avatar: Option<String>,
     pub verified: bool,
+    /// Published and maintained by Hive itself (operator registry, never user metadata).
+    pub official: bool,
     pub total_tools: i64,
 }
 #[derive(Serialize, utoipa::ToSchema)]
@@ -30,6 +32,7 @@ pub struct Metadata {
     pub capability_id: Uuid,
     pub invocation_count: i64,
     pub publisher: Publisher,
+    pub integration: Option<crate::features::integrations::Integration>,
 }
 /// Load publisher profiles and aggregate counts for up to 100 capability IDs.
 /// # Errors
@@ -90,16 +93,38 @@ pub async fn get(
             .into_iter()
             .map(|cap| {
                 let profile = profiles.get(&cap.creator_wallet);
+                let integration =
+                    crate::features::integrations::for_capability(cap.id, &cap.creator_wallet);
+                let official = integration.is_some();
                 Metadata {
                     capability_id: cap.id,
                     invocation_count: *counts.get(&cap.id).unwrap_or(&0),
                     publisher: Publisher {
-                        name: profile.map(|p| p.name.clone()),
-                        username: profile.map(|p| p.username.clone()),
-                        avatar: profile.map(|p| p.avatar.clone()),
-                        verified: profile.is_some_and(|p| p.publisher_verified),
-                        total_tools: *totals.get(&cap.creator_wallet).unwrap_or(&0),
+                        name: if official {
+                            Some("Hive".into())
+                        } else {
+                            profile.map(|p| p.name.clone())
+                        },
+                        username: if official {
+                            Some("hive".into())
+                        } else {
+                            profile.map(|p| p.username.clone())
+                        },
+                        avatar: if official {
+                            Some(crate::features::integrations::HIVE_AVATAR.into())
+                        } else {
+                            profile.map(|p| p.avatar.clone())
+                        },
+                        verified: official || profile.is_some_and(|p| p.publisher_verified),
+                        official,
+                        total_tools: if official {
+                            i64::try_from(crate::features::integrations::registry().len())
+                                .unwrap_or(0)
+                        } else {
+                            *totals.get(&cap.creator_wallet).unwrap_or(&0)
+                        },
                     },
+                    integration,
                 }
             })
             .collect(),

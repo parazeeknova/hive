@@ -183,6 +183,7 @@ console.log(
 );
 let running = true;
 let retryDelay = 1000;
+let lastUpstreamCheck = Date.now();
 process.on("SIGINT", () => {
   running = false;
 });
@@ -209,6 +210,16 @@ try {
       };
       let result;
       try {
+        // Check an idle upstream before executing a new call. Repairing a failed
+        // ping never repeats the user's operation, including mutations.
+        if (Date.now() - lastUpstreamCheck > 30_000) {
+          try {
+            await client.ping({ timeout: 5000 });
+          } catch {
+            await repairUpstream();
+          }
+          lastUpstreamCheck = Date.now();
+        }
         if (!allowed.has(claimed.request.name)) {
           throw new Error("Tool not in local allowlist");
         }

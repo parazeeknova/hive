@@ -15,6 +15,7 @@ use uuid::Uuid;
 struct Binding {
     connection_id: Uuid,
     arguments: Value,
+    tool: Option<String>,
 }
 /// Validate explicit connection binding.
 /// # Errors
@@ -77,9 +78,17 @@ pub async fn execute(
     for (index, (name, binding)) in names.iter().zip(&bindings).enumerate() {
         validate(binding)?;
         let binding: Binding = serde_json::from_value(binding.clone())?;
-        let name = name
+        let default_name = name
             .as_str()
             .ok_or_else(|| ApiError::bad("invalid_mcp_tool_name"))?;
+        let name = binding.tool.as_deref().unwrap_or(default_name);
+        if name != default_name
+            && !definition["tools"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool == name))
+        {
+            return Err(ApiError::bad("mcp_tool_not_in_capability"));
+        }
         tool_name(name)?;
         let inserted=state.postgres.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,"INSERT INTO mcp_artifact_attempts(invocation_id,step) VALUES($1,$2) ON CONFLICT DO NOTHING",vec![invocation_id.into(),i32::try_from(index).map_err(|_|ApiError::bad("invalid_mcp_step"))?.into()])).await?;
         if inserted.rows_affected() != 1 {

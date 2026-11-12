@@ -12,3 +12,5 @@ pub mod waggle;
 pub mod wax;
 
 pub mod connections;
+
+pub mod integrations;
