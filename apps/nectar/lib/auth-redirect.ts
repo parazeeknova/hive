@@ -1,4 +1,6 @@
-/** Only allow returning to the dashboard; never redirect OAuth to an external URL. */
+/** In-app pages sign-in may return to: the dashboard and MCP OAuth consent. */
+const RETURN_PATHS = new Set(["/dashboard", "/oauth/authorize"]);
+/** Only allow returning to known in-app pages; never redirect sign-in to an external URL. */
 export const dashboardReturnPath = (value: unknown): string => {
   if (typeof value !== "string" || value.length > 2048) {
     return "/dashboard";
@@ -7,8 +9,9 @@ export const dashboardReturnPath = (value: unknown): string => {
     const url = new URL(value, "https://hive.invalid");
     if (
       !value.startsWith("/") ||
+      value.startsWith("//") ||
       url.origin !== "https://hive.invalid" ||
-      url.pathname !== "/dashboard"
+      !RETURN_PATHS.has(url.pathname)
     ) {
       return "/dashboard";
     }

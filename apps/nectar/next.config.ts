@@ -11,6 +11,15 @@ const nextConfig: NextConfig = {
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
         source: "/api/:path*",
       },
+      {
+        // OAuth consent must never render inside another site's frame.
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+        source: "/oauth/:path*",
+      },
     ]),
   output: "standalone",
   outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
