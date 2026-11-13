@@ -340,7 +340,7 @@ pub(super) async fn search(
         "semantic": state.settings.embeddings.is_some(),
         "workflows": guidance,
         "call_with": "call_tool",
-        "connection_setup": "If the integration has no connected tools, start Hive Local with your own provider keys. Catalog artifacts bind to your own connection_id; no other user's credentials are shared.",
+        "connection_setup": "If the integration has no connected tools, the user can save their own provider API key in the Hive dashboard (Integrations) or run Hive Local with it. Catalog artifacts bind to your own connection_id; no other user's credentials are shared.",
         "empty_results": "Refine the query once; if no tool fits, continue with the user's task normally.",
     }))
 }

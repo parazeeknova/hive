@@ -42,6 +42,8 @@ pub struct Features {
     pub semantic_tool_search: bool,
     pub code_index: bool,
     pub repository_memory: bool,
+    /// Accounts can save provider API keys in the dashboard.
+    pub provider_keys: bool,
 }
 /// Limits connectors, Hive Local and the code-index CLI read instead of hardcoding.
 #[derive(Serialize, ToSchema)]
@@ -108,6 +110,7 @@ pub async fn configuration(State(state): State<AppState>) -> Json<PublicConfig> 
             semantic_tool_search: settings.embeddings.is_some(),
             code_index: true,
             repository_memory: true,
+            provider_keys: settings.secrets_key.is_some(),
         },
         connectors: ConnectorConfig {
             argument_bytes: settings.runtime.connectors.argument_bytes,

@@ -23,6 +23,36 @@ pub struct RuntimeConfig {
     pub oauth: OAuth,
     pub code_index: CodeIndex,
     pub memory: Memory,
+    pub providers: Providers,
+}
+/// Bring-your-own-key providers that Hiveway calls on an account's behalf.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Providers {
+    /// Concurrent upstream calls per process across all accounts.
+    pub concurrency: usize,
+    /// Budget for validating a key (initialize plus tools/list).
+    pub validation_timeout_seconds: u64,
+    /// Reuse an upstream MCP session for this long before re-initializing.
+    pub session_ttl_seconds: u64,
+    pub sessions_cached: usize,
+    pub key_bytes: usize,
+    /// Connection-level retries before a request is sent; never after.
+    pub connect_retries: u32,
+}
+impl Providers {
+    fn validate(&self) -> anyhow::Result<()> {
+        if !(1..=4096).contains(&self.concurrency)
+            || !(1..=120).contains(&self.validation_timeout_seconds)
+            || !(10..=86_400).contains(&self.session_ttl_seconds)
+            || !(1..=100_000).contains(&self.sessions_cached)
+            || !(16..=8192).contains(&self.key_bytes)
+            || self.connect_retries > 5
+        {
+            bail!("invalid provider limits");
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -474,6 +504,7 @@ impl RuntimeConfig {
         self.oauth.validate()?;
         self.code_index.validate(h)?;
         self.memory.validate()?;
+        self.providers.validate()?;
         if self.payment.decimals != 6
             || !(1..=86_400).contains(&self.payment.reorg_margin_seconds)
             || self.payment.chain_id == 0

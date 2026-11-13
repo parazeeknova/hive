@@ -5,6 +5,11 @@ pub struct Settings {
     pub builder: Option<crate::features::builder::config::Config>,
     /// Optional semantic ranking for `search_tools`.
     pub embeddings: Option<crate::features::hiveway::embeddings::Config>,
+    /// `HIVE_SECRETS_KEY`: 32-byte key that encrypts provider keys saved in the
+    /// dashboard. Without it, dashboard provider keys are disabled.
+    pub secrets_key: Option<[u8; 32]>,
+    /// `HIVE_PROVIDER_URL_<SLUG>` overrides for published provider endpoints.
+    pub provider_urls: std::collections::HashMap<String, String>,
     pub runtime: crate::runtime::RuntimeConfig,
     pub public_url: String,
     pub auth_domain: String,
@@ -44,6 +49,8 @@ impl Settings {
         Ok(Self {
             builder: crate::features::builder::config::Config::load()?,
             embeddings: crate::features::hiveway::embeddings::Config::load()?,
+            secrets_key: secrets_key()?,
+            provider_urls: provider_urls()?,
             public_url,
             auth_domain,
             auth_uri,
@@ -69,6 +76,45 @@ impl Settings {
             runtime,
         })
     }
+}
+/// Parse `HIVE_SECRETS_KEY` as 64 hex characters or standard base64 of 32 bytes.
+fn secrets_key() -> anyhow::Result<Option<[u8; 32]>> {
+    use base64::Engine;
+    let Some(raw) = env::var("HIVE_SECRETS_KEY")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let raw = raw.trim();
+    let bytes = if raw.len() == 64 && raw.bytes().all(|b| b.is_ascii_hexdigit()) {
+        hex::decode(raw)?
+    } else {
+        base64::engine::general_purpose::STANDARD
+            .decode(raw)
+            .context("HIVE_SECRETS_KEY must be 64 hex characters or base64")?
+    };
+    let key: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("HIVE_SECRETS_KEY must encode exactly 32 bytes"))?;
+    if key.iter().all(|b| *b == 0) {
+        bail!("HIVE_SECRETS_KEY must not be all zeros");
+    }
+    Ok(Some(key))
+}
+/// `HIVE_PROVIDER_URL_<SLUG>` overrides, for staging or self-hosted upstreams.
+fn provider_urls() -> anyhow::Result<std::collections::HashMap<String, String>> {
+    let mut urls = std::collections::HashMap::new();
+    for item in crate::features::integrations::registry() {
+        let key = format!(
+            "HIVE_PROVIDER_URL_{}",
+            item.slug.to_ascii_uppercase().replace('-', "_")
+        );
+        if let Some(value) = env::var(key).ok().filter(|v| !v.is_empty()) {
+            urls.insert(item.slug.clone(), validate_url(&value)?);
+        }
+    }
+    Ok(urls)
 }
 fn validate_url(value: &str) -> anyhow::Result<String> {
     let url = reqwest::Url::parse(value).context("invalid service URL")?;

@@ -17,6 +17,8 @@ mod catalog;
 mod dodo;
 #[path = "security/free_publishing.rs"]
 mod free_publishing;
+#[path = "security/providers.rs"]
+mod providers;
 #[path = "security/recovery.rs"]
 mod recovery;
 #[path = "security/refunds.rs"]
@@ -326,8 +328,13 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     let payment_provider = provider.clone();
     let session_provider = provider.clone();
     settings.rpc_url = settings.facilitator_url.clone();
+    settings.secrets_key = Some([7; 32]);
+    settings.provider_urls.insert(
+        "context7".into(),
+        format!("{}/provider/mcp", settings.facilitator_url),
+    );
     let facilitator = tokio::spawn(async move {
-        let router = Router::new().route("/chat/completions", axum::routing::post(builder::provider)).merge(refunds::router(server_refunds))
+        let router = Router::new().route("/chat/completions", axum::routing::post(builder::provider)).merge(refunds::router(server_refunds)).merge(providers::router(providers::fixture()))
             .route("/payments/{id}", axum::routing::get(dodo::payment).with_state(payment_provider))
             .route("/checkouts/{id}", axum::routing::get(dodo::session).with_state(session_provider))
             .route("/", axum::routing::post(recovery::rpc).with_state(fixture_chain))
@@ -689,6 +696,7 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
     );
     free_publishing::exercise(app.clone(), &bearer, state).await?;
     agent_platform::exercise(app.clone(), &bearer, headers, state).await?;
+    providers::exercise(&app, &bearer, headers, &providers::fixture()).await?;
     Box::pin(builder::exercise(app.clone(), state, &bearer)).await?;
     free_agent_invocation(app.clone(), state, &bearer).await?;
     let (status, _) = attack(

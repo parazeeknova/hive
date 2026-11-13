@@ -9,6 +9,7 @@ pub mod identity;
 pub mod memory;
 pub mod oauth;
 pub mod pollen;
+pub mod providers;
 pub mod realtime;
 pub mod scaffold;
 pub mod scout;

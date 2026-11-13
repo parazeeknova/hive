@@ -1,7 +1,9 @@
 pub mod config;
 mod guard;
 use crate::{
-    features::{account, builder, comb, hiveway, identity, oauth, pollen, scout, waggle, wax},
+    features::{
+        account, builder, comb, hiveway, identity, oauth, pollen, providers, scout, waggle, wax,
+    },
     state::AppState,
 };
 use axum::{
@@ -50,6 +52,15 @@ pub fn router() -> Router<AppState> {
         .route("/oauth/revoke", post(oauth::revoke))
         .route("/v1/oauth/authorize", post(oauth::authorize))
         .route("/v1/account/oauth/grants", get(oauth::grants))
+        .route("/v1/account/providers", get(providers::list))
+        .route(
+            "/v1/account/providers/{slug}",
+            axum::routing::put(providers::save).delete(providers::remove),
+        )
+        .route(
+            "/v1/account/providers/{slug}/refresh",
+            post(providers::refresh),
+        )
         .route(
             "/v1/account/oauth/grants/{id}/revoke",
             post(oauth::revoke_owned_grant),
@@ -112,7 +123,13 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
     });
     Ok(CorsLayer::new()
         .allow_origin(allow)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             header::HeaderName::from_static("x-hive-model"),
             header::HeaderName::from_static("x-hive-agent"),

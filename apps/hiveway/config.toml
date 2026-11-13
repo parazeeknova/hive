@@ -183,3 +183,12 @@ artifacts_per_wallet = 100
 json_depth = 16
 json_nodes = 4096
 collection_items = 256
+
+[providers]
+# Upstream MCP calls Hiveway makes with keys saved in the dashboard.
+concurrency = 64
+validation_timeout_seconds = 15
+session_ttl_seconds = 600
+sessions_cached = 4096
+key_bytes = 1024
+connect_retries = 2

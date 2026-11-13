@@ -587,7 +587,7 @@ async fn claim(state: &AppState, owner: &str, ids: &[Uuid]) -> ApiResult<Option<
     let lease = Uuid::new_v4();
     values.push(lease.into());
     let row = state.postgres.query_one_raw(statement(&format!(
-        "UPDATE mcp_jobs SET lease=${lease_slot}, status='working', updated_at=${at} WHERE id=(SELECT j.id FROM mcp_jobs j JOIN mcp_connections c ON c.id=j.connection_id WHERE c.owner=$1 AND j.connection_id IN ({slots}) AND j.lease IS NULL AND j.status='queued' AND j.claim_expires_at>${at} ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,connection_id,method,request,expires_at"
+        "UPDATE mcp_jobs SET lease=${lease_slot}, status='working', updated_at=${at} WHERE id=(SELECT j.id FROM mcp_jobs j JOIN mcp_connections c ON c.id=j.connection_id WHERE c.owner=$1 AND NOT ('hosted'=ANY(c.features)) AND j.connection_id IN ({slots}) AND j.lease IS NULL AND j.status='queued' AND j.claim_expires_at>${at} ORDER BY j.created_at FOR UPDATE OF j SKIP LOCKED LIMIT 1) RETURNING id,connection_id,method,request,expires_at"
     ), values)).await?;
     let Some(row) = row else { return Ok(None) };
     let id: Uuid = row.try_get("", "id")?;
