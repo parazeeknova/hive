@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Icon } from "../../components/icon";
 import { errorMessage, hiveway } from "../../lib/hiveway";
 import type { McpIntegration } from "../../lib/hiveway";
+import { ProviderKey } from "./account-provider-keys";
 
 interface Connection {
   id: string;
@@ -76,13 +77,19 @@ export const IntegrationPanel = ({
         </p>
         <p className="mt-1">
           {integration.byok
-            ? "Use your own upstream API key. Your usage stays with your provider account; Hive does not share another user's credentials."
+            ? "Use your own upstream API key, saved below or through Hive Local. Your usage stays with your provider account; Hive does not share another user's credentials."
             : "Search real templates, compare image previews, then choose the design to build. No setup or API key is needed."}
         </p>
         {connections.error && (
           <p role="alert">{errorMessage(connections.error)}</p>
         )}
       </div>
+      {integration.byok && (
+        <div>
+          <h3 className="mb-2 font-semibold text-[#39482f]">Your API key</h3>
+          <ProviderKey slug={integration.slug} />
+        </div>
+      )}
       {integration.previews.length > 0 && (
         <div>
           <h3 className="mb-2 font-semibold text-[#39482f]">

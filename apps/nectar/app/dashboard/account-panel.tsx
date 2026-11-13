@@ -19,6 +19,7 @@ import {
 import type { Credential, RegistryCapability } from "../../lib/hiveway";
 import ApiKeys from "./account-api-keys";
 import { AccountBalance } from "./account-payments";
+import ProviderKeys from "./account-provider-keys";
 import CreatorTools from "./creator-tools";
 import HostedBuilder from "./hosted-builder";
 import { PublisherSummary } from "./publisher";
@@ -501,7 +502,12 @@ const AccountPanel = ({
         tabIndex={0}
         hidden={tab !== "api-keys"}
       >
-        {tab === "api-keys" && <ApiKeys />}
+        {tab === "api-keys" && (
+          <>
+            <ApiKeys />
+            <ProviderKeys />
+          </>
+        )}
       </div>
       <div
         id="account-panel-profile"

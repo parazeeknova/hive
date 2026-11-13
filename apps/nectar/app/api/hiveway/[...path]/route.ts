@@ -51,7 +51,9 @@ const proxy = async (
       headers,
       method: request.method,
       signal: AbortSignal.timeout(180_000),
-      ...(request.method === "GET" ? {} : { body: await request.text() }),
+      ...(request.method === "GET" || request.method === "DELETE"
+        ? {}
+        : { body: await request.text() }),
     }
   );
   return new NextResponse(response.body, {
@@ -63,4 +65,4 @@ const proxy = async (
     status: response.status,
   });
 };
-export { proxy as GET, proxy as POST };
+export { proxy as DELETE, proxy as GET, proxy as POST, proxy as PUT };
