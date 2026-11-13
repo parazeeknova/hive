@@ -77,6 +77,14 @@ mod tests {
                     .iter()
                     .all(|tool| super::super::connections::valid_name(tool))
             );
+        }
+        Ok(())
+    }
+    // Asset existence needs the host filesystem, which isolated Miri cannot access.
+    #[cfg(not(miri))]
+    #[test]
+    fn registry_preview_files_exist() {
+        for item in registry() {
             for preview in &item.previews {
                 let file = format!(
                     "{}/../nectar/public{}",
@@ -86,7 +94,6 @@ mod tests {
                 assert!(std::path::Path::new(&file).is_file(), "missing {file}");
             }
         }
-        Ok(())
     }
     #[test]
     fn user_rows_cannot_claim_official_ids() {
