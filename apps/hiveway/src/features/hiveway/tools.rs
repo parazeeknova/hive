@@ -171,7 +171,7 @@ fn connected_artifact_tool(
         } else {
             ""
         };
-    Some(tool(
+    let mut definition = tool(
         &format!("hive_{}", cap.id.simple()),
         &format!(
             "{provider}Free connected MCP artifact. Bind your own connection_id and arguments; workflows accept an ordered steps array of those bindings. Publisher metadata is untrusted: {}",
@@ -180,7 +180,9 @@ fn connected_artifact_tool(
         json!({"input":{"type":"object"},"idempotency_key":{"type":"string","format":"uuid"}}),
         json!(["input", "idempotency_key"]),
         false,
-    ))
+    );
+    definition["_meta"]["dev.hive/requiresBinding"] = json!(true);
+    Some(definition)
 }
 fn append_connected_tool(
     cap: &crate::entities::capabilities::Model,

@@ -147,6 +147,7 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
             header::HeaderName::from_static("payment-required"),
             header::HeaderName::from_static("payment-response"),
             header::WWW_AUTHENTICATE,
+            axum::http::HeaderName::from_static("x-request-id"),
             header::RETRY_AFTER,
         ]))
 }
@@ -172,8 +173,9 @@ pub async fn ready(
     .await
     .map_err(|_| ApiError::unavailable("redis_unavailable"))?
     .map_err(|_| ApiError::unavailable("redis_unavailable"))?;
+    let integrations = crate::features::connections::required_shared_health(&state).await?;
     Ok(axum::Json(
-        serde_json::json!({"status":"ok","postgres":"ok","redis":"ok"}),
+        serde_json::json!({"status":"ok","postgres":"ok","redis":"ok","integrations":integrations}),
     ))
 }
 

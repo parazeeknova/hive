@@ -27,6 +27,7 @@ use std::{
     },
     time::Duration,
 };
+use tracing::Instrument;
 use uuid::Uuid;
 
 fn run_key(id: Uuid) -> String {
@@ -180,6 +181,9 @@ impl Exec {
         let mut headers = self.headers.clone();
         if let Ok(value) = HeaderValue::from_str(&(depth(&self.headers) + 1).to_string()) {
             headers.insert(super::super::DEPTH_HEADER, value);
+        }
+        if let Ok(value) = HeaderValue::from_str(&self.budget.run.to_string()) {
+            headers.insert(crate::features::tool_activity::RUN_HEADER, value);
         }
         let wait = self.wait();
         let outcome = tokio::time::timeout(
@@ -653,7 +657,7 @@ pub async fn start(state: &AppState, start: Start<'_>) -> ApiResult<Value> {
                 .await;
         }
         realtime::announce(&exec.state, &[run_key(id)]).await;
-    });
+    }.in_current_span());
     wait(state, &start.credential.wallet, id, start.wait).await
 }
 fn limits_of(state: &AppState) -> &crate::runtime::Workflows {

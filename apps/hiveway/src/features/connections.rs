@@ -625,13 +625,23 @@ async fn resolve_alias(state: &AppState, c: &Credential, suffix: &str) -> ApiRes
         .ok_or_else(ApiError::forbidden)?;
     let connection = find_connection_by_name(&state.postgres, &owner, label)
         .await?
-        .ok_or_else(|| ApiError::unavailable("shared_integration_offline"))?;
+        .ok_or_else(|| shared_offline(integration))?;
     Ok(Target {
         connection,
         owner,
         tool: tool.to_owned(),
         shared: Some(integration),
     })
+}
+fn shared_offline(integration: &Integration) -> ApiError {
+    ApiError {
+        status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        code: "shared_integration_offline",
+        detail: Some(format!(
+            "{} is unavailable on this deployment. The operator must reconnect its isolated shared helper. You can alternatively enable {} in your own Hive Local worker.",
+            integration.name, integration.slug
+        )),
+    }
 }
 /// No connection serves `label` for this caller; explain how to add one.
 fn not_connected(label: &str) -> ApiError {
@@ -751,7 +761,10 @@ pub async fn invoke_with(
             .as_array()
             .is_some_and(|ts| ts.iter().any(|t| t["name"] == tool))
     {
-        return Err(ApiError::bad("mcp_tool_offline_or_unknown"));
+        return Err(target.shared.map_or_else(
+            || ApiError::bad("mcp_tool_offline_or_unknown"),
+            shared_offline,
+        ));
     }
     let read_only = cache::tool_is_read_only(&tools, tool);
     if target.shared.is_some() && !read_only {
@@ -900,6 +913,55 @@ pub async fn cleanup(state: &AppState) -> ApiResult<()> {
     }
     Ok(())
 }
+/// Enforce explicitly required shared services for release readiness.
+/// # Errors
+/// Returns database failures or an unavailable error when a required worker is offline.
+pub async fn required_shared_health(state: &AppState) -> ApiResult<Vec<Value>> {
+    let statuses = shared_health(state).await?;
+    if state
+        .settings
+        .required_shared_integrations
+        .iter()
+        .any(|name| {
+            !statuses
+                .iter()
+                .any(|item| item["name"] == *name && item["online"] == true)
+        })
+    {
+        return Err(ApiError::unavailable("required_shared_integration_offline"));
+    }
+    Ok(statuses)
+}
+
+/// Public deployment health for configured shared services; never includes owners or credentials.
+/// # Errors
+/// Returns database failures.
+pub async fn shared_health(state: &AppState) -> ApiResult<Vec<Value>> {
+    let mut values = Vec::new();
+    for integration in crate::features::integrations::registry() {
+        let Some(owner) = &integration.shared_owner else {
+            continue;
+        };
+        let row = state
+            .postgres
+            .query_one_raw(statement(
+                "SELECT tools,updated_at FROM mcp_connections WHERE owner=$1 AND name=$2",
+                vec![owner.clone().into(), integration.slug.clone().into()],
+            ))
+            .await?;
+        let online = if let Some(row) = row {
+            let tools: Value = row.try_get("", "tools")?;
+            let updated: i64 = row.try_get("", "updated_at")?;
+            now() - updated <= limits(state).online_window_seconds
+                && !shared_tools(integration, &tools).is_empty()
+        } else {
+            false
+        };
+        values.push(json!({"name":integration.slug,"online":online}));
+    }
+    Ok(values)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

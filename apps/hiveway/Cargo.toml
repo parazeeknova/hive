@@ -12,6 +12,7 @@ axum = { version = "^0.8.9", default-features = false, features = [
   "query",
   "tokio",
   "json",
+  "matched-path",
 ] }
 fred = { version = "^10.1.0", default-features = false, features = [
   "i-keys",

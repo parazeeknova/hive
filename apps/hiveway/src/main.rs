@@ -33,11 +33,16 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(
         service = "hiveway",
         address = %config.bind_address,
+        provider_key_storage = state.settings.secrets_key.is_some(),
+        semantic_discovery = state.settings.embeddings.is_some(),
+        required_shared_integrations = ?state.settings.required_shared_integrations,
         "Hiveway ready"
     );
     let cors = hiveway::api::cors(&state.settings.auth_uri)?;
     let (router, drain) = hiveway::api::protect(
-        hiveway::observe(hiveway::router().merge(hiveway::api::router())).with_state(state.clone()),
+        hiveway::router()
+            .merge(hiveway::api::router())
+            .with_state(state.clone()),
         state.clone(),
     );
     let (stop_worker, worker_shutdown) = tokio::sync::oneshot::channel();
@@ -150,6 +155,9 @@ async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Re
             biased;
             _ = &mut shutdown => break,
             _ = interval.tick() => {},
+        }
+        if let Err(error) = hiveway::features::tool_activity::cleanup(&state).await {
+            tracing::error!(error = error.code, "MCP activity reconciliation failed");
         }
         // Shutdown is observed between ticks so financial recovery is not cancelled midway.
         if let Err(error) = hiveway::features::pollen::worker::tick(&state).await {

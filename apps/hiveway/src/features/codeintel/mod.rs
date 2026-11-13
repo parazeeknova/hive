@@ -138,10 +138,12 @@ async fn snapshot(
             .await?
     };
     let row = row.ok_or_else(|| {
-        ApiError::new(
+        let mut error = ApiError::new(
             StatusCode::NOT_FOUND,
             "no_code_index_for_repository_run_sync_code_index",
-        )
+        );
+        error.detail = Some("This account has no indexed snapshot for the repository. Run Hive Local's sync_code_index from an approved checkout, or use packages/connector/src/code-index.ts with a code:index credential; then retry.".to_owned());
+        error
     })?;
     Ok((
         repo,

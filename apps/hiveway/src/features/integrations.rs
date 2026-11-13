@@ -29,6 +29,9 @@ pub struct Integration {
     /// Entry-point tools that `search_tools` should rank first for this provider.
     #[serde(default)]
     pub search_tools: Vec<String>,
+    /// Intent vocabulary curated by the operator, applied only to entry-point tools.
+    #[serde(default)]
+    pub discovery_keywords: Vec<String>,
     /// Whether cached shared results may be reused across callers (`public`)
     /// or are partitioned per caller (`caller`, the safe default).
     #[serde(default)]
