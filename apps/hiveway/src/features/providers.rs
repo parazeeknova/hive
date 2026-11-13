@@ -434,8 +434,20 @@ async fn call_upstream(
     let limit = state.settings.runtime.connectors.result_bytes * 2;
     let cache_key = (owner.to_owned(), provider.integration.slug.clone());
     let ttl = Duration::from_secs(limits.session_ttl_seconds);
-    let mut expired_once = false;
+    // Concurrent calls share one session, so a single expiry can hit many of
+    // them at once and a renewed session can expire again; each retry is safe
+    // because the provider refused the request before executing it.
+    let mut expired = 0;
     let mut attempt = 0;
+    // Forget the cached session only if it is still the one that failed, so a
+    // session another call just created is kept.
+    let forget = |failed: &Option<String>| {
+        if let Ok(mut map) = sessions().lock()
+            && map.get(&cache_key).is_some_and(|s| &s.id == failed)
+        {
+            map.remove(&cache_key);
+        }
+    };
     loop {
         let cached = sessions().lock().ok().and_then(|map| {
             map.get(&cache_key)
@@ -487,12 +499,9 @@ async fn call_upstream(
                 return Ok(answer["result"].clone());
             }
             Ok((None, _)) => return Err(UpstreamError::Protocol("no result")),
-            Err(UpstreamError::SessionExpired) if !expired_once => {
-                // The provider dropped the session before executing: safe to redo once.
-                expired_once = true;
-                if let Ok(mut map) = sessions().lock() {
-                    map.remove(&cache_key);
-                }
+            Err(UpstreamError::SessionExpired) if expired < 3 => {
+                expired += 1;
+                forget(&session.id);
             }
             Err(UpstreamError::Unreachable) if attempt < limits.connect_retries => {
                 attempt += 1;
@@ -502,9 +511,8 @@ async fn call_upstream(
                 if matches!(
                     error,
                     UpstreamError::Unauthorized | UpstreamError::Uncertain
-                ) && let Ok(mut map) = sessions().lock()
-                {
-                    map.remove(&cache_key);
+                ) {
+                    forget(&session.id);
                 }
                 return Err(error);
             }
@@ -761,8 +769,13 @@ async fn run(state: &AppState, job: Uuid, connection: Uuid) -> ApiResult<()> {
         json!({"name":request["name"],"arguments":request["arguments"]}),
         timeout,
     );
-    let cancelled = wait_for_cancel(state, job);
-    tokio::pin!(call, cancelled);
+    // The cancellation watch runs as its own task and is only told to stop
+    // between queries: dropping a future in the middle of a pool query keeps
+    // that connection busy and, under load, starves the pool.
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let (cancel, cancelled) = tokio::sync::oneshot::channel();
+    tokio::spawn(watch_cancel(state.clone(), job, stopped, cancel));
+    tokio::pin!(call);
     let name = &provider.integration.name;
     let args = tokio::select! {
         outcome = &mut call => match outcome {
@@ -778,35 +791,51 @@ async fn run(state: &AppState, job: Uuid, connection: Uuid) -> ApiResult<()> {
                 complete(json!({"result":failed(&error.message(name))}))
             }
         },
-        () = &mut cancelled => complete(json!({"cancelled":true,"result":failed("Cancelled at the caller's request.")})),
+        Ok(()) = cancelled => complete(json!({"cancelled":true,"result":failed("Cancelled at the caller's request.")})),
     };
+    let _ = stop.send(true);
     connections::complete_job(state, connection, &args).await
 }
-/// Resolve when the caller asks to cancel the job.
-async fn wait_for_cancel(state: &AppState, job: Uuid) {
-    let check = || async {
+/// Signal `cancel` when the caller cancels the job (or it disappears). Checks
+/// on every job wakeup and at least every five seconds until `stop` is set.
+async fn watch_cancel(
+    state: AppState,
+    job: Uuid,
+    mut stop: tokio::sync::watch::Receiver<bool>,
+    cancel: tokio::sync::oneshot::Sender<()>,
+) {
+    let keys = [job_key(job)];
+    loop {
+        let notify = state.realtime.watch(&keys);
+        let notified = notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
         let row = state
             .postgres
             .query_one_raw(statement(
                 "SELECT cancel_requested FROM mcp_jobs WHERE id=$1",
                 vec![job.into()],
             ))
-            .await?;
-        Ok(row
-            .map(|r| r.try_get::<bool>("", "cancel_requested"))
-            .transpose()?
-            .unwrap_or(true)
-            .then_some(()))
-    };
-    let deadline = tokio::time::Instant::now() + Duration::from_hours(24);
-    let _ = realtime::wait_for(
-        &state.realtime,
-        &[job_key(job)],
-        deadline,
-        Duration::from_secs(5),
-        check,
-    )
-    .await;
+            .await;
+        let requested = match row {
+            Ok(Some(row)) => row.try_get::<bool>("", "cancel_requested").unwrap_or(false),
+            Ok(None) => true,
+            // A transient database error is retried on the next wakeup.
+            Err(_) => false,
+        };
+        if requested {
+            let _ = cancel.send(());
+            return;
+        }
+        if *stop.borrow() {
+            return;
+        }
+        tokio::select! {
+            () = &mut notified => {}
+            () = tokio::time::sleep(Duration::from_secs(5)) => {}
+            _ = stop.changed() => return,
+        }
+    }
 }
 
 #[cfg(test)]

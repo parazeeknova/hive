@@ -29,6 +29,8 @@ type Windows = HashMap<String, (Instant, u32)>;
 pub(super) struct Admission {
     pub state: AppState,
     pub requests: Arc<Semaphore>,
+    /// Requests briefly waiting for an active slot during a burst.
+    pub queue: Arc<Semaphore>,
     pub idle: Arc<Semaphore>,
     pub windows: Arc<Mutex<Windows>>,
 }
@@ -223,6 +225,36 @@ fn too_many(limit: u32) -> Response {
     }
     response
 }
+/// Take an active slot, waiting briefly in a bounded queue during bursts so
+/// short spikes are absorbed instead of shed. A full queue or an expired wait
+/// sheds the request.
+async fn admit_active(
+    admission: &Admission,
+    limits: &crate::runtime::HttpLimits,
+) -> Option<OwnedSemaphorePermit> {
+    if let Ok(permit) = admission.requests.clone().try_acquire_owned() {
+        return Some(permit);
+    }
+    let _queued = admission.queue.clone().try_acquire_owned().ok()?;
+    tokio::time::timeout(
+        Duration::from_millis(limits.queue_wait_ms),
+        admission.requests.clone().acquire_owned(),
+    )
+    .await
+    .ok()?
+    .ok()
+}
+fn overloaded() -> Response {
+    let mut response = (
+        StatusCode::SERVICE_UNAVAILABLE,
+        axum::Json(serde_json::json!({"error":"server_busy"})),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+    response
+}
 pub(super) async fn guard(
     State(admission): State<Admission>,
     request: Request,
@@ -288,8 +320,8 @@ pub(super) async fn guard(
     {
         return too_many(limits.requests_per_minute);
     }
-    let Ok(permit) = admission.requests.clone().try_acquire_owned() else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    let Some(permit) = admit_active(&admission, limits).await else {
+        return overloaded();
     };
     let slot = AdmissionSlot {
         active: Arc::new(Mutex::new(Some(permit))),

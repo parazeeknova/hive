@@ -707,10 +707,13 @@ pub async fn invoke_with(
         }
     }
     let tool = target.tool.as_str();
-    let txn = state.postgres.begin().await?;
-    let row = txn
+    // Validate and consult the cache before taking the row lock: a transaction
+    // must never wait for a second pool connection while holding one, or
+    // concurrent callers of one connection exhaust the pool and deadlock.
+    let row = state
+        .postgres
         .query_one_raw(statement(
-            "SELECT tools,updated_at,'hosted'=ANY(features) AS hosted FROM mcp_connections WHERE id=$1 AND owner=$2 FOR UPDATE",
+            "SELECT tools,updated_at,'hosted'=ANY(features) AS hosted FROM mcp_connections WHERE id=$1 AND owner=$2",
             vec![target.connection.into(), target.owner.clone().into()],
         ))
         .await?
@@ -742,6 +745,14 @@ pub async fn invoke_with(
     {
         return Ok(Outcome::Complete(cached));
     }
+    // The row lock serializes the queue-bound check with concurrent enqueues.
+    let txn = state.postgres.begin().await?;
+    txn.query_one_raw(statement(
+        "SELECT 1 FROM mcp_connections WHERE id=$1 AND owner=$2 FOR UPDATE",
+        vec![target.connection.into(), target.owner.clone().into()],
+    ))
+    .await?
+    .ok_or_else(|| ApiError::bad("mcp_tool_offline_or_unknown"))?;
     let job = jobs::enqueue(
         state,
         &txn,

@@ -182,6 +182,7 @@ pub fn protect(router: Router, state: AppState) -> (Router, HandlerDrain) {
     let http = state.settings.runtime.http.clone();
     let admission = guard::Admission {
         requests: std::sync::Arc::new(tokio::sync::Semaphore::new(http.concurrency)),
+        queue: std::sync::Arc::new(tokio::sync::Semaphore::new(http.queue_depth)),
         idle: std::sync::Arc::new(tokio::sync::Semaphore::new(http.idle_waiters)),
         windows: std::sync::Arc::default(),
         state,

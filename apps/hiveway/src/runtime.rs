@@ -54,10 +54,22 @@ impl Providers {
         Ok(())
     }
 }
+const fn default_queue_depth() -> usize {
+    512
+}
+const fn default_queue_wait_ms() -> u64 {
+    3000
+}
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HttpLimits {
     pub concurrency: usize,
+    /// Requests that may wait for an active slot during a burst, and for how long.
+    /// Defaults keep older override files valid.
+    #[serde(default = "default_queue_depth")]
+    pub queue_depth: usize,
+    #[serde(default = "default_queue_wait_ms")]
+    pub queue_wait_ms: u64,
     /// Anonymous requests per client address and minute.
     pub requests_per_minute: u32,
     /// Requests per bearer credential and minute, shared across replicas through Redis.
@@ -493,6 +505,8 @@ impl RuntimeConfig {
             || h.authenticated_ip_requests_per_minute > 1_000_000
             || !(1..=1000).contains(&h.rate_limit_redis_timeout_ms)
             || !(1..=100_000).contains(&h.idle_waiters)
+            || h.queue_depth > 100_000
+            || h.queue_wait_ms > 30_000
             || !(1..=60).contains(&w.builder_interval_seconds)
         {
             bail!("invalid or inconsistent Hiveway resource limits");

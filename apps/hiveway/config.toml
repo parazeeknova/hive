@@ -9,6 +9,10 @@ dodo_api_url = "https://test.dodopayments.com"
 
 [http]
 concurrency = 32
+# Bursts beyond `concurrency` wait up to queue_wait_ms in a bounded queue before
+# being shed with 503 and Retry-After.
+queue_depth = 512
+queue_wait_ms = 3000
 # Anonymous traffic per client address.
 requests_per_minute = 120
 # Authenticated traffic is limited per credential across replicas (Redis), with a
