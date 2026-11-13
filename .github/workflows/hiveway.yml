@@ -127,6 +127,7 @@ jobs:
       - name: Exercise independent creator and buyer agents
         env:
           HIVE_DEMO_REPOSITORY: https://github.com/${{ github.repository }}
+          HIVE_GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           devenv shell -- bun packages/local/src/agents/serve.ts > .hive/local/backend.log 2>&1 &
@@ -137,7 +138,7 @@ jobs:
             sleep 1
           done
           curl --fail --silent http://127.0.0.1:3001/api/ready
-          HIVE_DEMO_REVISION="$GITHUB_SHA" devenv shell -- bun packages/local/src/agents/demo.ts
+          HIVE_DEMO_REVISION="${{ github.event.pull_request.head.sha || github.sha }}" devenv shell -- bun packages/local/src/agents/demo.ts
           devenv shell -- bun packages/local/src/agents/hosted-demo.ts
           devenv shell -- bun packages/local/src/agents/mcp-demo.ts
       - name: Collect diagnostics on failure
@@ -167,6 +168,7 @@ jobs:
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           enable-cache: true
+          cache-dependency-glob: apps/hiveway/integrations.json
       - name: Install Linux media dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg cmake clang

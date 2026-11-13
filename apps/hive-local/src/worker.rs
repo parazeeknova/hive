@@ -280,9 +280,9 @@ pub async fn serve(file: PathBuf, slug: String) -> Result<()> {
                     mcp.close().await;
                     mcp=Mcp::start(&launch,&values,&roots).await?;
                 }
-                let args=request.get("arguments").cloned().unwrap_or_else(||json!({}));
+                let mut args=request.get("arguments").cloned().unwrap_or_else(||json!({}));
                 let tool=request["name"].as_str().unwrap_or_default();
-                let validation=guard::arguments(&config,integration,&args).and_then(|()| {
+                let validation=guard::arguments(&config,integration,&mut args).and_then(|()| {
                     ensure!(job["method"].as_str().unwrap_or("tools/call")=="tools/call","only tool calls are supported");
                     ensure!(tools.iter().any(|t|t["name"]==tool),"unknown tool");
                     ensure!(args.to_string().len()<=catalog.connectors.argument_bytes,"arguments exceed limit");

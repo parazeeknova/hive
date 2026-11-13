@@ -10,6 +10,9 @@ pub struct Settings {
     pub secrets_key: Option<[u8; 32]>,
     /// `HIVE_PROVIDER_URL_<SLUG>` overrides for published provider endpoints.
     pub provider_urls: std::collections::HashMap<String, String>,
+    /// Optional `HIVE_GITHUB_TOKEN` for rate-limited public repository analysis.
+    /// Authenticated analysis must verify repository visibility before fetching contents.
+    pub github_token: Option<String>,
     pub runtime: crate::runtime::RuntimeConfig,
     pub public_url: String,
     pub auth_domain: String,
@@ -51,6 +54,7 @@ impl Settings {
             embeddings: crate::features::hiveway::embeddings::Config::load()?,
             secrets_key: secrets_key()?,
             provider_urls: provider_urls()?,
+            github_token: optional("HIVE_GITHUB_TOKEN"),
             public_url,
             auth_domain,
             auth_uri,

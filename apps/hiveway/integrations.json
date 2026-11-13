@@ -342,7 +342,8 @@
       "package": "@modelcontextprotocol/server-filesystem",
       "version": "2.3.0",
       "args": ["{roots}"]
-    }
+    },
+    "path_arguments": ["path", "paths", "source", "destination"]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7007",

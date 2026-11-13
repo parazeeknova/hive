@@ -331,6 +331,7 @@ async fn real_filesystem_media_and_semantic_code_tools() -> Result<()> {
         )?;
         let mut launch = item
             .local
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("missing launch"))?;
         if slug == "serena" {
             let home = root.join(".test-home");
@@ -366,9 +367,14 @@ async fn real_filesystem_media_and_semantic_code_tools() -> Result<()> {
             match slug {
                 "filesystem"=>{
                     let path=root.join("note.txt").to_string_lossy().into_owned();
-                    let written=mcp.request("tools/call",json!({"name":"write_file","arguments":{"path":path,"content":"Hive filesystem fixture"}}),Duration::from_secs(30)).await?;
+                    let mut arguments=json!({"path":path,"content":"Hive filesystem fixture"});
+                    guard::arguments(&config,&item,&mut arguments)?;
+                    assert_eq!(arguments["path"],platform::tool_path(&guard::approved(&root.join("note.txt"),&config.roots)?));
+                    let written=mcp.request("tools/call",json!({"name":"write_file","arguments":arguments}),Duration::from_secs(30)).await?;
                     assert_ne!(written["isError"],true,"{written}");
-                    let read=mcp.request("tools/call",json!({"name":"read_text_file","arguments":{"path":path}}),Duration::from_secs(30)).await?;
+                    let mut arguments=json!({"path":path});
+                    guard::arguments(&config,&item,&mut arguments)?;
+                    let read=mcp.request("tools/call",json!({"name":"read_text_file","arguments":arguments}),Duration::from_secs(30)).await?;
                     assert!(read.to_string().contains("Hive filesystem fixture"),"{read}");
                 },
                 "ffmpeg"=>{
