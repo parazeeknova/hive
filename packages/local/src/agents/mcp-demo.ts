@@ -71,9 +71,10 @@ const capability = await call(creator, "publish_capability", {
   runtime: "wasm",
 });
 const tool = `hive_${String(capability.id).replaceAll("-", "")}`;
-const listed = await rpc(buyer, "tools/list");
-if (!listed.tools?.some((t) => t.name === tool)) {
-  throw new Error("Published tool absent");
+const listed = await call(buyer, "search_tools", { query: "Agent echo" });
+const discovered = listed.tools as { name: string }[] | undefined;
+if (!discovered?.some((t) => t.name === tool)) {
+  throw new Error(`Published tool ${tool} absent: ${JSON.stringify(listed)}`);
 }
 const args = {
   idempotency_key: crypto.randomUUID(),

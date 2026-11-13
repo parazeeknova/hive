@@ -94,15 +94,19 @@ pub(super) async fn exercise(app: Router, state: &AppState, bearer: &str) -> Res
         app.clone(),
         "POST",
         "/mcp",
-        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string(),
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_tools","arguments":{"query":cap.name}}}).to_string(),
         &headers,
     )
     .await?;
-    assert!(tools["result"]["tools"].as_array().is_some_and(|tools| {
-        tools
-            .iter()
-            .any(|t| t["name"] == format!("hive_{}", id.simple()))
-    }));
+    assert!(
+        tools["result"]["structuredContent"]["tools"]
+            .as_array()
+            .is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|t| t["name"] == format!("hive_{}", id.simple()))
+            })
+    );
     let (_,status)=attack(app.clone(),"POST","/mcp",json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_build","arguments":{"build_id":id}}}).to_string(),&headers).await?;
     assert_eq!(status["result"]["structuredContent"]["state"], "published");
     let mut failure = request.clone();

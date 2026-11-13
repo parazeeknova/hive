@@ -69,7 +69,7 @@ async fn attack(
         serde_json::from_slice(&bytes).unwrap_or(Value::Null),
     ))
 }
-async fn probe(app: Router, id: Uuid, token_a: &str, token_b: &str) -> Result {
+async fn probe(app: Router, id: Uuid, cap: Uuid, token_a: &str, token_b: &str) -> Result {
     let bearer_a = format!("Bearer {token_a}");
     let bearer_b = format!("Bearer {token_b}");
     let uri = format!("/v1/invocations/{id}");
@@ -114,9 +114,9 @@ async fn probe(app: Router, id: Uuid, token_a: &str, token_b: &str) -> Result {
     )
     .await?;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    probe_inputs(app, &uri, &bearer_a).await
+    probe_inputs(app, &uri, &bearer_a, cap).await
 }
-async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
+async fn probe_inputs(app: Router, uri: &str, bearer_a: &str, cap: Uuid) -> Result {
     let (status, _) = attack(
         app.clone(),
         "GET",
@@ -196,7 +196,7 @@ async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
         status.is_client_error(),
         "a publisher cannot assign another creator wallet"
     );
-    probe_quotes(app.clone(), bearer_a).await?;
+    probe_quotes(app.clone(), bearer_a, cap).await?;
     let (status, _) = attack(
         app,
         "POST",
@@ -208,7 +208,7 @@ async fn probe_inputs(app: Router, uri: &str, bearer_a: &str) -> Result {
     assert!(status.is_client_error());
     Ok(())
 }
-async fn probe_quotes(app: Router, bearer: &str) -> Result {
+async fn probe_quotes(app: Router, bearer: &str, capability_id: Uuid) -> Result {
     // Scout finds the owned fixture capability without embedding database IDs in the API.
     let (status, caps) = attack(
         app.clone(),
@@ -221,7 +221,7 @@ async fn probe_quotes(app: Router, bearer: &str) -> Result {
     assert_eq!(status, StatusCode::OK);
     let cap = caps
         .as_array()
-        .and_then(|values| values.first())
+        .and_then(|values| values.iter().find(|cap| cap["id"] == json!(capability_id)))
         .ok_or("missing capability")?;
     let key = Uuid::new_v4().to_string();
     let body=json!({"capability_id":cap["id"],"input":{"repository_url":"https://github.com/a/b","revision":"1".repeat(40)}}).to_string();
@@ -348,7 +348,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         hiveway::api::router().with_state(state.clone()),
         state.clone(),
     );
-    let outcome = probe(app.clone(), id, &token_a, &token_b).await;
+    let outcome = probe(app.clone(), id, cap, &token_a, &token_b).await;
     let payment_result =
         probe_checkout_rejections(app.clone(), &db, a, id, &token_a, &provider_status).await;
     let recovery_result = async {

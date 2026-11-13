@@ -81,7 +81,7 @@ async fn scaffold_catalog(app: &Router, bearer: &str) -> Result {
         app.clone(),
         "POST",
         "/mcp",
-        json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}).to_string(),
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_tools","arguments":{"query":"Pinned starter artifact"}}}).to_string(),
         &[("authorization", bearer)],
     )
     .await?;
@@ -89,7 +89,7 @@ async fn scaffold_catalog(app: &Router, bearer: &str) -> Result {
         .as_str()
         .ok_or("missing scaffold capability")?
         .parse::<uuid::Uuid>()?;
-    let definition = tools["result"]["tools"]
+    let definition = tools["result"]["structuredContent"]["tools"]
         .as_array()
         .ok_or("missing tools")?
         .iter()
