@@ -255,6 +255,8 @@ const Workspace = () => {
         ...latestActivity,
         invocations:
           history.data?.pages.flatMap((page) => page.invocations) ?? [],
+        tool_calls:
+          history.data?.pages.flatMap((page) => page.tool_calls ?? []) ?? [],
       }
     : null;
   const sales = earnings.data ?? [];

@@ -5,6 +5,7 @@ import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import { Spinner } from "../../components/spinner";
+import { activityEntries } from "../../lib/activity";
 import {
   usesJsonInput,
   connectedCapability,
@@ -29,6 +30,7 @@ import type {
   Sale,
 } from "../../lib/hiveway";
 import { sampleInput } from "../../lib/sample-input";
+import { ToolActivityRow, ToolActivityCounts } from "./tool-activity-row";
 
 export const EmptyState = ({
   title,
@@ -334,47 +336,56 @@ export const ActivityPanel = ({
             succeeded · {activity.counts.failed} failed
           </p>
         )}
-        {activity?.invocations.length ? (
+        <ToolActivityCounts counts={activity?.tool_counts} />
+        {activityEntries(activity).length > 0 ? (
           <div className="ws-history mt-5">
-            {activity.invocations.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className="ws-history-row flex w-full cursor-pointer items-center gap-4 px-0 py-[15px] text-left text-[10px] text-[#686f60] [background:none] [border-top:1px_solid_var(--ws-line)] [border:0] disabled:cursor-not-allowed disabled:opacity-[0.45] max-[760px]:flex-wrap max-[760px]:gap-2.5 [&_small]:mt-[5px] [&_small]:block [&_small]:text-[10px] [&_small]:text-[#686f60] [&_strong]:block [&_strong]:overflow-hidden [&_strong]:text-[11px] [&_strong]:text-ellipsis [&_strong]:text-[#686f60] max-[760px]:[&>.ws-numeric]:ml-auto max-[760px]:[&>code]:w-full max-[760px]:[&>code]:[overflow-wrap:anywhere] [&>span:first-child]:min-w-0 [&>span:first-child]:[flex:1] max-[760px]:[&>span:first-child]:[flex-basis:45%]"
-                onClick={() => {
-                  void load(item.id);
-                }}
-              >
-                <span>
-                  <strong>
-                    {item.capability_name ??
-                      catalog.find((tool) => tool.id === item.capability_id)
-                        ?.name ??
-                      shortId(item.capability_id)}
-                  </strong>
-                  <small>
-                    {new Date(item.created_at * 1000).toLocaleString()} ·{" "}
-                    {item.payment_method ?? "Unpaid"}
-                  </small>
-                  <small>
-                    {item.agent_name ?? "Unknown agent"} ·{" "}
-                    {item.client_context?.harness ?? "Unknown harness"} ·{" "}
-                    {item.client_context?.model ?? "Model not reported"}
-                  </small>
-                </span>
-                <Status state={item.state} />
-                <span className="ws-numeric text-right [font-variant-numeric:tabular-nums]">
-                  {atomicMoney(item.price)}
-                  <small>USDC</small>
-                </span>
-                <Icon name="chevron" size={14} />
-              </button>
-            ))}
+            {activityEntries(activity).map((item) =>
+              "tool" in item ? (
+                <ToolActivityRow
+                  key={item.id}
+                  item={item}
+                  status={<Status state={item.state} />}
+                />
+              ) : (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="ws-history-row flex w-full cursor-pointer items-center gap-4 px-0 py-[15px] text-left text-[10px] text-[#686f60] [background:none] [border-top:1px_solid_var(--ws-line)] [border:0] disabled:cursor-not-allowed disabled:opacity-[0.45] max-[760px]:flex-wrap max-[760px]:gap-2.5 [&_small]:mt-[5px] [&_small]:block [&_small]:text-[10px] [&_small]:text-[#686f60] [&_strong]:block [&_strong]:overflow-hidden [&_strong]:text-[11px] [&_strong]:text-ellipsis [&_strong]:text-[#686f60] max-[760px]:[&>.ws-numeric]:ml-auto max-[760px]:[&>code]:w-full max-[760px]:[&>code]:[overflow-wrap:anywhere] [&>span:first-child]:min-w-0 [&>span:first-child]:[flex:1] max-[760px]:[&>span:first-child]:[flex-basis:45%]"
+                  onClick={() => {
+                    void load(item.id);
+                  }}
+                >
+                  <span>
+                    <strong>
+                      {item.capability_name ??
+                        catalog.find((tool) => tool.id === item.capability_id)
+                          ?.name ??
+                        shortId(item.capability_id)}
+                    </strong>
+                    <small>
+                      {new Date(item.created_at * 1000).toLocaleString()} ·{" "}
+                      {item.payment_method ?? "Unpaid"}
+                    </small>
+                    <small>
+                      {item.agent_name ?? "Unknown agent"} ·{" "}
+                      {item.client_context?.harness ?? "Unknown harness"} ·{" "}
+                      {item.client_context?.model ?? "Model not reported"}
+                    </small>
+                  </span>
+                  <Status state={item.state} />
+                  <span className="ws-numeric text-right [font-variant-numeric:tabular-nums]">
+                    {atomicMoney(item.price)}
+                    <small>USDC</small>
+                  </span>
+                  <Icon name="chevron" size={14} />
+                </button>
+              )
+            )}
           </div>
         ) : (
           <EmptyState title="Your next run starts here.">
-            Quote a capability from Discover. Receipts and results will appear
-            here.
+            Use a Hive tool or run a capability. MCP calls, workflows and
+            receipts will appear here.
           </EmptyState>
         )}
         {hasMore && (

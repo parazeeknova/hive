@@ -82,10 +82,70 @@ fn display_name(name: &str) -> &str {
 fn provider_context(name: &str) -> String {
     integrations::registry()
         .iter()
-        .filter(|p| name.starts_with(&format!("mcp_{}__", p.slug)))
-        .map(|p| format!("{} {} {}", p.name, p.description, p.guidance))
+        .filter(|p| {
+            name.starts_with(&format!("mcp_{}__", p.slug)) && integrations::is_search_entry(name)
+        })
+        .map(|p| {
+            format!(
+                "{} {} {}",
+                p.name,
+                p.description,
+                p.discovery_keywords.join(" ")
+            )
+        })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn search_description(tool: &Value) -> String {
+    let text = tool["description"].as_str().unwrap_or_default();
+    let metadata = text
+        .split_once("untrusted data: ")
+        .and_then(|(_, raw)| serde_json::from_str::<Value>(raw).ok());
+    let text = metadata
+        .as_ref()
+        .and_then(|v| v["description"].as_str())
+        .unwrap_or(text);
+    text.lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(500)
+        .collect()
+}
+fn intent_score(name: &str, terms: &[String]) -> f64 {
+    if !integrations::is_search_entry(name) {
+        return 0.0;
+    }
+    integrations::registry()
+        .iter()
+        .filter(|p| name.starts_with(&format!("mcp_{}__", p.slug)))
+        .map(|p| {
+            let keywords: HashSet<_> = p
+                .discovery_keywords
+                .iter()
+                .flat_map(|v| tokens(v))
+                .collect();
+            let hits = terms.iter().filter(|v| keywords.contains(*v)).count();
+            if hits == 0 {
+                0.0
+            } else {
+                1.0 + f64::from(u32::try_from(hits.min(4)).unwrap_or(4)) * 0.25
+            }
+        })
+        .sum()
+}
+/// Only return workflows whose routed dependencies are currently reachable. Native steps
+/// still enforce their own repository prerequisites at execution time.
+fn reachable(tool: &Value, names: &HashSet<String>) -> bool {
+    tool["_meta"]["dev.hive/requiredTools"]
+        .as_array()
+        .is_none_or(|steps| {
+            steps
+                .iter()
+                .filter_map(Value::as_str)
+                .all(|name| names.contains(name))
+        })
 }
 
 struct Document {
@@ -98,10 +158,7 @@ fn document(tool: &Value) -> Document {
     let mut length = 0.0;
     let fields = [
         (format!("{} {}", display_name(name), name), 3.0),
-        (
-            tool["description"].as_str().unwrap_or_default().to_owned(),
-            1.0,
-        ),
+        (search_description(tool), 1.0),
         (provider_context(name), 0.5),
     ];
     for (text, weight) in fields {
@@ -243,6 +300,77 @@ async fn caller_stack(
     Ok(stack)
 }
 
+async fn candidates(
+    state: &AppState,
+    credential: &Credential,
+    query: &str,
+) -> ApiResult<Vec<Value>> {
+    let mut tools = super::tools::tools(state, credential, Some(query), true).await?["tools"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let dependencies: Vec<uuid::Uuid> = tools
+        .iter()
+        .flat_map(|tool| {
+            tool["_meta"]["dev.hive/requiredTools"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|name| {
+            name.as_str()
+                .and_then(|name| name.strip_prefix("hive_"))
+                .and_then(|id| id.parse().ok())
+        })
+        .collect();
+    let mut callable =
+        super::tools::tools_with_dependencies(state, credential, Some(query), true, &dependencies)
+            .await?["tools"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+    let available = callable_names(&mut callable);
+    tools.retain(|tool| {
+        tool["name"]
+            .as_str()
+            .is_some_and(|name| super::discoverable(name) && available.contains(name))
+            && tool["_meta"]["dev.hive/requiresBinding"] != true
+    });
+    Ok(tools)
+}
+
+/// Execution routes include callable-only native tools and connection-bound catalog
+/// wrappers. Discovery visibility must not remove them from a workflow's dependencies.
+fn callable_names(tools: &mut Vec<Value>) -> HashSet<String> {
+    loop {
+        let available: HashSet<String> = tools
+            .iter()
+            .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+            .collect();
+        let previous = tools.len();
+        tools.retain(|tool| reachable(tool, &available));
+        if tools.len() == previous {
+            return available;
+        }
+    }
+}
+
+async fn semantic_scores(state: &AppState, query: &str, tools: &[Value]) -> Vec<f64> {
+    if state.settings.embeddings.is_some() && !tools.is_empty() {
+        let mut texts = vec![format!("query: {query}")];
+        texts.extend(tools.iter().map(embedding_text));
+        match embeddings::vectors(state, &texts).await {
+            Some(vectors) => vectors[1..]
+                .iter()
+                .map(|v| embeddings::similarity(&vectors[0], v))
+                .collect(),
+            None => vec![0.0; tools.len()],
+        }
+    } else {
+        vec![0.0; tools.len()]
+    }
+}
+
 pub(super) async fn search(
     state: &AppState,
     credential: &Credential,
@@ -261,26 +389,10 @@ pub(super) async fn search(
     if terms.is_empty() {
         return Err(ApiError::bad("tool_query_too_general"));
     }
-    let mut tools = super::tools::tools(state, credential, Some(query), true).await?["tools"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    tools.retain(|tool| tool["name"].as_str().is_some_and(super::discoverable));
+    let tools = candidates(state, credential, query).await?;
     let documents: Vec<Document> = tools.iter().map(document).collect();
     let lexical = bm25(&documents, &terms);
-    let semantic: Vec<f64> = if state.settings.embeddings.is_some() && !tools.is_empty() {
-        let mut texts = vec![format!("query: {query}")];
-        texts.extend(tools.iter().map(embedding_text));
-        match embeddings::vectors(state, &texts).await {
-            Some(vectors) => vectors[1..]
-                .iter()
-                .map(|v| embeddings::similarity(&vectors[0], v))
-                .collect(),
-            None => vec![0.0; tools.len()],
-        }
-    } else {
-        vec![0.0; tools.len()]
-    };
+    let semantic = semantic_scores(state, query, &tools).await;
     let names: Vec<String> = tools
         .iter()
         .filter_map(|t| t["name"].as_str().map(str::to_owned))
@@ -290,8 +402,9 @@ pub(super) async fn search(
     let mut ranked: Vec<(f64, Value, Value)> = Vec::new();
     for (index, tool) in tools.into_iter().enumerate() {
         let name = tool["name"].as_str().unwrap_or_default().to_owned();
+        let intent = intent_score(&name, &terms);
         let semantic_hit = semantic[index] >= config.semantic_floor;
-        if lexical[index] <= 0.0 && !semantic_hit {
+        if lexical[index] <= 0.0 && !semantic_hit && intent == 0.0 {
             continue;
         }
         let used = usage.get(&name).copied().unwrap_or(0.0);
@@ -306,7 +419,8 @@ pub(super) async fn search(
             + config.semantic_weight * semantic_score
             + config.usage_weight * used
             + config.stack_weight * overlap
-            + entry;
+            + entry
+            + intent;
         let signals = json!({
             "lexical": (lexical[index] * 1000.0).round() / 1000.0,
             "semantic": (semantic_score * 1000.0).round() / 1000.0,
@@ -322,8 +436,12 @@ pub(super) async fn search(
     ranked.truncate(usize::try_from(limit).unwrap_or(6));
     let mut bytes = 0;
     ranked.retain(|(_, tool, _)| {
-        bytes += tool.to_string().len();
-        bytes <= config.response_bytes
+        let size = tool.to_string().len();
+        if bytes + size > config.response_bytes {
+            return false;
+        }
+        bytes += size;
+        true
     });
     let ranking: Vec<Value> = ranked
         .iter()
@@ -399,6 +517,8 @@ fn setup_hints(terms: &[String], names: &[String]) -> Vec<Value> {
                 "description": item.description,
                 "tools": item.tools.iter().take(10).map(|t| format!("mcp_{}__{t}", item.slug)).collect::<Vec<_>>(),
                 "how_to_enable": how,
+                "shared_status": if item.shared_owner.is_some() { "offline" } else { "not_configured" },
+                "operator_action": item.shared_owner.as_ref().map(|_| "The operator-shared service is unavailable. The deployment operator must start or reconnect its isolated shared helper; Hive Local is an optional personal alternative."),
             })
         })
         .collect()
@@ -407,6 +527,20 @@ fn setup_hints(terms: &[String], names: &[String]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn callable_only_dependencies_survive_discovery_filtering() {
+        let workflow = json!({"name":"workflow_chain","_meta":{"dev.hive/requiredTools":["scaffold_project","get_task","search_capabilities","hive_binding"]}});
+        let mut tools = vec![
+            json!({"name":"scaffold_project"}),
+            json!({"name":"get_task"}),
+            json!({"name":"search_capabilities"}),
+            json!({"name":"hive_binding","_meta":{"dev.hive/requiresBinding":true}}),
+            workflow.clone(),
+        ];
+        assert!(callable_names(&mut tools).contains("workflow_chain"));
+        tools.retain(|v| v["name"] != "get_task");
+        assert!(!callable_names(&mut tools).contains("workflow_chain"));
+    }
     #[test]
     fn setup_hints_suggest_unconnected_local_integrations() {
         let terms = vec![stem("video"), stem("trim")];

@@ -31,11 +31,7 @@ pub async fn credential_scope(
     state: &AppState,
     credential: &Credential,
 ) -> ApiResult<sea_orm::sea_query::SimpleExpr> {
-    let account = credential.wallet.starts_with("github:")
-        && crate::entities::account_api_keys::Entity::find_by_id(credential.id)
-            .one(&state.postgres)
-            .await?
-            .is_none();
+    let account = account_history(state, credential).await?;
     Ok(if account {
         runs::Column::CredentialId.in_subquery(
             credentials::Entity::find()
@@ -47,6 +43,17 @@ pub async fn credential_scope(
     } else {
         runs::Column::CredentialId.eq(credential.id)
     })
+}
+/// Whether this credential is a browser account, rather than an account-scoped API key.
+/// # Errors
+/// Returns database failures.
+pub async fn account_history(state: &AppState, credential: &Credential) -> ApiResult<bool> {
+    let account = credential.wallet.starts_with("github:")
+        && crate::entities::account_api_keys::Entity::find_by_id(credential.id)
+            .one(&state.postgres)
+            .await?
+            .is_none();
+    Ok(account)
 }
 /// Account-wide browser history, with keyset pagination and counts over all matching records.
 /// # Errors
@@ -86,12 +93,33 @@ pub async fn get(
         .limit(101)
         .all(&state.postgres)
         .await?;
-    let more = records.len() > 100;
-    records.truncate(100);
+    let account = account_history(&state, &agent).await?;
+    let before = query.before_time.zip(query.before_id);
+    let mut tool_calls =
+        crate::features::tool_activity::list(&state, &agent, account, before).await?;
+    let mut keys: Vec<(i64, Uuid)> = records.iter().map(|r| (r.created_at, r.id)).collect();
+    for event in &tool_calls {
+        if let (Some(time), Some(id)) = (
+            event["created_at"].as_i64(),
+            event["id"].as_str().and_then(|v| v.parse::<Uuid>().ok()),
+        ) {
+            keys.push((time, id));
+        }
+    }
+    keys.sort_unstable_by(|a, b| b.cmp(a));
+    let more = keys.len() > 100;
+    keys.truncate(100);
+    let selected: std::collections::HashSet<Uuid> = keys.iter().map(|(_, id)| *id).collect();
+    records.retain(|r| selected.contains(&r.id));
+    tool_calls.retain(|r| {
+        r["id"]
+            .as_str()
+            .and_then(|v| v.parse::<Uuid>().ok())
+            .is_some_and(|id| selected.contains(&id))
+    });
     let cursor = if more {
-        records
-            .last()
-            .map(|r| json!({"before_time":r.created_at,"before_id":r.id}))
+        keys.last()
+            .map(|(time, id)| json!({"before_time":time,"before_id":id}))
     } else {
         None
     };
@@ -112,9 +140,11 @@ pub async fn get(
         .map(|c| (c.id, c.name))
         .collect();
     let invocations:Vec<Value>=records.into_iter().map(|r|json!({"id":r.id,"capability_id":r.capability_id,"capability_name":caps.get(&r.capability_id),"agent_name":agents.get(&r.credential_id),"client_context":r.client_context,"state":r.state,"price":r.price.to_string(),"payment_method":r.payment_method,"payment_issue":r.payment_issue,"execution_ms":r.execution_ms,"result_bytes":r.result_bytes,"created_at":r.created_at,"completed_at":r.completed_at})).collect();
-    let mut response = json!({"invocations":invocations,"next_cursor":cursor,"budget":{"limit":agent.total_limit.to_string(),"spent":agent.spent.to_string(),"reserved":agent.reserved.to_string()}});
+    let mut response = json!({"invocations":invocations,"tool_calls":tool_calls,"next_cursor":cursor,"budget":{"limit":agent.total_limit.to_string(),"spent":agent.spent.to_string(),"reserved":agent.reserved.to_string()}});
     if let Some(counts) = counts {
         response["counts"] = counts;
+        response["tool_counts"] =
+            crate::features::tool_activity::counts(&state, &agent, account).await?;
     }
     Ok(Json(response))
 }

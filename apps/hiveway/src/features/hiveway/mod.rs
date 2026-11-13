@@ -7,6 +7,7 @@ mod stream;
 mod tools;
 pub mod workflows;
 
+use crate::features::tool_activity;
 use crate::{
     api::AdmissionSlot,
     features::{
@@ -29,6 +30,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tracing::Instrument;
 use uuid::Uuid;
 
 const CORE_GUIDANCE: &str = "Use Hive dynamically throughout the session. When you start work in a repository, call repo_overview and recall for it (if available) before exploring files; use code_search, find_symbol and read_code to locate code instead of reading many files, and remember durable decisions, conventions and gotchas you learn. At each new subtask, call search_tools with a short intent-focused query (and repo or stack when known) before rebuilding functionality, guessing an API, or generating website mockups. It returns a small relevant set of current tool schemas and operator-maintained workflow guidance. Call a discovered tool through call_tool with its exact name and schema; newly connected MCPs and user-published capabilities are discoverable without refreshing the entire tool list. Refine an empty search once, then proceed normally if nothing fits. Long-running connected calls continue as tasks: follow the returned task handle with get_task instead of re-running the call.";
@@ -180,6 +182,30 @@ enum Reply {
     /// A connected MCP request, possibly still running or awaiting input.
     Connected(Outcome),
 }
+impl Reply {
+    /// Only routing outcomes and results from Hive's own workflow handlers carry lifecycle state.
+    fn lifecycle(&self, name: &str) -> Option<tool_activity::Lifecycle> {
+        match self {
+            Self::Connected(Outcome::Running { job, .. } | Outcome::InputRequired { job, .. }) => {
+                Some(tool_activity::Lifecycle::Task(*job))
+            }
+            Self::Value(value)
+                if name.starts_with(workflows::PREFIX)
+                    || matches!(name, "run_workflow" | "get_workflow_run") =>
+            {
+                let run = &value["structuredContent"];
+                run["run_id"]
+                    .as_str()
+                    .and_then(|id| id.parse().ok())
+                    .map(|id| tool_activity::Lifecycle::Workflow {
+                        id,
+                        pending: run["status"] == "running",
+                    })
+            }
+            _ => None,
+        }
+    }
+}
 /// Per-request client facts used while routing a call.
 struct Call {
     ctx: CallContext,
@@ -266,7 +292,6 @@ async fn call(
             Ok(Reply::Value(json!({"cancellation_requested":true})))
         }
         "call_tool" => {
-            identity::authenticate(&state, &headers, "capabilities:invoke").await?;
             let target = args["name"]
                 .as_str()
                 .filter(|name| discoverable(name))
@@ -294,7 +319,18 @@ fn discoverable(name: &str) -> bool {
         && (name.starts_with("mcp_")
             || name.starts_with("external_")
             || name.starts_with("hive_")
-            || name.starts_with(workflows::PREFIX))
+            || name.starts_with(workflows::PREFIX)
+            || matches!(
+                name,
+                "repo_overview"
+                    | "code_search"
+                    | "find_symbol"
+                    | "find_references"
+                    | "read_code"
+                    | "recall"
+                    | "remember"
+                    | "list_code_indexes"
+            ))
 }
 /// Header carrying how deeply a call is nested inside workflows.
 pub(crate) const DEPTH_HEADER: &str = "x-hive-workflow-depth";
@@ -309,35 +345,54 @@ pub(crate) fn invoke_tool<'a>(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ApiResult<Value>> + Send + 'a>> {
     // Erase the recursive workflow -> tool -> workflow future at this boundary.
     Box::pin(async move {
-        let routing = Call {
-            ctx: CallContext {
-                wait: Some(wait),
-                ..CallContext::blocking()
-            },
+        let credential = identity::authenticate(state, headers, "").await?;
+        let activity = tool_activity::Call::start(state, &credential, name, headers).await;
+        let span = tracing::info_span!("mcp.workflow_tool", call_id = %activity.id, credential_id = %credential.id, tool = name);
+        let mut lifecycle = None;
+        let outcome: ApiResult<Value> = async {
+            let routing = Call {
+                ctx: CallContext {
+                    wait: Some(wait),
+                    ..CallContext::blocking()
+                },
+            };
+            let reply = Box::pin(call(state.clone(), headers.clone(), name, args, &routing)).await?;
+            lifecycle = reply.lifecycle(name);
+            Ok(
+                match reply {
+                    Reply::Value(value) => {
+                        let failed = tool_activity::failed(&value);
+                        tool_result(name, value, failed)?
+                    }
+                    Reply::Connected(Outcome::Complete(value)) => value,
+                    Reply::Connected(Outcome::Failed(error)) => json!({
+                        "content":[{"type":"text","text":error["message"].as_str().unwrap_or("Connected request failed")}],
+                        "isError":true,
+                        "error":error,
+                    }),
+                    Reply::Connected(Outcome::InputRequired { .. }) => json!({
+                        "content":[{"type":"text","text":"This step needs interactive user input; call the tool directly instead of inside a workflow."}],
+                        "isError":true,
+                    }),
+                    Reply::Connected(Outcome::Running { job, .. }) => json!({
+                        "content":[{"type":"text","text":format!("The tool was still running after the step deadline; follow it with get_task {job}.")}],
+                        "isError":true,
+                        "task_id": job,
+                    }),
+                },
+            )
+        }
+        .instrument(span.clone())
+        .await;
+        let (result, error) = match &outcome {
+            Ok(value) => (value.clone(), None),
+            Err(error) => (json!({"isError":true}), Some(error.code)),
         };
-        Ok(
-            match Box::pin(call(state.clone(), headers.clone(), name, args, &routing)).await? {
-                Reply::Value(value) => {
-                    let failed = value["isError"] == true;
-                    tool_result(name, value, failed)?
-                }
-                Reply::Connected(Outcome::Complete(value)) => value,
-                Reply::Connected(Outcome::Failed(error)) => json!({
-                    "content":[{"type":"text","text":error["message"].as_str().unwrap_or("Connected request failed")}],
-                    "isError":true,
-                    "error":error,
-                }),
-                Reply::Connected(Outcome::InputRequired { .. }) => json!({
-                    "content":[{"type":"text","text":"This step needs interactive user input; call the tool directly instead of inside a workflow."}],
-                    "isError":true,
-                }),
-                Reply::Connected(Outcome::Running { job, .. }) => json!({
-                    "content":[{"type":"text","text":format!("The tool was still running after the step deadline; follow it with get_task {job}.")}],
-                    "isError":true,
-                    "task_id": job,
-                }),
-            },
-        )
+        activity
+            .finish(state, &result, error, lifecycle)
+            .instrument(span)
+            .await;
+        outcome
     })
 }
 async fn catalog_call(
@@ -511,6 +566,7 @@ fn cacheable(mut value: Value, state: &AppState) -> Value {
 fn client_headers(mut headers: HeaderMap, params: &Value) -> ApiResult<HeaderMap> {
     // Only internal workflow dispatch may assign a nesting depth.
     headers.remove(DEPTH_HEADER);
+    headers.remove(tool_activity::RUN_HEADER);
     let client = &params["_meta"]["hive/client"];
     for (header, value) in [
         ("x-hive-model", client["model"].as_str()),
@@ -567,7 +623,7 @@ fn call_context(
 fn render(name: &str, outcome: Outcome, ctx: &CallContext) -> ApiResult<Value> {
     match outcome {
         Outcome::Complete(value) => {
-            let failed = value["isError"].as_bool().unwrap_or(false);
+            let failed = tool_activity::failed(&value);
             tool_result(name, value, failed)
         }
         Outcome::Failed(error) => tool_result(
@@ -740,25 +796,37 @@ pub async fn gateway(
             let routing = Call {
                 ctx: call_context(params, modern, true, slot),
             };
-            let outcome = Box::pin(call(state.clone(), headers, name, args, &routing)).await;
-            let (value, failed) = match outcome {
+            let activity = tool_activity::Call::start(&state, &c, &target, &headers).await;
+            let span = tracing::info_span!("mcp.tool", call_id = %activity.id, credential_id = %c.id, tool = %target);
+            let outcome = Box::pin(call(state.clone(), headers, name, args, &routing))
+                .instrument(span.clone())
+                .await;
+            let lifecycle = outcome
+                .as_ref()
+                .ok()
+                .and_then(|reply| reply.lifecycle(&target));
+            let (value, failed, error_code) = match outcome {
                 Ok(Reply::Value(value)) => {
-                    let failed = value["isError"].as_bool().unwrap_or(false);
-                    (tool_result(name, value, failed)?, failed)
+                    let failed = tool_activity::failed(&value);
+                    (tool_result(name, value, failed)?, failed, None)
                 }
                 Ok(Reply::Connected(outcome)) => {
                     let failed = matches!(outcome, Outcome::Failed(_))
                         || matches!(&outcome, Outcome::Complete(v) if v["isError"] == true);
-                    (render(name, outcome, &routing.ctx)?, failed)
+                    (render(name, outcome, &routing.ctx)?, failed, None)
                 }
                 Err(error) => {
                     let mut body = json!({"error":error.code});
                     if let Some(detail) = &error.detail {
                         body["detail"] = json!(detail);
                     }
-                    (tool_result(name, body, true)?, true)
+                    (tool_result(name, body, true)?, true, Some(error.code))
                 }
             };
+            activity
+                .finish(&state, &value, error_code, lifecycle)
+                .instrument(span)
+                .await;
             discovery::record_usage(&state, &c.wallet, &target, failed).await;
             if let Some(observed) = observed.filter(|_| !failed) {
                 workflows::patterns::observe(&state, &c.wallet, &target, &observed, &value).await;
@@ -887,9 +955,32 @@ pub async fn notifications(
 
 #[cfg(test)]
 mod tests {
-    use super::{MODERN, Rpc, metadata};
+    use super::{MODERN, Outcome, Reply, Rpc, Uuid, metadata, tool_activity};
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use serde_json::json;
+    #[test]
+    fn lifecycle_handles_come_from_gateway_routing() {
+        let id = Uuid::new_v4();
+        let payload = json!({"isError":false,"structuredContent":{"isError":true,"task_id":id,"run_id":id,"status":"running"},"_meta":{"dev.hive/task":{"taskId":id,"status":"working"}}});
+        assert!(
+            Reply::Connected(Outcome::Complete(payload.clone()))
+                .lifecycle("mcp_provider__read")
+                .is_none()
+        );
+        assert!(Reply::Value(payload.clone()).lifecycle("recall").is_none());
+        assert!(matches!(
+            Reply::Value(payload).lifecycle("run_workflow"),
+            Some(tool_activity::Lifecycle::Workflow { pending: true, .. })
+        ));
+        assert!(matches!(
+            Reply::Connected(Outcome::Running {
+                job: id,
+                task: json!({"status":"queued"})
+            })
+            .lifecycle("mcp_provider__read"),
+            Some(tool_activity::Lifecycle::Task(_))
+        ));
+    }
     #[test]
     fn connected_content_blocks_reach_mcp_clients() -> super::ApiResult<()> {
         let upstream = json!({"content":[{"type":"text","text":"Preview"},{"type":"image","mimeType":"image/webp","data":"aW1hZ2U="}],"isError":false});

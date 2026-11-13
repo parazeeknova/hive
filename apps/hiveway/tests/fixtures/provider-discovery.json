@@ -1,0 +1,736 @@
+{
+  "context7": [
+    {
+      "name": "query-docs",
+      "description": "Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.\n\nYou must call 'Resolve Context7 Library ID' tool first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\n\nDo not call this tool more than 3 times per question.\n\nIf you know the programming language the user is working in, pass it as `language` so the results match their setup.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "resolve-library-id",
+      "description": "Resolves a package/product name to a Context7-compatible library ID and returns matching libraries.\n\nYou MUST call this function before 'Query Documentation' tool to obtain a valid Context7-compatible library ID UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.\n\nEach result includes:\n- Library ID: Context7-compatible identifier (format: /org/project)\n- Name: Library or package name\n- Description: Short summary\n- Code Snippets: Number of available code examples\n- Source Reputation: Authority indicator (High, Medium, Low, or Unknown)\n- Benchmark Score: Quality indicator (100 is the highest score)\n- Versions: List of versions if available. Use one of those versions if the user provides a version in their query. The format of the version is /org/project/version.\n\nFor best results, select libraries based on name match, source reputation, snippet coverage, benchmark score, and relevance to your use case.\n\nSelection Process:\n1. Analyze the query to understand what library/package the user is looking for\n2. Return the most relevant match based on:\n- Name similarity to the query (exact matches prioritized)\n- Description relevance to the query's intent\n- Documentation coverage (prioritize libraries with higher Code Snippet counts)\n- Source reputation (consider libraries with High or Medium reputation more authoritative)\n- Benchmark Score: Quality indicator (100 is the highest score)\n\nResponse Format:\n- Return the selected library ID in a clearly marked section\n- Provide a brief explanation for why this library was chosen\n- If multiple good matches exist, acknowledge this but proceed with the most relevant one\n- If no good matches exist, clearly state this and suggest query refinements\n\nFor ambiguous queries, request clarification before proceeding with a best-guess match.\n\nIMPORTANT: Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best result you have.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    }
+  ],
+  "templr": [
+    {
+      "name": "get_demo",
+      "description": "Get metadata and local file paths for one demo site, including its exact prompt.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_index",
+      "description": "Read the full human-readable INDEX.md: category tables, template table and usage guide.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_preview",
+      "description": "Get a template or demo preview as an inline image. Use this to show the user 3-5 design options before they choose one. The kind is auto-detected when omitted.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_template",
+      "description": "Get the complete metadata for one template: description, fits, tags, fonts, sections, placeholders, links and local file paths.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_view_links",
+      "description": "Get local clickable preview links for specific templates or demos. Starts the gallery if needed. Share THESE localhost links with the user for live previews \u2014 never use the 8b.com links from metadata.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "list_categories",
+      "description": "List all template categories with counts.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read_demo_file",
+      "description": "Read a demo file: index.html, prompt.txt or meta.json.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "read_template_file",
+      "description": "Read a template file. Start with AGENTS.md and DESIGN.md, then read index.html. Allowed files: index.html, index.gsap.html, AGENTS.md, DESIGN.md, REFERENCE.md, meta.json.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search_demos",
+      "description": "Search the 19 independent demo sites from the 8B homepage gallery. Each has the exact prompt that produced it.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "search_templates",
+      "description": "Search 106 single-file website templates by business type, design mood, tag or category. Returns compact metadata and local file paths.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "start_gallery",
+      "description": "Start a local visual gallery of all 106 templates and 19 demos. Returns a localhost URL the user can open. Use this when the user wants to browse designs or asks to see options.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    }
+  ],
+  "tinyfish": [
+    {
+      "name": "batch_cancel",
+      "description": "Only use when the user explicitly asks to stop multiple running or pending automations. Never cancel because runs are slow, still pending, or a status call returned without results \u2014 keep waiting instead. Cancels runs by ID. Idempotent: already-terminal runs return their current status.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "batch_status",
+      "description": "Only use after batch_create to poll progress for multiple automation runs. Checks status by ID for up to 8 runs and returns status, result, and error for each. Poll every 30-60s until all runs reach a terminal state (COMPLETED, FAILED, CANCELLED).",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cancel_dataset_run",
+      "description": "Only use when the user explicitly asks to stop a dataset run. Never cancel because filling is slow or get_dataset returned without output_ready; keep polling instead. Rows already landed stay.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "cancel_deep_research",
+      "description": "Only use when the user explicitly asks to stop a deep research run. Never cancel because research is slow or get_deep_research returned without a report; keep polling instead. Idempotent: finished runs return their current status.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "cancel_monitor",
+      "description": "Only use when the user explicitly asks to delete or cancel a Monitor. Removes it and its schedule.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "cancel_profile_setup_session",
+      "description": "Closes a setup session and discards anything not yet saved.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "cancel_run",
+      "description": "Only use when the user explicitly asks to stop a running or pending automation. Never cancel because a run is slow, still pending, or a wait/poll call returned without a result \u2014 keep waiting instead. Cancels a run by ID. Idempotent: terminal runs (COMPLETED, FAILED, CANCELLED) return the current status without error.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "close_browser_session",
+      "description": "Only use when the user explicitly wants to stop or close a remote browser session. Closes a session by ID. Idempotent \u2014 already-ended sessions return success.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "create_browser_session",
+      "description": "For direct browser control or visual QA, open a browser session through your wallet account. Close it when you are done so it does not stay open. Default tool for direct Playwright, Puppeteer, Selenium, CDP, remote browser, or low-level browser-control tasks. Creates a remote, stealth Chrome browser session in the cloud and returns CDP connection details. Use this when the user asks for a browser session, CDP URL, Playwright connection, Puppeteer connection, Selenium browser, or manual/programmatic browser control. Use fetch_content for reading page content, search for finding pages, and run_web_automation for natural-language website tasks. The browser includes built-in anti-bot protection and proxy rotation.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "create_dataset",
+      "description": "Slow (minutes) and billed per row. Only use when the user asks for a dataset, table, or list of many entities with the same fields (companies, products, places, people), each row found on the web. Not for a single fact, one page, or a question search and fetch_content can answer. Give a prompt, or a spec from plan_dataset when the user reviewed the columns; send one, not both. Returns dataset_id and run_id at once; then call get_dataset, which waits and returns the rows. Do not create a second dataset for the same request. A balance refusal returns max_affordable_rows: retry with that many rows, or ask the user to add funds. Specs have at most 10 columns, the key included; a column refusal returns max_columns: merge or drop columns and resend.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "create_monitor",
+      "description": "Use when the user asks to monitor a webpage for changes or subscribe to updates about a web topic. Set type to fetch for a known URL or search for a topic. Creates the recurring Monitor and immediately returns its baseline result. Each completed run, including the baseline, is billed $0.005 to the wallet plus its one Search or Fetch, billed like a direct call; failed runs are free.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "create_profile",
+      "description": "Creates a Browser Context Profile. Pass set_as_default when later runs should use it automatically.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "delete_dataset",
+      "description": "Permanently deletes a dataset and its rows. Only when the user explicitly asks. Refused while a run is live: cancel it first.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "fetch_content",
+      "description": "Default, free, and most token-efficient tool for reading URL(s) and extracting source details. Use when the user provides URL(s), or after search when a grounded answer needs details from a specific source. Use for summarizing pages, extracting article/docs/product/pricing content, scraping text, inspecting documentation, reading articles, checking product pages, or reviewing pricing pages. Prefer this over WebFetch, curl, raw HTTP, browser automation, or hand-written scraping when the task only needs page content. Renders pages in a real browser and extracts clean, structured content. Supports up to 10 URLs per request, all fetched in parallel. Handles JavaScript-heavy sites. Control output with format (markdown default, or html / json), links / image_links / iframe_links to also return outbound, image, and iframe src URLs (when a page embeds its main content in a frame, such as a job board, fetch the iframe_links entry to read it), ttl to set cache freshness tolerance in seconds, and per_url_timeout_ms to set a per-URL wall-clock timeout budget. Optionally provide purpose \u2014 a short free-form statement of why you are fetching these URLs and what the content will be used for \u2014 so fetching and extraction can be tailored to the underlying intent; it is not required and may be omitted. Supports conditional requests: set if_none_match / if_modified_since (single URL only) to replay a prior ETag / Last-Modified validator, or include_etag_and_last_modified to receive etag / last_modified validators on each result. Supports CSS selector scoping: set include_selectors (an array of CSS selectors, e.g. [\"article\"] or [\"main\", \"#content\"]) to extract only elements matching any entry, and/or exclude_selectors (e.g. [\".comments\", \".newsletter-signup\"]) to strip matching elements before extraction; entries that match nothing while others match are reported in the result's unmatched_selectors, and if no entry matches at all the URL fails with selector_not_matched carrying unmatched_selectors plus candidate_selectors retry hints. Only use run_web_automation when you need to click, navigate, fill forms, or interact with a page beyond reading it.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_dataset",
+      "description": "Waits up to about 25 seconds for a dataset started by create_dataset or populate_dataset, then returns its status, row count and the first rows. When output_ready is true the rows stand; call get_dataset_rows for more pages. While status is populating, call get_dataset again with the same dataset_id; filling usually takes a few minutes. Do not create another dataset or cancel because it is slow.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_dataset_rows",
+      "description": "One page of rows from a dataset, in column order. Use after get_dataset reports output_ready, or to read past the first rows; pass the previous next_cursor as after.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_deep_research",
+      "description": "Waits up to about 25 seconds for a run started by run_deep_research_async, then returns its status. When output_ready is true, the result has the cited report. While the run is still going, call get_deep_research again with the same research_run_id; research usually takes several minutes. Do not start a new run or cancel because it is slow. If the user asks about an earlier report, call list_deep_research. Completed reports may include freshness_report and termination_reason; synthesis_failed means the report contains interim findings.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_monitor",
+      "description": "Only use when the user asks for one Monitor. Requires monitor_id from list_monitors or create_monitor.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_run",
+      "description": "Only use after run_web_automation errors, times out, or returns a run_id that needs polling. Retrieves status, result, error, and metadata for a specific automation run. If you do not have a run_id, use list_runs to find it. Runs typically take a few minutes. Wait 30-60 seconds between polls.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_search_usage",
+      "description": "Only use when the user asks to review search history, check what queries were made, or audit usage. Never use this to verify whether TinyFish is connected, installed, ready, or working; verify setup by calling search, then fetch_content on a relevant result. Lists past search usage records with date/status filtering and pagination. For a team's workflow key, total and total_pages are lower bounds; use has_more to page.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "get_wallet",
+      "description": "Read-only. Returns the caller's current wallet balance, auto-reload state, per-product contract rates, and any in-flight top-up. To add funds, use the top_up_wallet tool. Auto-reload changes happen in the dashboard.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "guide_next_step",
+      "description": "Returns the next interactive TinyFish onboarding step based on the user\u2019s real usage. Ask for the user\u2019s input and wait before running the suggested tool.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_browser_sessions",
+      "description": "Only use when the user asks to check active browser sessions, review browser usage history, or find a specific browser session by ID. Lists sessions with filtering and pagination.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_datasets",
+      "description": "The caller's datasets, newest first, with status and row counts. Use to find a dataset_id the user refers to by name.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_deep_research",
+      "description": "Lists the user's deep research runs, newest first, with status and report_url. Filter by status, query text or created_after/created_before; page with cursor from pagination.next_cursor. Use when the user asks about an earlier report, or before starting a run that may repeat one; then call get_deep_research with its research_run_id.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_fetch_usage",
+      "description": "Only use when the user asks to review fetch history or audit fetch usage. Never use this to verify whether TinyFish is connected, installed, ready, or working. Lists past fetch_content requests with optional filtering by date range and status. Does not include the fetched text content itself. For a team's workflow key, total and total_pages are lower bounds; use has_more to page.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_monitors",
+      "description": "Only use when the user asks which Monitors they have. Returns each Monitor id, type, target, schedule, and status.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_profiles",
+      "description": "Lists Browser Context Profiles, including which one is the default. signed_in_sites are sites where a TinyFish setup saw the user sign in, or the user said they signed in when saving, and whose cookies are still saved; a sign-in may have expired since its claimed_at. For a site that needs sign-in, prefer a profile whose signed_in_sites includes that site and pass its exact profile_id. An entry covers its subdomains (google.com covers docs.google.com), and some sign-ins are recorded under the provider's site: microsoftonline.com covers office.com, microsoft365.com and sharepoint.com, and x.com covers twitter.com. An entry does not show which account or tenant. A profile that only matches by name may still be signed in: for a read-only task, run once on it without asking. If the result shows a sign-in page, tell the user and offer start_profile_setup_session for it.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "list_runs",
+      "description": "Only use when you need to find a run_id for a recently created automation, usually after run_web_automation timed out before returning one. Lists automation runs with optional filtering by status and pagination. Filter by status=RUNNING to find active runs. pagination.total can be null, and a team's total stops counting at 1,000; use has_more and next_cursor to page.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pause_monitor",
+      "description": "Only use when the user asks to pause a Monitor. Stops its schedule until resume_monitor.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "plan_dataset",
+      "description": "Designs the columns for a dataset prompt without creating anything, at most 10 including the key. Use when the user wants to see or edit the columns first; pass the returned spec to create_dataset. Otherwise call create_dataset directly with the prompt.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "populate_dataset",
+      "description": "Fills an existing dataset again, to add rows up to a new target_rows or to rebuild it with reset. Refused while a run is live. Returns run_id; then call get_dataset. A balance refusal returns max_affordable_rows: retry with that many more rows, or ask the user to add funds.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "resume_monitor",
+      "description": "Only use when the user asks to resume a paused Monitor and start its schedule again.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "run_deep_research",
+      "description": "Same as run_deep_research_async, with the same rules for when to use it, but waits for the cited report in this call and streams progress (planning, searching, reading sources, writing the report). Takes about 10 minutes. Include _meta.progressToken. If the call errors, times out, or returns output_ready false without an error, the run is still going: call get_deep_research with its research_run_id; do not start a new run. By default at most 5 runs go at once per user (some accounts allow a different number; a refusal states the actual limit); for more questions, start the rest only after earlier runs finish (poll them with get_deep_research). Mode max: deeper research with a larger budget, only when the user asks for maximum depth or an exhaustive report; slower and costs more. deep (default) for everything else.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "run_deep_research_async",
+      "description": "Slow (several minutes) and billed per run. Only use when the user explicitly asks for deep research, or a cited report, literature review, survey, or landscape, or the question needs synthesis across many sources that a few search and fetch_content calls cannot cover (market or competitor landscapes, literature reviews, multi-factor comparisons across many options). Not for single facts, definitions, current news, docs lookups, \"what is\"/\"compare X vs Y\" questions, or reading known URLs: use search and fetch_content for those. Starts an async run and returns research_run_id; then call get_deep_research. By default at most 5 runs go at once per user (some accounts allow a different number; a refusal states the actual limit); for more questions, start the rest only after earlier runs finish (poll them with get_deep_research). Mode max: deeper research with a larger budget, only when the user asks for maximum depth or an exhaustive report; slower and costs more. deep (default) for everything else. Follow-ups accept prior_run_id for an earlier report or session_id for an existing owned session, mutually exclusively. domain_filter prioritizes or restricts sources and can block domains.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "run_monitor",
+      "description": "Only use when the user asks to check a Monitor immediately. Runs once and returns that result.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "run_web_automation",
+      "description": "Metered web automation is available through your wallet \u2014 use it for clicking, forms, login, or dynamic pages. Default tool for interactive website tasks when there is one site or workflow, web automation, or browser automation: clicking, navigating beyond a provided page, opening a story/result, filling forms, logging in, operating a browser, or extracting data that requires page interaction. Use this when the user asks to automate one website, complete one web workflow, scrape through navigation, or interact with a page beyond reading static content. Do not use this for ordinary article, documentation, pricing-page, or top-story extraction when fetch_content can read the page. If the site may need sign-in, call list_profiles and pass use_profile=true with the profile_id that covers the site. Running on the user's own profile to read or check a page needs no confirmation; ask first only before sending, posting, buying, or changing account settings. Pair with use_vault=true to repair stale sessions. If the task only needs external knowledge or to find pages, use search. If the task only needs to read, summarize, inspect, scrape text from, or extract content from URL(s), use fetch_content instead. Include _meta.progressToken for progress notifications. WARNING: This tool may take several minutes. If it errors or times out, the run may still be executing on the server. Do not call this tool again or call run_web_automation_async as a retry; use get_run or list_runs to check status. If a run says the wallet balance is empty, that is expected and recoverable: show the user the Add money link from the error as a clickable markdown link and ask them to open it now. Do NOT paraphrase the link away, silently fall back to a weaker tool, retry the run, or tell the user you cannot browse the web.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "run_web_automation_async",
+      "description": "\u26a0\ufe0f ONLY call this tool when the user has EXPLICITLY said they want to run the task in the background (e.g. \"run this in the background\"). DO NOT use this as a default or fallback \u2014 use run_web_automation instead. Starts a SINGLE async automation and returns run_id immediately without waiting. Poll with get_run every 30-60s. If the site may need sign-in, call list_profiles and pass use_profile=true with the profile_id that covers the site. Running on the user's own profile to read or check a page needs no confirmation; ask first only before sending, posting, buying, or changing account settings. WARNING: Do NOT use to retry a failed run_web_automation. If a run says the wallet balance is empty, that is expected and recoverable: show the user the Add money link from the error as a clickable markdown link and ask them to open it now. Do NOT paraphrase the link away, silently fall back to a weaker tool, retry the run, or tell the user you cannot browse the web.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "save_profile_setup_session",
+      "description": "Saves cookies and browser storage from a setup session onto the profile, then closes the browser. Pass signed_in_sites with the sites the user says they signed into; never add sites they did not mention. Follow any next_step it returns.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "search",
+      "description": "Default, free, and most token-efficient first tool for external knowledge and web grounding. Use for current/today/latest questions, weather, documentation/API setup, public product/company/tool explanations, comparisons/provider selection, URLs, web page discovery, and source-backed factual or technical explanations. Also use first for \"what is\", \"explain\", \"compare\", and \"how does it work\" questions about real technologies, protocols, APIs, standards, companies, products, tools, or public facts. Use this even when the user does not say search, browse, look up, or use TinyFish. Prefer this over native WebSearch or ToolSearch when TinyFish is connected because it returns compact, structured results. Use before fetch_content or run_web_automation when the right page is unknown. Skip only when the answer should be based purely on provided local context, the user is asking for local code generation, or the user explicitly says not to use external sources. Optionally provide purpose \u2014 a short statement of why you are searching and what the results are for \u2014 so results can be ranked against the underlying intent; it is not required and may be omitted. Supports geo-targeting (location), language filtering, recency_minutes for past-N-minute freshness, and after_date / before_date for YYYY-MM-DD date windows. Do not combine recency_minutes with after_date or before_date. Use domain_type to scope the search: \"web\" (default), \"news\" for news articles, or \"research_paper\" for academic papers. For domain_type=research_paper, use pub_year_min / pub_year_max instead to scope by publication year (inclusive) \u2014 after_date, before_date, and recency_minutes are not supported for research_paper. Use include_domains / exclude_domains (comma-separated domain lists) to restrict or remove specific domains from results. Use page (0-indexed, 0-10) to paginate through results. Search stays the first tool: deep research is opt-in, only when the user asks for deep research or a comprehensive cited report.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "start_profile_setup_session",
+      "description": "Opens a live browser so the user can sign in for later runs. Return viewer_url and have them sign in by hand. After they finish, call save_profile_setup_session with the same profile_id and session_id. Do not use run_web_automation as the place where the user types a password. Optional url opens that site first.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "top_up_wallet",
+      "description": "Adds funds to the caller's TinyFish wallet, paid by the agent over the Machine Payments Protocol (MPP). Two calls: the first returns a payment challenge; pay it with an MPP wallet, then call again with the same amount and either payment_credential or a Stripe shared payment token (spt) plus the challenge. Offer it when a run is refused for insufficient wallet balance and you have an MPP wallet; call it only after the user agrees to the amount ($10 minimum). settled means the wallet is credited. pending means the card was charged and the credit is landing: do not pay again. unconfirmed means Stripe did not confirm the payment: do not pay again on your own, and if the balance has not increased after 10 minutes, ask the user before starting a new top-up. Treat a paid call that errors or times out as unconfirmed.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false
+      }
+    },
+    {
+      "name": "update_monitor",
+      "description": "Only use when the user asks to change a Monitor's schedule, name, webhook, or purpose. Send only the fields to change; null clears webhook_url, purpose, or name. The query or URL cannot change: create a new Monitor instead.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      }
+    }
+  ]
+}

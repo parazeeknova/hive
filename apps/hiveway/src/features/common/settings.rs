@@ -8,6 +8,8 @@ pub struct Settings {
     /// `HIVE_SECRETS_KEY`: 32-byte key that encrypts provider keys saved in the
     /// dashboard. Without it, dashboard provider keys are disabled.
     pub secrets_key: Option<[u8; 32]>,
+    /// Shared services that must be online before a deployment becomes ready.
+    pub required_shared_integrations: Vec<String>,
     /// `HIVE_PROVIDER_URL_<SLUG>` overrides for published provider endpoints.
     pub provider_urls: std::collections::HashMap<String, String>,
     /// Optional `HIVE_GITHUB_TOKEN` for rate-limited public repository analysis.
@@ -53,6 +55,7 @@ impl Settings {
             builder: crate::features::builder::config::Config::load()?,
             embeddings: crate::features::hiveway::embeddings::Config::load()?,
             secrets_key: secrets_key()?,
+            required_shared_integrations: required_shared_integrations()?,
             provider_urls: provider_urls()?,
             github_token: optional("HIVE_GITHUB_TOKEN"),
             public_url,
@@ -80,6 +83,26 @@ impl Settings {
             runtime,
         })
     }
+}
+fn required_shared_integrations() -> anyhow::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for name in env::var("HIVE_REQUIRED_SHARED_INTEGRATIONS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if !crate::features::integrations::registry()
+            .iter()
+            .any(|item| item.slug == name && item.shared_owner.is_some())
+        {
+            bail!("HIVE_REQUIRED_SHARED_INTEGRATIONS must name configured shared integrations");
+        }
+        if !names.iter().any(|v| v == name) {
+            names.push(name.to_owned());
+        }
+    }
+    Ok(names)
 }
 /// Parse `HIVE_SECRETS_KEY` as 64 hex characters or standard base64 of 32 bytes.
 fn secrets_key() -> anyhow::Result<Option<[u8; 32]>> {

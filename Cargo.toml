@@ -3,7 +3,7 @@ members = ["apps/hiveway", "apps/hive-local"]
 resolver = "3"
 
 [workspace.package]
-version = "0.0.78"
+version = "0.0.80"
 edition = "2024"
 license = "MIT"
 publish = false

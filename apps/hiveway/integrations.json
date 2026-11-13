@@ -21,42 +21,42 @@
     "previews": [
       {
         "slug": "okapi",
-        "title": "Okapi Bakehouse · bakery",
+        "title": "Okapi Bakehouse \u00b7 bakery",
         "src": "/integrations/templr/okapi.webp"
       },
       {
         "slug": "little-drum",
-        "title": "Little Drum · coffee roaster",
+        "title": "Little Drum \u00b7 coffee roaster",
         "src": "/integrations/templr/little-drum.webp"
       },
       {
         "slug": "ostro",
-        "title": "Hotel Ostro · boutique hotel",
+        "title": "Hotel Ostro \u00b7 boutique hotel",
         "src": "/integrations/templr/ostro.webp"
       },
       {
         "slug": "murmur",
-        "title": "murmur · SaaS landing page",
+        "title": "murmur \u00b7 SaaS landing page",
         "src": "/integrations/templr/murmur.webp"
       },
       {
         "slug": "arcline",
-        "title": "Arcline · fitness",
+        "title": "Arcline \u00b7 fitness",
         "src": "/integrations/templr/arcline.webp"
       },
       {
         "slug": "nocturna",
-        "title": "Nocturna · art gallery",
+        "title": "Nocturna \u00b7 art gallery",
         "src": "/integrations/templr/nocturna.webp"
       },
       {
         "slug": "outre",
-        "title": "OUTRE · fashion brand",
+        "title": "OUTRE \u00b7 fashion brand",
         "src": "/integrations/templr/outre.webp"
       },
       {
         "slug": "scrawl",
-        "title": "SCRAWL · streetwear",
+        "title": "SCRAWL \u00b7 streetwear",
         "src": "/integrations/templr/scrawl.webp"
       }
     ],
@@ -69,7 +69,18 @@
     "session_hint": "For website inspiration, search templr with the actual business type, show 3-5 real get_preview images, and let the user choose before coding. For clickable HTML previews use the user's local-preview connection, which downloads files to their computer and starts a loopback server; never claim VPS localhost links are user-local previews.",
     "search_tools": ["search_templates"],
     "cache_scope": "public",
-    "upstream": null
+    "upstream": null,
+    "discovery_keywords": [
+      "website",
+      "design",
+      "template",
+      "inspiration",
+      "landing",
+      "coffee",
+      "cafe",
+      "restaurant",
+      "portfolio"
+    ]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7002",
@@ -91,7 +102,32 @@
       "auth": "bearer",
       "header": "Authorization",
       "read_only_tools": ["resolve-library-id", "query-docs"]
-    }
+    },
+    "discovery_keywords": [
+      "documentation",
+      "library",
+      "framework",
+      "sdk",
+      "api",
+      "implement",
+      "integrate",
+      "authentication",
+      "middleware",
+      "migration",
+      "nextjs",
+      "next",
+      "react",
+      "stripe",
+      "subscription",
+      "typescript",
+      "rust",
+      "python",
+      "django",
+      "fastapi",
+      "express",
+      "tailwind",
+      "prisma"
+    ]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7003",
@@ -157,7 +193,19 @@
       "auth": "header",
       "header": "X-API-Key",
       "read_only_tools": []
-    }
+    },
+    "discovery_keywords": [
+      "web",
+      "search",
+      "research",
+      "recent",
+      "latest",
+      "news",
+      "advisory",
+      "security",
+      "sources",
+      "browse"
+    ]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7004",
@@ -199,7 +247,8 @@
       }
     },
     "path_arguments": ["uri"],
-    "url_arguments": ["uri"]
+    "url_arguments": ["uri"],
+    "discovery_keywords": ["convert", "pdf", "document", "markdown", "office"]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7005",
@@ -304,7 +353,15 @@
       }
     },
     "path_arguments": [],
-    "url_arguments": []
+    "url_arguments": [],
+    "discovery_keywords": [
+      "sql",
+      "csv",
+      "parquet",
+      "dataset",
+      "aggregate",
+      "analyze"
+    ]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7006",
@@ -343,7 +400,8 @@
       "version": "2.3.0",
       "args": ["{roots}"]
     },
-    "path_arguments": ["path", "paths", "source", "destination"]
+    "path_arguments": ["path", "paths", "source", "destination"],
+    "discovery_keywords": ["file", "folder", "directory", "local"]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7007",
@@ -429,7 +487,8 @@
       "file_paths",
       "subtitle_path",
       "output_path"
-    ]
+    ],
+    "discovery_keywords": ["video", "audio", "compress", "trim", "frames"]
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7008",
@@ -521,6 +580,13 @@
         "openWorldHint": false
       }
     },
-    "path_arguments": []
+    "path_arguments": [],
+    "discovery_keywords": [
+      "symbol",
+      "references",
+      "refactor",
+      "rename",
+      "definition"
+    ]
   }
 ]

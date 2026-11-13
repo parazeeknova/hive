@@ -24,6 +24,8 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tracing::Instrument;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 type Windows = HashMap<String, (Instant, u32)>;
 #[derive(Clone)]
 pub(super) struct Admission {
@@ -255,11 +257,48 @@ fn overloaded() -> Response {
         .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
     response
 }
-pub(super) async fn guard(
-    State(admission): State<Admission>,
-    request: Request,
-    next: Next,
-) -> Response {
+pub(super) async fn guard(admission: State<Admission>, request: Request, next: Next) -> Response {
+    let request_id = uuid::Uuid::new_v4();
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map_or("unmatched", axum::extract::MatchedPath::as_str)
+        .to_owned();
+    let trace_headers: HashMap<String, String> = ["traceparent", "tracestate"]
+        .into_iter()
+        .filter_map(|name| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(|value| (name.to_owned(), value.to_owned()))
+        })
+        .collect();
+    let parent = opentelemetry::global::get_text_map_propagator(|propagator| {
+        propagator.extract(&trace_headers)
+    });
+    let span = tracing::info_span!("http.request", otel.kind="server", request_id = %request_id, method = %request.method(), route = %route, http.response.status_code=tracing::field::Empty);
+    let _ = span.set_parent(parent);
+    async move {
+        let started = Instant::now();
+        let mut response = guard_inner(admission, request, next).await;
+        tracing::Span::current().record("http.response.status_code", response.status().as_u16());
+        let elapsed = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        tracing::info!(
+            status = response.status().as_u16(),
+            duration_ms = elapsed,
+            "HTTP request finished"
+        );
+        if let Ok(value) = HeaderValue::from_str(&request_id.to_string()) {
+            response.headers_mut().insert("x-request-id", value);
+        }
+        response
+    }
+    .instrument(span)
+    .await
+}
+
+async fn guard_inner(State(admission): State<Admission>, request: Request, next: Next) -> Response {
     let state = &admission.state;
     let limits = &state.settings.runtime.http;
     let public = public_oauth_path(request.uri().path());
@@ -361,11 +400,14 @@ async fn finish_handler(
     slot: AdmissionSlot,
     duration: Duration,
 ) -> Response {
-    let task = tokio::spawn(async move {
-        let response = handler.await;
-        slot.release();
-        response
-    });
+    let task = tokio::spawn(
+        async move {
+            let response = handler.await;
+            slot.release();
+            response
+        }
+        .in_current_span(),
+    );
     match tokio::time::timeout(duration, task).await {
         Ok(Ok(response)) => response,
         Ok(Err(error)) => {

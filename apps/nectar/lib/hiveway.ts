@@ -82,7 +82,23 @@ export interface Receipt {
   payment_issue: string | null;
   settlement: { transaction: string; network: string } | null;
 }
+export interface ToolActivity {
+  id: string;
+  tool: string;
+  provider: string | null;
+  agent_name: string;
+  client_context: Invocation["client_context"];
+  run_id: string | null;
+  task_id: string | null;
+  state: string;
+  error_code: string | null;
+  execution_ms: number | null;
+  created_at: number;
+  completed_at: number | null;
+}
 export interface Activity {
+  tool_calls?: ToolActivity[];
+  tool_counts?: { total: number; succeeded: number; failed: number };
   counts?: { total: number; succeeded: number; failed: number };
   next_cursor?: { before_time: number; before_id: string } | null;
   invocations: Invocation[];

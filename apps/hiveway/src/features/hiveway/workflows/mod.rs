@@ -357,6 +357,7 @@ impl Stored {
                 steps.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" → "),
                 json!({"description": self.description}),
             ),
+            "_meta": {"dev.hive/requiredTools": steps},
             "inputSchema": inputs,
             "annotations": {"readOnlyHint": read, "destructiveHint": !read, "idempotentHint": read, "openWorldHint": true, "title": self.name},
         })

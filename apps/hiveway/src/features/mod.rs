@@ -19,3 +19,5 @@ pub mod wax;
 pub mod connections;
 
 pub mod integrations;
+
+pub mod tool_activity;
