@@ -1,0 +1,10 @@
+{
+  "hive": "https://hiveway.example.com/mcp",
+  "key_file": "/run/secrets/hive-key",
+  "roots": [],
+  "shared": true,
+  "enabled": {
+    "markitdown": { "command": "uvx", "package": "markitdown-mcp" },
+    "duckdb": { "command": "uvx", "package": "mcp-server-motherduck" }
+  }
+}

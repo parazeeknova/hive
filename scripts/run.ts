@@ -1,3 +1,4 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../", import.meta.url));
@@ -12,7 +13,7 @@ export const run = async (command: string[], cwd = root, required = true) => {
       ...process.env,
       NEXT_TELEMETRY_DISABLED: "1",
       NX_DAEMON: "false",
-      PATH: `${root}/node_modules/.bin:${process.env.PATH ?? ""}`,
+      PATH: `${path.join(root, "node_modules", ".bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     stderr: "inherit",
     stdin: "inherit",

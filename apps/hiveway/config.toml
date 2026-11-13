@@ -166,6 +166,27 @@ body_bytes = 8192
 tags_per_entry = 8
 recall_results = 20
 
+[workflows]
+# Multi-tool workflows run each step with the caller's own credential.
+max_steps = 12
+max_items = 25
+max_tool_calls = 60
+step_concurrency = 4
+max_depth = 2
+step_wait_seconds = 300
+run_seconds = 900
+call_wait_seconds = 25
+runs_per_owner = 4
+runs_per_process = 128
+run_retention_seconds = 86400
+step_result_bytes = 262144
+definition_bytes = 65536
+workflows_per_owner = 100
+# A tool chain that repeats this often becomes a private workflow (0 disables).
+auto_publish_after = 3
+chain_window_seconds = 900
+tracked_owners = 256
+
 [payment]
 decimals = 6
 settlement_finality = "finalized"

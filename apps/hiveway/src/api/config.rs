@@ -15,6 +15,8 @@ pub struct PublicConfig {
     pub limits: PublicLimits,
     pub connectors: ConnectorConfig,
     pub integrations: Vec<PublicIntegration>,
+    /// Changes whenever the integration catalog changes; helpers re-sync on change.
+    pub catalog_version: String,
 }
 #[derive(Serialize, ToSchema)]
 pub struct PublicBuilder {
@@ -57,13 +59,22 @@ pub struct ConnectorConfig {
     pub code_manifest_files_per_call: usize,
     pub code_blobs_per_upload: usize,
 }
-/// A bring-your-own-key provider Hive Local can connect to on the user's machine.
+/// An integration as Hive Local and the shared helper see it: how to start it
+/// and which operator hints and argument checks apply.
 #[derive(Serialize, ToSchema)]
 pub struct PublicIntegration {
     pub slug: String,
     pub name: String,
+    pub description: String,
     pub byok: bool,
+    pub tools: Vec<String>,
     pub upstream: Option<crate::features::integrations::Upstream>,
+    pub local: Option<crate::features::integrations::Launch>,
+    pub shared_launch: Option<crate::features::integrations::Launch>,
+    pub annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub shared_annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub path_arguments: Vec<String>,
+    pub url_arguments: Vec<String>,
 }
 #[derive(Serialize, ToSchema)]
 pub struct PublicLimits {
@@ -127,10 +138,19 @@ pub async fn configuration(State(state): State<AppState>) -> Json<PublicConfig> 
             .map(|item| PublicIntegration {
                 slug: item.slug.clone(),
                 name: item.name.clone(),
+                description: item.description.clone(),
                 byok: item.byok,
+                tools: item.tools.clone(),
                 upstream: item.upstream.clone(),
+                local: item.local.clone(),
+                shared_launch: item.shared_launch.clone(),
+                annotations: item.annotations.clone(),
+                shared_annotations: item.shared_annotations.clone(),
+                path_arguments: item.path_arguments.clone(),
+                url_arguments: item.url_arguments.clone(),
             })
             .collect(),
+        catalog_version: crate::features::integrations::catalog_version(),
         limits: PublicLimits {
             request_body_bytes: settings.runtime.http.body_bytes,
             artifact_bytes: sandbox.artifact_bytes,

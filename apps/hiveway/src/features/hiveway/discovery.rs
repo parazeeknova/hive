@@ -330,6 +330,7 @@ pub(super) async fn search(
         .map(|(score, tool, signals)| json!({"name":tool["name"],"score":(score * 1000.0).round() / 1000.0,"signals":signals}))
         .collect();
     let tools: Vec<Value> = ranked.into_iter().map(|(_, tool, _)| tool).collect();
+    let setup = setup_hints(&terms, &names);
     let guidance: Vec<_> = integrations::registry().iter().filter(|item| {
         tools.iter().any(|tool| tool["name"].as_str().is_some_and(|name|name.starts_with(&format!("mcp_{}__",item.slug)) || name == format!("hive_{}",item.id.simple())))
     }).map(|item| json!({"integration":item.name,"source":"Hive operator-maintained workflow","guidance":item.guidance})).collect();
@@ -339,15 +340,85 @@ pub(super) async fn search(
         "stack": stack,
         "semantic": state.settings.embeddings.is_some(),
         "workflows": guidance,
+        "available_to_enable": setup,
         "call_with": "call_tool",
-        "connection_setup": "If the integration has no connected tools, the user can save their own provider API key in the Hive dashboard (Integrations) or run Hive Local with it. Catalog artifacts bind to your own connection_id; no other user's credentials are shared.",
+        "multi_step": "To combine several of these tools in one call, use run_workflow with steps that pass results forward ({{steps.<id>.text}}), or call a workflow_<name> tool.",
+        "connection_setup": "Integrations in available_to_enable are not connected for this account yet: Hive Local ones run on the user's own computer (`hive-local enable <slug>`), bring-your-own-key ones need the user's API key in the Hive dashboard. Tell the user how to enable them instead of guessing their output. No other user's credentials are shared.",
         "empty_results": "Refine the query once; if no tool fits, continue with the user's task normally.",
     }))
+}
+
+/// Relevant integrations the caller has not connected, with how to enable them.
+fn setup_hints(terms: &[String], names: &[String]) -> Vec<Value> {
+    let connected: HashSet<&str> = names
+        .iter()
+        .filter_map(|name| {
+            name.strip_prefix("mcp_")?
+                .split_once("__")
+                .map(|(slug, _)| slug)
+        })
+        .collect();
+    let mut matches: Vec<(usize, &integrations::Integration)> = integrations::registry()
+        .iter()
+        .filter(|item| {
+            (item.local.is_some() || item.byok) && !connected.contains(item.slug.as_str())
+        })
+        .filter_map(|item| {
+            let text: HashSet<String> = tokens(&format!(
+                "{} {} {} {}",
+                item.slug,
+                item.name,
+                item.description,
+                item.tools.join(" ")
+            ))
+            .into_iter()
+            .collect();
+            let hits = terms.iter().filter(|term| text.contains(*term)).count();
+            (hits > 0).then_some((hits, item))
+        })
+        .collect();
+    matches.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.slug.cmp(&b.1.slug)));
+    matches
+        .into_iter()
+        .take(3)
+        .map(|(_, item)| {
+            let how = if item.local.is_some() {
+                format!(
+                    "Runs on the user's own computer through Hive Local: install hive-local, run `hive-local enable {}` and keep `hive-local run` running. Its tools then appear here as mcp_{}__<tool>.",
+                    item.slug, item.slug
+                )
+            } else {
+                format!(
+                    "Needs the user's own {} API key: save it in the Hive dashboard (Integrations).",
+                    item.name
+                )
+            };
+            json!({
+                "integration": item.name,
+                "slug": item.slug,
+                "description": item.description,
+                "tools": item.tools.iter().take(10).map(|t| format!("mcp_{}__{t}", item.slug)).collect::<Vec<_>>(),
+                "how_to_enable": how,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn setup_hints_suggest_unconnected_local_integrations() {
+        let terms = vec![stem("video"), stem("trim")];
+        let hints = setup_hints(&terms, &[]);
+        assert!(hints.iter().any(|h| h["slug"] == "ffmpeg"), "{hints:?}");
+        let connected = vec!["mcp_ffmpeg__ffmpeg_trim".to_owned()];
+        assert!(
+            !setup_hints(&terms, &connected)
+                .iter()
+                .any(|h| h["slug"] == "ffmpeg")
+        );
+    }
     #[test]
     fn stemming_joins_common_inflections() {
         assert_eq!(stem("templates"), "template");

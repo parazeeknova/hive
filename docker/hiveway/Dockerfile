@@ -6,6 +6,7 @@ COPY rust-toolchain.toml ./
 RUN rustup show active-toolchain
 COPY Cargo.toml Cargo.lock ./
 COPY apps/hiveway apps/hiveway
+COPY apps/hive-local apps/hive-local
 ARG HIVE_BUILD_REVISION=development
 ENV HIVE_BUILD_REVISION=$HIVE_BUILD_REVISION
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/workspace/target cargo build --locked --release -p hiveway && cp target/release/hiveway /usr/local/bin/hiveway

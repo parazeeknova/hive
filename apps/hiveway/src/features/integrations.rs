@@ -1,5 +1,6 @@
 //! Operator-maintained integrations. Publisher verification never comes from user metadata.
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
 pub const PUBLISHER: &str = "hive:official";
@@ -35,7 +36,61 @@ pub struct Integration {
     /// Bring-your-own-key upstream that Hive Local connects to on the user's machine.
     #[serde(default)]
     pub upstream: Option<Upstream>,
+    /// How Hive Local starts this MCP on the user's computer. Files, media and
+    /// databases it touches never leave that machine.
+    #[serde(default)]
+    pub local: Option<Launch>,
+    /// How the operator's shared helper starts this MCP for every Hive account.
+    /// Only stateless, sandboxed profiles belong here.
+    #[serde(default)]
+    pub shared_launch: Option<Launch>,
+    /// Operator-verified tool hints applied by Hive Local, overriding the upstream's.
+    #[serde(default)]
+    pub annotations: std::collections::BTreeMap<String, Value>,
+    /// Hints applied only by the shared helper (for example a SQL tool that is
+    /// read-only because its sandbox blocks every write).
+    #[serde(default)]
+    pub shared_annotations: std::collections::BTreeMap<String, Value>,
+    /// Arguments that name local files; Hive Local keeps them inside approved folders.
+    #[serde(default)]
+    pub path_arguments: Vec<String>,
+    /// Arguments the shared helper only accepts as public `https://` (or `data:`) URLs.
+    #[serde(default)]
+    pub url_arguments: Vec<String>,
 }
+/// A stdio MCP launch specification. `command` is limited to package runners
+/// so the catalog can never name an arbitrary executable on a user's machine.
+#[derive(Clone, Debug, Deserialize, Serialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Launch {
+    /// `uvx` or `npx`.
+    pub command: String,
+    /// The package the runner fetches; a change of package needs fresh user approval.
+    pub package: String,
+    /// Exact upstream version. Bumping it here updates every helper automatically.
+    pub version: String,
+    /// Executable inside the package when it differs from the package name.
+    #[serde(default)]
+    pub entry: Option<String>,
+    /// Extra runner options, e.g. `["--with", "mcp<2"]` for uvx.
+    #[serde(default)]
+    pub runner_args: Vec<String>,
+    /// Arguments. Placeholders: `{roots}` (each approved folder), `{root}`,
+    /// `{output_dir}`, `{project}`, `{duckdb_path}`, `{duckdb_flags}`, `{duckdb_init}`,
+    /// `{workdir}` (a private empty directory) and `{ca_bundle}`.
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Programs that must be installed besides the runner, e.g. `ffmpeg`.
+    #[serde(default)]
+    pub requires: Vec<String>,
+    /// Commands run once before start, with the same placeholders (e.g. creating
+    /// an empty read-only database file).
+    #[serde(default)]
+    pub prepare: Vec<Vec<String>>,
+}
+/// Runners the helpers may start. Anything else is rejected by tests and helpers.
+pub const LAUNCHERS: &[&str] = &["uvx", "npx"];
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CacheScope {
@@ -107,6 +162,42 @@ pub fn shared(slug: &str) -> Option<&'static Integration> {
         .iter()
         .find(|item| item.slug == slug && item.shared_owner.is_some())
 }
+/// A short digest of everything helpers act on, so they notice catalog updates.
+#[must_use]
+pub fn catalog_version() -> String {
+    use sha2::{Digest, Sha256};
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            let digest = Sha256::digest(serde_json::to_vec(registry()).unwrap_or_default());
+            hex::encode(&digest[..8])
+        })
+        .clone()
+}
+/// Upsert the compiled-in registry into the catalog on every start, so adding or
+/// editing an integration needs no migration. Retired integrations are deactivated.
+/// # Errors
+/// Returns database errors.
+pub async fn sync(db: &impl sea_orm::ConnectionTrait) -> Result<(), sea_orm::DbErr> {
+    use sea_orm::{DbBackend, Statement};
+    let ids: Vec<Uuid> = registry().iter().map(|item| item.id).collect();
+    for item in registry() {
+        let definition = serde_json::json!({"tool_name":item.default_tool,"tools":item.tools,"provider":item.slug});
+        db.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "INSERT INTO capabilities(id,creator_wallet,name,description,version,runtime,price,active,created_at,definition) VALUES($1,$2,$3,$4,'1','connected_mcp',0,true,extract(epoch from now())::bigint,$5) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description, definition=EXCLUDED.definition, active=true WHERE capabilities.creator_wallet=$2 AND (capabilities.name, capabilities.description, capabilities.definition::jsonb, capabilities.active) IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description, EXCLUDED.definition::jsonb, true)",
+            vec![item.id.into(), PUBLISHER.into(), item.name.clone().into(), item.description.clone().into(), definition.into()],
+        ))
+        .await?;
+    }
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "UPDATE capabilities SET active=false WHERE creator_wallet=$1 AND runtime='connected_mcp' AND definition::jsonb ? 'provider' AND active AND NOT (id = ANY($2))",
+        vec![PUBLISHER.into(), ids.into()],
+    ))
+    .await?;
+    Ok(())
+}
 /// Match only operator-owned rows or the fixed IDs listed in the registry.
 #[must_use]
 pub fn for_capability(id: Uuid, owner: &str) -> Option<Integration> {
@@ -157,6 +248,44 @@ mod tests {
                         .all(|tool| item.tools.contains(tool))
                 );
             }
+        }
+        for item in &parsed {
+            for launch in [&item.local, &item.shared_launch].into_iter().flatten() {
+                assert!(
+                    LAUNCHERS.contains(&launch.command.as_str()),
+                    "{}",
+                    item.slug
+                );
+                assert!(!launch.package.is_empty() && !launch.version.is_empty());
+                assert!(
+                    launch
+                        .version
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-'),
+                    "{} must pin an exact version",
+                    item.slug
+                );
+                for step in &launch.prepare {
+                    assert!(
+                        step.first()
+                            .is_some_and(|command| LAUNCHERS.contains(&command.as_str())),
+                        "{} prepare steps use package runners only",
+                        item.slug
+                    );
+                }
+            }
+            for name in item
+                .annotations
+                .keys()
+                .chain(item.shared_annotations.keys())
+            {
+                assert!(item.tools.contains(name), "{} annotates {name}", item.slug);
+            }
+            assert!(
+                item.shared_launch.is_none() || item.shared_owner.is_some(),
+                "{} shared helpers need an operator owner",
+                item.slug
+            );
         }
         assert!(super::session_hints().contains("templr"));
         assert!(super::is_search_entry("mcp_templr__search_templates"));

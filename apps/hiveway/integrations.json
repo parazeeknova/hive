@@ -158,5 +158,368 @@
       "header": "X-API-Key",
       "read_only_tools": []
     }
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7004",
+    "slug": "markitdown",
+    "name": "MarkItDown",
+    "description": "Convert web pages, PDFs, Word, PowerPoint and Excel documents, HTML, CSV, JSON, XML, EPUB, ZIP archives and images to clean Markdown for reading, summarizing and extraction. Shared by Hive for public https URLs; with Hive Local it also converts files on your own computer.",
+    "default_tool": "convert_to_markdown",
+    "tools": ["convert_to_markdown"],
+    "byok": false,
+    "guidance": "To read, summarize, quote or extract data from a document or web page, call convert_to_markdown with uri set to an https:// URL, a data: URI, or (with Hive Local) a file:// path inside an approved folder. Work from the returned Markdown instead of fetching raw HTML. For PDFs and office files this keeps headings and tables. Combine with DuckDB for tables and with filesystem to save the result locally.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": "github:117758952",
+    "session_hint": "Use markitdown to turn web pages and documents into Markdown before reading them.",
+    "search_tools": ["convert_to_markdown"],
+    "cache_scope": "public",
+    "upstream": null,
+    "local": {
+      "command": "uvx",
+      "package": "markitdown-mcp",
+      "version": "0.0.1a8",
+      "args": [],
+      "runner_args": ["--python", "3.13"]
+    },
+    "shared_launch": {
+      "command": "uvx",
+      "package": "markitdown-mcp",
+      "version": "0.0.1a8",
+      "args": [],
+      "runner_args": ["--python", "3.13"]
+    },
+    "annotations": {
+      "convert_to_markdown": {
+        "title": "Convert to Markdown",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "path_arguments": ["uri"],
+    "url_arguments": ["uri"]
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7005",
+    "slug": "duckdb",
+    "name": "DuckDB",
+    "description": "Analytical SQL with DuckDB: query CSV, Parquet and JSON files by URL, profile and summarize datasets, join and aggregate. Shared by Hive for public https data with a sandbox that blocks server files and writes. With Hive Local it queries files in your approved folders and configured local DuckDB databases on your own computer.",
+    "default_tool": "execute_query",
+    "tools": ["execute_query", "list_databases", "list_tables", "list_columns"],
+    "byok": false,
+    "guidance": "For data questions over CSV, Parquet or JSON, call execute_query with DuckDB SQL such as SELECT * FROM read_csv_auto('https://...') LIMIT 20, DESCRIBE or SUMMARIZE. Results are capped; aggregate in SQL instead of pulling raw rows. Each shared query runs in a fresh session, so put the whole analysis in one statement (CTEs work). With Hive Local, enable duckdb with --database to choose an approved local DuckDB file; access defaults to read-only. Pass chart-ready aggregates to the next step.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": "github:117758952",
+    "session_hint": "Use duckdb for SQL over CSV, Parquet or JSON data and for configured local databases.",
+    "search_tools": ["execute_query"],
+    "cache_scope": "caller",
+    "upstream": null,
+    "local": {
+      "command": "uvx",
+      "package": "mcp-server-motherduck",
+      "version": "1.1.1",
+      "args": [
+        "--db-path",
+        "{duckdb_path}",
+        "{duckdb_flags}",
+        "--query-timeout",
+        "120",
+        "--init-sql",
+        "{duckdb_init}"
+      ],
+      "prepare": [
+        [
+          "uvx",
+          "--python",
+          "3.13",
+          "--from",
+          "mcp-server-motherduck==1.1.1",
+          "python",
+          "-c",
+          "import duckdb, os, sys; os.path.exists(sys.argv[1]) or duckdb.connect(sys.argv[1]).close()",
+          "{duckdb_path}"
+        ]
+      ],
+      "runner_args": ["--python", "3.13"]
+    },
+    "shared_launch": {
+      "command": "uvx",
+      "package": "mcp-server-motherduck",
+      "version": "1.1.1",
+      "args": [
+        "--db-path",
+        "{workdir}/empty.duckdb",
+        "--query-timeout",
+        "30",
+        "--max-rows",
+        "1000",
+        "--max-chars",
+        "50000",
+        "--init-sql",
+        "LOAD httpfs; SET allow_persistent_secrets=false; SET allowed_directories=['https://']; SET allowed_paths=['{ca_bundle}']; SET enable_external_access=false; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET allow_community_extensions=false; SET memory_limit='512MB'; SET threads=2; SET http_timeout=10; SET http_retries=0; SET lock_configuration=true;"
+      ],
+      "prepare": [
+        [
+          "uvx",
+          "--python",
+          "3.13",
+          "--from",
+          "mcp-server-motherduck==1.1.1",
+          "python",
+          "-c",
+          "import duckdb, os, sys; os.path.exists(sys.argv[1]) or duckdb.connect(sys.argv[1]).close()",
+          "{workdir}/empty.duckdb"
+        ],
+        [
+          "uvx",
+          "--python",
+          "3.13",
+          "--from",
+          "mcp-server-motherduck==1.1.1",
+          "python",
+          "-c",
+          "import duckdb, gzip, os, urllib.request\nplatform = duckdb.connect().execute('PRAGMA platform').fetchone()[0]\nversion = 'v' + duckdb.__version__\ntarget = os.path.expanduser('~/.duckdb/extensions/' + version + '/' + platform + '/httpfs.duckdb_extension')\nif not os.path.exists(target):\n    url = 'https://extensions.duckdb.org/' + version + '/' + platform + '/httpfs.duckdb_extension.gz'\n    request = urllib.request.Request(url, headers={'User-Agent': 'hive-local/1'})\n    with urllib.request.urlopen(request, timeout=60) as response:\n        extension = gzip.decompress(response.read(33554432))\n    os.makedirs(os.path.dirname(target), exist_ok=True)\n    with open(target + '.tmp', 'wb') as output:\n        output.write(extension)\n    os.replace(target + '.tmp', target)\n"
+        ]
+      ],
+      "runner_args": ["--python", "3.13"]
+    },
+    "annotations": {
+      "execute_query": {
+        "title": "Run SQL",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    "shared_annotations": {
+      "execute_query": {
+        "title": "Run SQL (sandboxed, read-only)",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    "path_arguments": [],
+    "url_arguments": []
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7006",
+    "slug": "filesystem",
+    "name": "Filesystem",
+    "description": "Read, search, write, edit and organize files and folders on your own computer through Hive Local. Access is limited to the folders you approve; nothing is uploaded except the results your agent asks for.",
+    "default_tool": "read_text_file",
+    "tools": [
+      "read_text_file",
+      "read_file",
+      "read_media_file",
+      "read_multiple_files",
+      "write_file",
+      "edit_file",
+      "create_directory",
+      "list_directory",
+      "list_directory_with_sizes",
+      "directory_tree",
+      "move_file",
+      "search_files",
+      "get_file_info",
+      "list_allowed_directories"
+    ],
+    "byok": false,
+    "guidance": "Call list_allowed_directories first; only those folders are reachable. Use search_files or directory_tree to locate files, read_text_file with head/tail for large files, and edit_file with dryRun before applying edits. write_file overwrites; confirm with the user before replacing existing files.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": null,
+    "session_hint": "",
+    "search_tools": ["search_files", "read_text_file"],
+    "cache_scope": "caller",
+    "upstream": null,
+    "local": {
+      "command": "npx",
+      "package": "@modelcontextprotocol/server-filesystem",
+      "version": "2.3.0",
+      "args": ["{roots}"]
+    }
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7007",
+    "slug": "ffmpeg",
+    "name": "FFmpeg",
+    "description": "Process video and audio files on your own computer through Hive Local: read media info, convert formats, compress, trim, merge clips, extract audio tracks, extract frames as images and burn in subtitles. Files stay on your machine inside approved folders.",
+    "default_tool": "ffmpeg_get_info",
+    "tools": [
+      "ffmpeg_get_info",
+      "ffmpeg_convert",
+      "ffmpeg_compress",
+      "ffmpeg_trim",
+      "ffmpeg_extract_audio",
+      "ffmpeg_merge",
+      "ffmpeg_extract_frames",
+      "ffmpeg_add_subtitles"
+    ],
+    "byok": false,
+    "guidance": "Start with ffmpeg_get_info to read duration, codecs and resolution, then pick the operation. Outputs are written next to Hive Local's output folder unless output_path is given; report the output path to the user. Paths must be absolute and inside approved folders. Prefer ffmpeg_trim (stream copy) over re-encoding when only cutting.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": null,
+    "session_hint": "",
+    "search_tools": ["ffmpeg_get_info"],
+    "cache_scope": "caller",
+    "upstream": null,
+    "local": {
+      "command": "uvx",
+      "package": "ffmpeg-mcp-lite",
+      "version": "0.2.2",
+      "runner_args": ["--python", "3.13", "--with", "mcp<2"],
+      "args": [],
+      "env": {
+        "FFMPEG_OUTPUT_DIR": "{output_dir}"
+      },
+      "requires": ["ffmpeg", "ffprobe"]
+    },
+    "annotations": {
+      "ffmpeg_get_info": {
+        "title": "Media info",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_convert": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_compress": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_trim": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_extract_audio": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_merge": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      },
+      "ffmpeg_extract_frames": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "ffmpeg_add_subtitles": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    "path_arguments": [
+      "file_path",
+      "file_paths",
+      "subtitle_path",
+      "output_path"
+    ]
+  },
+  {
+    "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7008",
+    "slug": "serena",
+    "name": "Serena",
+    "description": "Semantic code navigation and editing on your own computer through Hive Local, backed by language servers: symbol overviews, find symbols, references, implementations and declarations, diagnostics, and symbol-level edits, renames and safe deletes in your project.",
+    "default_tool": "find_symbol",
+    "tools": [
+      "get_symbols_overview",
+      "find_symbol",
+      "find_referencing_symbols",
+      "find_implementations",
+      "find_declaration",
+      "get_diagnostics_for_file",
+      "replace_content",
+      "replace_in_files",
+      "replace_symbol_body",
+      "insert_after_symbol",
+      "insert_before_symbol",
+      "rename_symbol",
+      "safe_delete_symbol",
+      "write_memory",
+      "read_memory",
+      "list_memories",
+      "delete_memory",
+      "rename_memory",
+      "edit_memory",
+      "onboarding",
+      "initial_instructions"
+    ],
+    "byok": false,
+    "guidance": "Serena works on the project folder configured in Hive Local, with paths relative to it. Call initial_instructions once, then get_symbols_overview for a file and find_symbol with include_body for exact code. Use find_referencing_symbols before renaming or changing signatures, rename_symbol for refactors and get_diagnostics_for_file after edits. Prefer Hive's code_search for repositories indexed in Hive and Serena for live, uncommitted code.",
+    "previews": [],
+    "legacy_ids": [],
+    "shared_owner": null,
+    "session_hint": "",
+    "search_tools": ["find_symbol", "get_symbols_overview"],
+    "cache_scope": "caller",
+    "upstream": null,
+    "local": {
+      "command": "uvx",
+      "package": "serena-agent",
+      "version": "2.1.0",
+      "entry": "serena",
+      "args": [
+        "start-mcp-server",
+        "--project",
+        "{project}",
+        "--context",
+        "claude-code",
+        "--agent-interface",
+        "tools",
+        "--open-web-dashboard",
+        "false",
+        "--enable-web-dashboard",
+        "false"
+      ],
+      "runner_args": ["--python", "3.13"]
+    },
+    "annotations": {
+      "get_symbols_overview": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "find_symbol": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "find_referencing_symbols": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "find_implementations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "find_declaration": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      },
+      "get_diagnostics_for_file": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    "path_arguments": []
   }
 ]

@@ -26,23 +26,22 @@ import {
   errorMessage,
   hiveway,
   runtimeLabels,
-  shortId,
 } from "../../lib/hiveway";
 import { groupConnectedCapabilities } from "../../lib/mcp-integrations";
 import { useHiveSession } from "../../lib/providers";
 import AccountPanel from "./account-panel";
 import type { AccountTab } from "./account-panel";
-import { IntegrationPanel } from "./integration-panel";
+import { CapabilityDetails } from "./capability-details";
 import { PublisherSummary } from "./publisher";
 import {
   ActivityPanel,
   EmptyState,
-  Json,
-  CapabilityActionDialog,
   SalesPanel,
   SessionDialog,
 } from "./workspace-pages";
 import { WorkspaceTabs } from "./workspace-tabs";
+
+import detailStyles from "./capability-details.module.css";
 
 type View = "discover" | "executions" | "billing" | "settings";
 const navigation: { id: View; label: string; icon: IconName; group: string }[] =
@@ -79,305 +78,6 @@ const headings: Record<View, { title: string; description: string }> = {
     description: "Your profile, agent balance, and marketplace capabilities.",
     title: "Account settings.",
   },
-};
-
-const runtimeNotes = (runtime: RegistryCapability["runtime"]) => {
-  if (runtime === "wasm") {
-    return {
-      limitation:
-        "Execution is bounded by fuel, memory, input/output size, and schema validation.",
-      output: "Output must match the published artifact output schema.",
-    };
-  }
-  if (runtime === "connected_mcp") {
-    return {
-      limitation:
-        "Requires your own online connection. Upstream quotas and charges apply to your account.",
-      output:
-        "The selected tool returns its actual MCP text, image or structured output. Tool schemas are discovered from your connected server.",
-    };
-  }
-  if (runtime === "workflow") {
-    return {
-      limitation:
-        "Every step uses the same repository input. Conditional steps and nested workflows are not supported.",
-      output:
-        "Output contains repository identity and a steps array with each capability, version, runtime, and result.",
-    };
-  }
-  return {
-    limitation:
-      "Analysis describes declared repository manifests and may reach runtime analysis limits.",
-    output:
-      "Report fields can include repository_url, revision, manifests, technologies, dependencies, and analysis_limit_reached. The settled result is the source of truth.",
-  };
-};
-const runtimeTag = (runtime: RegistryCapability["runtime"]) => {
-  if (runtime === "connected_mcp") {
-    return "MCP integration";
-  }
-  return runtime === "wasm" ? "Sandboxed" : "GitHub";
-};
-const executionNote = (runtime: RegistryCapability["runtime"]) => {
-  if (runtime === "connected_mcp") {
-    return "Calls only your own connected MCP. Clickable HTML previews are served by Hive Local on your computer; the Hive server cannot start a server there.";
-  }
-  return runtime === "wasm"
-    ? "Pure JSON-in/JSON-out Wasm. No filesystem, network, clock, or environment access."
-    : "Public GitHub repositories only. Supply a full 40-character commit SHA; branches, tags, and private repositories are not supported.";
-};
-/** Connected integrations bind the caller's own connection; other runtimes use their own schema. */
-const connectedInputSchema = (tool: RegistryCapability) =>
-  tool.runtime === "connected_mcp"
-    ? {
-        properties: {
-          arguments: { type: "object" },
-          connection_id: { format: "uuid", type: "string" },
-          tool: { enum: tool.metadata?.integration?.tools, type: "string" },
-        },
-        required: ["connection_id", "arguments"],
-        type: "object",
-      }
-    : undefined;
-
-const Inspector = ({
-  tool,
-  catalog,
-  token,
-  onConnect,
-  onRefresh,
-  onSelect,
-  onClose,
-}: {
-  tool: RegistryCapability;
-  catalog: RegistryCapability[];
-  token: string;
-  onConnect: () => void;
-  onRefresh: () => void;
-  onSelect: (id: string) => void;
-  onClose: () => void;
-}) => {
-  const { output: outputDescription, limitation: limitationDescription } =
-    runtimeNotes(tool.runtime);
-  const artifactId = tool.definition.artifact_id;
-  const artifact = useQuery({
-    enabled: Boolean(
-      token && tool.runtime === "wasm" && typeof artifactId === "string"
-    ),
-    queryFn: ({ signal }) =>
-      hiveway<{ input_schema: unknown; output_schema: unknown }>(
-        `/v1/artifacts/${String(artifactId)}`,
-        token,
-        { signal }
-      ),
-    queryKey: ["hive", token, "artifact", artifactId],
-    staleTime: Infinity,
-  });
-  const [action, setAction] = useState<"sample" | "invoke" | null>(null);
-  const steps = Array.isArray(tool.definition.steps)
-    ? tool.definition.steps.filter((id): id is string => typeof id === "string")
-    : [];
-  return (
-    <>
-      <div className="ws-author-row mb-[19px] flex items-center gap-[9px] [&_.ws-detail-close]:ml-auto">
-        <span className="ws-author-name min-w-0 overflow-hidden text-[12px] font-semibold text-ellipsis whitespace-nowrap text-[#4c5545]">
-          Capability details
-        </span>
-        <button
-          className="ws-icon-button ws-detail-close hidden h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-[8px] bg-transparent text-[#686f60] [border:0] disabled:cursor-not-allowed disabled:opacity-[0.45] max-[1100px]:flex [&:hover]:bg-[#edeee7]"
-          type="button"
-          onClick={onClose}
-          aria-label="Close capability details"
-        >
-          <Icon name="close" size={16} />
-        </button>
-      </div>
-      <div className="ws-tool-title mb-2.5 flex items-baseline gap-2 [&_h2]:[flex:1] [&_h2]:text-[17px] [&_h2]:leading-[1.5] [&_h2]:[font-weight:650] [&_h2]:tracking-[-0.045em]">
-        <h2 className="font-display">{tool.name}</h2>
-      </div>
-      <p className="ws-capability-description text-[12px] leading-[1.85] [overflow-wrap:anywhere] text-[#62695b]">
-        {tool.description}
-      </p>
-      <PublisherSummary metadata={tool.metadata} />
-      {tool.metadata?.integration && (
-        <IntegrationPanel
-          integration={tool.metadata.integration}
-          token={token}
-        />
-      )}
-      <div className="ws-capability-tags mt-3.5 flex flex-wrap gap-1.5 [&>span]:rounded-[5px] [&>span]:bg-[#f5f6f2] [&>span]:px-[7px] [&>span]:py-1 [&>span]:text-[11px] [&>span]:leading-[1.4] [&>span]:text-[#5d6653] [&>span]:[border:1px_solid_#e0e4da]">
-        <span>{runtimeLabels[tool.runtime]}</span>
-        <span>{runtimeTag(tool.runtime)}</span>
-      </div>
-      <div className="ws-inspector-price mx-0 my-[17px] flex flex-wrap items-center justify-between gap-2 [&_small]:text-[10px] [&_small]:font-normal [&_small]:tracking-[0] [&_small]:text-[#686f60] [&>strong]:text-[20px] [&>strong]:font-semibold [&>strong]:tracking-[-0.05em] [&>strong]:text-[#566447]">
-        <strong>
-          {atomicMoney(tool.price)} <small>USDC / call</small>
-        </strong>
-      </div>
-      <div className="ws-detail-sections [border-top:1px_solid_var(--ws-line)]">
-        <details className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]">
-          <summary className="cursor-pointer">
-            <span>Overview</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            <p>{tool.description}</p>
-            <p>
-              Runtime: <code>{tool.runtime}</code>. Version {tool.version}.
-            </p>
-          </div>
-        </details>
-        <details className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]">
-          <summary className="cursor-pointer">
-            <span>Input / Output Schema</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            <p>
-              {tool.runtime === "wasm" ? "Artifact schemas" : "Required input"}
-            </p>
-            {artifact.error && (
-              <p role="alert">{errorMessage(artifact.error)}</p>
-            )}
-            <Json
-              value={
-                artifact.data ??
-                connectedInputSchema(tool) ??
-                (tool.runtime === "wasm"
-                  ? {
-                      status: artifact.isFetching
-                        ? "Loading artifact schemas"
-                        : "Artifact schemas unavailable",
-                    }
-                  : {
-                      properties: {
-                        repository_url: {
-                          description: "Public GitHub repository URL",
-                          format: "uri",
-                          type: "string",
-                        },
-                        revision: {
-                          description: "Full immutable commit SHA",
-                          pattern: "^[a-fA-F0-9]{40}$",
-                          type: "string",
-                        },
-                      },
-                      required: ["repository_url", "revision"],
-                      type: "object",
-                    })
-              }
-            />
-            <p>{outputDescription}</p>
-          </div>
-        </details>
-        <details className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]">
-          <summary className="cursor-pointer">
-            <span>Sample Response</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            <p>
-              A sample response is not provided by the registry yet. Your actual
-              settled output is available in Activity after execution.
-            </p>
-          </div>
-        </details>
-        <details
-          className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]"
-          open={steps.length > 0}
-        >
-          <summary className="cursor-pointer">
-            <span>
-              Dependencies <small>({steps.length})</small>
-            </span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            {steps.length > 0 ? (
-              <div className="ws-dependency-tree my-0 mr-0 ml-1.5 [border-left:1px_solid_#cbd4bf] [&_button]:relative [&_button]:flex [&_button]:w-full [&_button]:items-baseline [&_button]:justify-between [&_button]:gap-3 [&_button]:py-[9px] [&_button]:pr-0 [&_button]:pl-[18px] [&_button]:text-left [&_button]:text-[12px] [&_button]:leading-[1.6] [&_button]:text-[#546347] [&_button]:[background:none] [&_button]:[border:0] [&_button_small]:shrink-0 [&_button_small]:text-[10px] [&_button_small]:text-[#68765b] [&_button_span]:min-w-0 [&_button_span]:[overflow-wrap:anywhere] [&_button::before]:absolute [&_button::before]:top-[19px] [&_button::before]:left-0 [&_button::before]:h-px [&_button::before]:w-2.5 [&_button::before]:bg-[#cbd4bf] [&_button::before]:[content:''] [&_button:hover:not(:disabled)]:text-[#2b411d] [&_button:hover:not(:disabled)]:[text-decoration:underline]">
-                {steps.map((id) => {
-                  const dependency = catalog.find((item) => item.id === id);
-                  return (
-                    <button
-                      type="button"
-                      key={id}
-                      disabled={!dependency}
-                      onClick={() => onSelect(id)}
-                      className="cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.45]"
-                    >
-                      <span>{dependency?.name ?? shortId(id)}</span>
-                      {dependency && (
-                        <small>{atomicMoney(dependency.price)} USDC</small>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p>
-                This capability runs independently, with no bundled
-                capabilities.
-              </p>
-            )}
-          </div>
-        </details>
-        <details className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]">
-          <summary className="cursor-pointer">
-            <span>Pricing</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            <p>
-              {atomicMoney(tool.price)} USDC per invocation. Review the returned
-              quote’s payment requirements before authorizing payment.
-            </p>
-            <p>
-              A quote reserves session budget for 120 seconds. Quoting alone
-              does not submit a payment.
-            </p>
-          </div>
-        </details>
-        <details className="ws-detail-section [border-bottom:1px_solid_var(--ws-line)] [&>summary]:flex [&>summary]:min-h-[54px] [&>summary]:items-center [&>summary]:justify-between [&>summary]:gap-3 [&>summary]:px-0 [&>summary]:py-4 [&>summary]:text-[12px] [&>summary]:[font-weight:550] [&>summary]:text-[#424b38] [&>summary]:[list-style:none] [&>summary_small]:ml-1 [&>summary_small]:text-[11px] [&>summary_small]:font-normal [&>summary_small]:text-[#717c64] [&>summary::-webkit-details-marker]:hidden [&>summary:hover]:text-[#24331a] [&>summary>svg]:shrink-0 [&>summary>svg]:text-[#7a856e] [&>summary>svg]:[transition:transform_0.15s] [&[open]>summary>svg]:[transform:rotate(90deg)]">
-          <summary className="cursor-pointer">
-            <span>Limitations</span>
-            <Icon name="chevron" size={15} />
-          </summary>
-          <div className="ws-section-body px-0 pt-0 pb-[17px] text-[12px] leading-[1.85] text-[#626d56] [&_.ws-json]:text-[11px] [&_.ws-json]:text-[#56644a] [&_code]:text-[11px] [&_code]:[overflow-wrap:anywhere] [&_p+p]:mt-2.5">
-            <p>{executionNote(tool.runtime)}</p>
-            <p>{limitationDescription}</p>
-          </div>
-        </details>
-      </div>
-      <div className="ws-capability-actions mt-6 flex flex-col gap-2.5 [&_.ws-button]:min-h-[44px] [&_.ws-button]:rounded-[8px] [&_.ws-button]:text-[12px] [&_.ws-button.ws-primary]:[background:#24251f] [&_.ws-button.ws-primary:hover]:[background:#3d4535]">
-        <button
-          type="button"
-          className="ws-button ws-primary inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#40473a] [&:hover]:bg-[#f4f5ee]"
-          onClick={() => setAction("sample")}
-        >
-          <Icon name="play" size={16} />
-          Test with sample input
-        </button>
-        <button
-          type="button"
-          className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
-          onClick={() => setAction("invoke")}
-        >
-          <Icon name="external" size={16} />
-          Invoke in agent
-        </button>
-      </div>
-      {action && (
-        <CapabilityActionDialog
-          mode={action}
-          tool={tool}
-          token={token}
-          onConnect={onConnect}
-          onRefresh={onRefresh}
-          onClose={() => setAction(null)}
-        />
-      )}
-    </>
-  );
 };
 
 // View routing keeps navigation and selection in one state owner.
@@ -632,6 +332,12 @@ const Workspace = () => {
         item.id === selectedId ||
         item.members?.some((member) => member.id === selectedId)
     ) ?? results[0];
+  const inspectedId = selected?.id;
+  useEffect(() => {
+    if (inspectedId) {
+      inspector.current?.scrollTo({ behavior: "instant", top: 0 });
+    }
+  }, [inspectedId]);
   const openDetail = (id: string) => {
     setSelectedId(id);
     setDetailOpen(true);
@@ -657,7 +363,7 @@ const Workspace = () => {
   const head = headings[view];
   return (
     <div
-      className={`ws-app font-body flex min-h-dvh flex-col text-[13px] text-[color:#24251f] [--ws-green:#3d4535] [--ws-line:#e6e5dc] [--ws-muted:#727268] [background:#eeeee7] [&_a]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_a:focus-visible]:[outline:2px_solid_#24251f] [&_a:focus-visible]:[outline-offset:3px] [&_button]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_button:focus-visible]:[outline:2px_solid_#24251f] [&_button:focus-visible]:[outline-offset:3px] [&_input]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_input:focus-visible]:[outline:2px_solid_#24251f] [&_input:focus-visible]:[outline-offset:3px] [&_select]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_select:focus-visible]:[outline:2px_solid_#24251f] [&_select:focus-visible]:[outline-offset:3px] [&_textarea]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_textarea:focus-visible]:[outline:2px_solid_#24251f] [&_textarea:focus-visible]:[outline-offset:3px] [@media_(prefers-reduced-motion:reduce)]:[&_*]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*]:[transition:none]! [@media_(prefers-reduced-motion:reduce)]:[&_*::after]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*::after]:[transition:none]! [@media_(prefers-reduced-motion:reduce)]:[&_*::before]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*::before]:[transition:none]! ${view === "discover" ? "ws-discover-view [&_.ws-capability-row]:min-h-[105px] [&_.ws-capability-row]:gap-4 [&_.ws-capability-row]:pt-[18px] [&_.ws-capability-row]:pr-[18px] [&_.ws-capability-row]:pb-[18px] [&_.ws-capability-row]:pl-[18px] max-[760px]:[&_.ws-capability-row]:items-start max-[760px]:[&_.ws-capability-row]:gap-3 max-[760px]:[&_.ws-capability-row]:pt-[17px] max-[760px]:[&_.ws-capability-row]:pr-[13px] max-[760px]:[&_.ws-capability-row]:pb-[17px] max-[760px]:[&_.ws-capability-row]:pl-[13px] [&_.ws-capability-row.is-selected]:[background:#fdf3d2] [&_.ws-capability-row.is-selected::before]:top-[17px] [&_.ws-capability-row.is-selected::before]:bottom-[17px] [&_.ws-capability-row.is-selected::before]:[background:#dca16b] [&_.ws-catalog]:pt-[27px] [&_.ws-catalog]:pr-[26px] [&_.ws-catalog]:pb-9 [&_.ws-catalog]:pl-[26px] max-[1280px]:[&_.ws-catalog]:pt-[23px] max-[1280px]:[&_.ws-catalog]:pr-5 max-[1280px]:[&_.ws-catalog]:pb-[23px] max-[1280px]:[&_.ws-catalog]:pl-5 max-[1100px]:[&_.ws-catalog]:pt-0 max-[1100px]:[&_.ws-catalog]:pr-0 max-[1100px]:[&_.ws-catalog]:pb-0 max-[1100px]:[&_.ws-catalog]:pl-0 min-[1700px]:[&_.ws-catalog]:pt-8 min-[1700px]:[&_.ws-catalog]:pr-8 min-[1700px]:[&_.ws-catalog]:pb-8 min-[1700px]:[&_.ws-catalog]:pl-8 [&_.ws-content]:flex [&_.ws-content]:flex-col [&_.ws-content]:pt-0 [&_.ws-content]:pr-0 [&_.ws-content]:pb-0 [&_.ws-content]:pl-0 max-[1100px]:[&_.ws-content]:pt-[23px] max-[1100px]:[&_.ws-content]:pr-5 max-[1100px]:[&_.ws-content]:pb-[23px] max-[1100px]:[&_.ws-content]:pl-5 max-[760px]:[&_.ws-content]:pt-6 max-[760px]:[&_.ws-content]:pr-4 max-[760px]:[&_.ws-content]:pb-6 max-[760px]:[&_.ws-content]:pl-4 [&_.ws-create-capability]:w-auto [&_.ws-create-capability]:shrink-0 [&_.ws-create-capability]:gap-2 [&_.ws-create-capability]:text-[11px] max-[600px]:[&_.ws-create-capability]:min-h-10 max-[600px]:[&_.ws-create-capability]:w-10 max-[600px]:[&_.ws-create-capability]:pt-2.5 max-[600px]:[&_.ws-create-capability]:pr-2.5 max-[600px]:[&_.ws-create-capability]:pb-2.5 max-[600px]:[&_.ws-create-capability]:pl-2.5 [&_.ws-discover-heading]:gap-3 max-[760px]:[&_.ws-discover-heading]:items-center max-[760px]:[&_.ws-discover-heading_h1]:text-[20px] [&_.ws-discovery]:min-h-[calc(100dvh_-_64px)] [&_.ws-discovery]:[flex:1] [&_.ws-discovery]:gap-0 max-[1100px]:[&_.ws-discovery]:min-h-0 max-[1100px]:[&_.ws-discovery]:gap-[18px] [&_.ws-error-banner]:mt-3.5 [&_.ws-error-banner]:mr-[26px] [&_.ws-error-banner]:mb-3.5 [&_.ws-error-banner]:ml-[26px] max-[1100px]:[&_.ws-error-banner]:mt-0 max-[1100px]:[&_.ws-error-banner]:mr-0 max-[1100px]:[&_.ws-error-banner]:mb-[18px] max-[1100px]:[&_.ws-error-banner]:ml-0 [&_.ws-filterbar]:flex-wrap [&_.ws-filterbar]:items-center [&_.ws-filterbar]:gap-3 [&_.ws-filterbar]:pt-0 [&_.ws-filterbar]:pr-4 [&_.ws-filterbar]:pb-[15px] [&_.ws-filterbar]:pl-4 max-[760px]:[&_.ws-filterbar]:items-stretch max-[760px]:[&_.ws-filterbar]:gap-2.5 max-[760px]:[&_.ws-filterbar]:pt-0 max-[760px]:[&_.ws-filterbar]:pr-3 max-[760px]:[&_.ws-filterbar]:pb-3 max-[760px]:[&_.ws-filterbar]:pl-3 [&_.ws-filters]:gap-[5px] [&_.ws-filters_button]:min-h-9 [&_.ws-filters_button]:gap-[7px] [&_.ws-filters_button]:rounded-[7px] [&_.ws-filters_button]:pt-1.5 [&_.ws-filters_button]:pr-2.5 [&_.ws-filters_button]:pb-1.5 [&_.ws-filters_button]:pl-2.5 [&_.ws-filters_button]:text-[12px] [&_.ws-filters_button]:[font-weight:550] [&_.ws-filters_button]:text-[color:#5e6755] max-[760px]:[&_.ws-filters_button]:min-h-10 max-[760px]:[&_.ws-filters_button]:pt-[7px] max-[760px]:[&_.ws-filters_button]:pr-[9px] max-[760px]:[&_.ws-filters_button]:pb-[7px] max-[760px]:[&_.ws-filters_button]:pl-[9px] max-[760px]:[&_.ws-filters_button]:text-[11px] [&_.ws-filters_button>span]:inline-flex [&_.ws-filters_button>span]:min-w-[19px] [&_.ws-filters_button>span]:items-center [&_.ws-filters_button>span]:justify-center [&_.ws-filters_button>span]:rounded-[4px] [&_.ws-filters_button>span]:pt-0.5 [&_.ws-filters_button>span]:pr-1 [&_.ws-filters_button>span]:pb-0.5 [&_.ws-filters_button>span]:pl-1 [&_.ws-filters_button>span]:text-[10px] [&_.ws-filters_button>span]:leading-[1.3] [&_.ws-filters_button>span]:text-[color:#5c6850] [&_.ws-filters_button>span]:[font-variant-numeric:tabular-nums] [&_.ws-filters_button>span]:opacity-[1] [&_.ws-filters_button>span]:[background:#f0f2eb] [&_.ws-filters_button[aria-pressed='true']]:[border-color:#24251f] [&_.ws-filters_button[aria-pressed='true']]:text-[color:#fff] [&_.ws-filters_button[aria-pressed='true']]:[background:#24251f] [&_.ws-filters_button[aria-pressed='true']>span]:text-[color:#fff] [&_.ws-filters_button[aria-pressed='true']>span]:[background:#ffffff1c] [&_.ws-inspector]:top-16 [&_.ws-inspector]:h-[calc(100dvh_-_64px)] [&_.ws-inspector]:overflow-y-auto [&_.ws-inspector]:[overscroll-behavior-y:contain] [&_.ws-inspector]:rounded-none [&_.ws-inspector]:[box-shadow:none] [&_.ws-inspector]:[border-left:1px_solid_var(--ws-line)] [&_.ws-inspector]:[border:0] max-[1100px]:[&_.ws-inspector]:h-auto max-[1100px]:[&_.ws-inspector]:[overflow-y:visible] max-[1100px]:[&_.ws-inspector]:rounded-[14px] max-[1100px]:[&_.ws-inspector]:[border:1px_solid_var(--ws-line)] [&_.ws-list]:overflow-hidden [&_.ws-list]:rounded-[0_0_12px_12px] [&_.ws-list]:[border-bottom:1px_solid_var(--ws-line)] [&_.ws-list_.ws-capability-row:last-child]:[border-bottom:0] [&_.ws-results-caption]:min-h-[42px] [&_.ws-results-caption]:items-center [&_.ws-results-caption]:gap-3 [&_.ws-results-caption]:pt-[11px] [&_.ws-results-caption]:pr-[18px] [&_.ws-results-caption]:pb-[11px] [&_.ws-results-caption]:pl-[18px] [&_.ws-results-caption]:text-[11px] [&_.ws-results-caption]:leading-[1.6] [&_.ws-results-caption]:text-[color:#70796a] [&_.ws-results-caption]:[background:#f8f9f5] max-[760px]:[&_.ws-results-caption]:pt-2.5 max-[760px]:[&_.ws-results-caption]:pr-[13px] max-[760px]:[&_.ws-results-caption]:pb-2.5 max-[760px]:[&_.ws-results-caption]:pl-[13px] max-[760px]:[&_.ws-results-caption]:text-[10px] [&_.ws-results-caption_output]:shrink-0 [&_.ws-results-caption_output]:text-[12px] [&_.ws-results-caption_output]:text-[color:#48553b] max-[760px]:[&_.ws-results-caption>:last-child]:max-w-[150px] [&_.ws-row-description]:mt-[5px] [&_.ws-row-description]:[display:-webkit-box] [&_.ws-row-description]:overflow-hidden [&_.ws-row-description]:text-[12px] [&_.ws-row-description]:leading-[1.75] [&_.ws-row-description]:[white-space:normal] [&_.ws-row-description]:text-[color:#626e56] [&_.ws-row-description]:[-webkit-box-orient:vertical] [&_.ws-row-description]:[-webkit-line-clamp:2] max-[760px]:[&_.ws-row-description]:text-[12px] [&_.ws-row-info>strong]:flex-wrap [&_.ws-row-info>strong]:gap-2 [&_.ws-row-info>strong]:text-[14px] [&_.ws-row-info>strong]:leading-[1.5] [&_.ws-row-info>strong]:font-bold [&_.ws-row-info>strong]:text-[color:#303a27] max-[760px]:[&_.ws-row-info>strong]:text-[13px] [&_.ws-row-meta]:mt-[9px] [&_.ws-row-meta]:gap-2.5 [&_.ws-row-meta]:text-[11px] [&_.ws-row-meta]:text-[color:#768369] [&_.ws-row-meta>span:first-child]:[border-color:#dfe6d4] [&_.ws-row-meta>span:first-child]:pt-[3px] [&_.ws-row-meta>span:first-child]:pr-1.5 [&_.ws-row-meta>span:first-child]:pb-[3px] [&_.ws-row-meta>span:first-child]:pl-1.5 [&_.ws-row-meta>span:first-child]:text-[10px] [&_.ws-row-meta>span:first-child]:text-[color:#5a6d48] [&_.ws-row-meta>span:first-child]:[background:#f8faf4] [&_.ws-row-number]:w-5 [&_.ws-row-number]:text-[11px] [&_.ws-row-number]:text-[color:#7c886f] [&_.ws-row-price]:min-w-[73px] max-[760px]:[&_.ws-row-price]:min-w-[61px] max-[760px]:[&_.ws-row-price]:pt-0.5 [&_.ws-row-price_small]:mt-1.5 [&_.ws-row-price_small]:text-[10px] [&_.ws-row-price_small]:text-[color:#727e65] [&_.ws-row-price_strong]:text-[15px] [&_.ws-row-price_strong]:[font-weight:650] [&_.ws-row-price_strong]:text-[color:#35412b] max-[760px]:[&_.ws-row-price_strong]:text-[14px] [&_.ws-row-version]:text-[11px] [&_.ws-row-version]:text-[color:#748166] [&_.ws-search-area]:rounded-[14px_14px_0_0] [&_.ws-search-area]:[border-color:#dedfd8] [&_.ws-search-area_input]:h-9 [&_.ws-search-area_input]:text-[14px] [&_.ws-search-area_input]:leading-[1.5] [&_.ws-search-area_input]:text-[color:#2d3328] max-[760px]:[&_.ws-search-area_input]:text-[16px] [&_.ws-search-area_input::placeholder]:text-[color:#72786b] [&_.ws-search-area_kbd]:rounded-[5px] [&_.ws-search-area_kbd]:pt-1 [&_.ws-search-area_kbd]:pr-1.5 [&_.ws-search-area_kbd]:pb-1 [&_.ws-search-area_kbd]:pl-1.5 [&_.ws-search-area_kbd]:[font-family:inherit] [&_.ws-search-area_kbd]:text-[11px] [&_.ws-search-area_kbd]:text-[color:#6c7461] [&_.ws-search-area_kbd]:[background:#fff] [&_.ws-search-area_kbd]:[border:1px_solid_#e0e3d9] [&_.ws-search-area_search_form]:mt-4 [&_.ws-search-area_search_form]:mr-4 [&_.ws-search-area_search_form]:mb-4 [&_.ws-search-area_search_form]:ml-4 [&_.ws-search-area_search_form]:min-h-[50px] [&_.ws-search-area_search_form]:gap-3 [&_.ws-search-area_search_form]:rounded-[10px] [&_.ws-search-area_search_form]:[border-color:#d9ddd2] [&_.ws-search-area_search_form]:pt-1.5 [&_.ws-search-area_search_form]:pr-[7px] [&_.ws-search-area_search_form]:pb-1.5 [&_.ws-search-area_search_form]:pl-[15px] [&_.ws-search-area_search_form]:text-[color:#626b58] [&_.ws-search-area_search_form]:[background:#fcfcfa] max-[760px]:[&_.ws-search-area_search_form]:mt-3 max-[760px]:[&_.ws-search-area_search_form]:mr-3 max-[760px]:[&_.ws-search-area_search_form]:mb-3 max-[760px]:[&_.ws-search-area_search_form]:ml-3 max-[760px]:[&_.ws-search-area_search_form]:gap-[9px] max-[760px]:[&_.ws-search-area_search_form]:pl-3 [&_.ws-search-area_search_form:focus-within]:[border-color:#7c8c68] [&_.ws-search-area_search_form:focus-within]:[box-shadow:0_0_0_3px_#eaf0e1] [&_.ws-search-area_search_form:focus-within]:[background:#fff] [&_.ws-search-submit]:h-9 [&_.ws-search-submit]:w-9 [&_.ws-search-submit]:rounded-[8px] [&_.ws-search-submit]:[border-color:#24251f] [&_.ws-search-submit]:text-[color:#fff] [&_.ws-search-submit]:[background:#24251f] [&_.ws-search-submit:hover]:[background:#3d4535] [&_.ws-sort]:ml-auto [&_.ws-sort]:flex [&_.ws-sort]:items-center [&_.ws-sort]:gap-[7px] [&_.ws-sort]:text-[11px] [&_.ws-sort]:text-[color:#707968] max-[760px]:[&_.ws-sort]:[align-self:flex-end] [&_.ws-sort_select]:min-h-[34px] [&_.ws-sort_select]:max-w-[none] [&_.ws-sort_select]:rounded-[6px] [&_.ws-sort_select]:pt-[5px] [&_.ws-sort_select]:pr-[7px] [&_.ws-sort_select]:pb-[5px] [&_.ws-sort_select]:pl-[7px] [&_.ws-sort_select]:text-[11px] [&_.ws-sort_select]:text-[color:#49543e] [&_.ws-sort_select]:[background:#fff] [&_.ws-sort_select]:[border:1px_solid_#e2e5db] [&_.ws-topbar]:sticky [&_.ws-topbar]:top-0 [&_.ws-topbar]:z-20" : ""}`}
+      className={`ws-app font-body flex min-h-dvh flex-col text-[13px] text-[color:#24251f] [--ws-green:#3d4535] [--ws-line:#e6e5dc] [--ws-muted:#727268] [background:#eeeee7] [&_a]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_a:focus-visible]:[outline:2px_solid_#24251f] [&_a:focus-visible]:[outline-offset:3px] [&_button]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_button:focus-visible]:[outline:2px_solid_#24251f] [&_button:focus-visible]:[outline-offset:3px] [&_input]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_input:focus-visible]:[outline:2px_solid_#24251f] [&_input:focus-visible]:[outline-offset:3px] [&_select]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_select:focus-visible]:[outline:2px_solid_#24251f] [&_select:focus-visible]:[outline-offset:3px] [&_textarea]:[transition:background_0.15s,_border-color_0.15s,_color_0.15s] [&_textarea:focus-visible]:[outline:2px_solid_#24251f] [&_textarea:focus-visible]:[outline-offset:3px] [@media_(prefers-reduced-motion:reduce)]:[&_*]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*]:[transition:none]! [@media_(prefers-reduced-motion:reduce)]:[&_*::after]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*::after]:[transition:none]! [@media_(prefers-reduced-motion:reduce)]:[&_*::before]:[scroll-behavior:auto]! [@media_(prefers-reduced-motion:reduce)]:[&_*::before]:[transition:none]! ${view === "discover" ? "ws-discover-view [&_.ws-capability-row]:min-h-[105px] [&_.ws-capability-row]:gap-4 [&_.ws-capability-row]:pt-[18px] [&_.ws-capability-row]:pr-[18px] [&_.ws-capability-row]:pb-[18px] [&_.ws-capability-row]:pl-[18px] max-[760px]:[&_.ws-capability-row]:items-start max-[760px]:[&_.ws-capability-row]:gap-3 max-[760px]:[&_.ws-capability-row]:pt-[17px] max-[760px]:[&_.ws-capability-row]:pr-[13px] max-[760px]:[&_.ws-capability-row]:pb-[17px] max-[760px]:[&_.ws-capability-row]:pl-[13px] [&_.ws-capability-row.is-selected]:[background:#fdf3d2] [&_.ws-capability-row.is-selected::before]:top-[17px] [&_.ws-capability-row.is-selected::before]:bottom-[17px] [&_.ws-capability-row.is-selected::before]:[background:#dca16b] [&_.ws-catalog]:pt-[27px] [&_.ws-catalog]:pr-[26px] [&_.ws-catalog]:pb-9 [&_.ws-catalog]:pl-[26px] max-[1280px]:[&_.ws-catalog]:pt-[23px] max-[1280px]:[&_.ws-catalog]:pr-5 max-[1280px]:[&_.ws-catalog]:pb-[23px] max-[1280px]:[&_.ws-catalog]:pl-5 max-[1100px]:[&_.ws-catalog]:pt-0 max-[1100px]:[&_.ws-catalog]:pr-0 max-[1100px]:[&_.ws-catalog]:pb-0 max-[1100px]:[&_.ws-catalog]:pl-0 min-[1700px]:[&_.ws-catalog]:pt-8 min-[1700px]:[&_.ws-catalog]:pr-8 min-[1700px]:[&_.ws-catalog]:pb-8 min-[1700px]:[&_.ws-catalog]:pl-8 [&_.ws-content]:flex [&_.ws-content]:flex-col [&_.ws-content]:pt-0 [&_.ws-content]:pr-0 [&_.ws-content]:pb-0 [&_.ws-content]:pl-0 max-[1100px]:[&_.ws-content]:pt-[23px] max-[1100px]:[&_.ws-content]:pr-5 max-[1100px]:[&_.ws-content]:pb-[23px] max-[1100px]:[&_.ws-content]:pl-5 max-[760px]:[&_.ws-content]:pt-6 max-[760px]:[&_.ws-content]:pr-4 max-[760px]:[&_.ws-content]:pb-6 max-[760px]:[&_.ws-content]:pl-4 [&_.ws-create-capability]:w-auto [&_.ws-create-capability]:shrink-0 [&_.ws-create-capability]:gap-2 [&_.ws-create-capability]:text-[11px] max-[600px]:[&_.ws-create-capability]:min-h-10 max-[600px]:[&_.ws-create-capability]:w-10 max-[600px]:[&_.ws-create-capability]:pt-2.5 max-[600px]:[&_.ws-create-capability]:pr-2.5 max-[600px]:[&_.ws-create-capability]:pb-2.5 max-[600px]:[&_.ws-create-capability]:pl-2.5 [&_.ws-discover-heading]:gap-3 max-[760px]:[&_.ws-discover-heading]:items-center max-[760px]:[&_.ws-discover-heading_h1]:text-[20px] [&_.ws-error-banner]:mt-3.5 [&_.ws-error-banner]:mr-[26px] [&_.ws-error-banner]:mb-3.5 [&_.ws-error-banner]:ml-[26px] max-[1100px]:[&_.ws-error-banner]:mt-0 max-[1100px]:[&_.ws-error-banner]:mr-0 max-[1100px]:[&_.ws-error-banner]:mb-[18px] max-[1100px]:[&_.ws-error-banner]:ml-0 [&_.ws-filterbar]:flex-wrap [&_.ws-filterbar]:items-center [&_.ws-filterbar]:gap-3 [&_.ws-filterbar]:pt-0 [&_.ws-filterbar]:pr-4 [&_.ws-filterbar]:pb-[15px] [&_.ws-filterbar]:pl-4 max-[760px]:[&_.ws-filterbar]:items-stretch max-[760px]:[&_.ws-filterbar]:gap-2.5 max-[760px]:[&_.ws-filterbar]:pt-0 max-[760px]:[&_.ws-filterbar]:pr-3 max-[760px]:[&_.ws-filterbar]:pb-3 max-[760px]:[&_.ws-filterbar]:pl-3 [&_.ws-filters]:gap-[5px] [&_.ws-filters_button]:min-h-9 [&_.ws-filters_button]:gap-[7px] [&_.ws-filters_button]:rounded-[7px] [&_.ws-filters_button]:pt-1.5 [&_.ws-filters_button]:pr-2.5 [&_.ws-filters_button]:pb-1.5 [&_.ws-filters_button]:pl-2.5 [&_.ws-filters_button]:text-[12px] [&_.ws-filters_button]:[font-weight:550] [&_.ws-filters_button]:text-[color:#5e6755] max-[760px]:[&_.ws-filters_button]:min-h-10 max-[760px]:[&_.ws-filters_button]:pt-[7px] max-[760px]:[&_.ws-filters_button]:pr-[9px] max-[760px]:[&_.ws-filters_button]:pb-[7px] max-[760px]:[&_.ws-filters_button]:pl-[9px] max-[760px]:[&_.ws-filters_button]:text-[11px] [&_.ws-filters_button>span]:inline-flex [&_.ws-filters_button>span]:min-w-[19px] [&_.ws-filters_button>span]:items-center [&_.ws-filters_button>span]:justify-center [&_.ws-filters_button>span]:rounded-[4px] [&_.ws-filters_button>span]:pt-0.5 [&_.ws-filters_button>span]:pr-1 [&_.ws-filters_button>span]:pb-0.5 [&_.ws-filters_button>span]:pl-1 [&_.ws-filters_button>span]:text-[10px] [&_.ws-filters_button>span]:leading-[1.3] [&_.ws-filters_button>span]:text-[color:#5c6850] [&_.ws-filters_button>span]:[font-variant-numeric:tabular-nums] [&_.ws-filters_button>span]:opacity-[1] [&_.ws-filters_button>span]:[background:#f0f2eb] [&_.ws-filters_button[aria-pressed='true']]:[border-color:#24251f] [&_.ws-filters_button[aria-pressed='true']]:text-[color:#fff] [&_.ws-filters_button[aria-pressed='true']]:[background:#24251f] [&_.ws-filters_button[aria-pressed='true']>span]:text-[color:#fff] [&_.ws-filters_button[aria-pressed='true']>span]:[background:#ffffff1c] [&_.ws-list]:overflow-hidden [&_.ws-list]:rounded-[0_0_12px_12px] [&_.ws-list]:[border-bottom:1px_solid_var(--ws-line)] [&_.ws-list_.ws-capability-row:last-child]:[border-bottom:0] [&_.ws-results-caption]:min-h-[42px] [&_.ws-results-caption]:items-center [&_.ws-results-caption]:gap-3 [&_.ws-results-caption]:pt-[11px] [&_.ws-results-caption]:pr-[18px] [&_.ws-results-caption]:pb-[11px] [&_.ws-results-caption]:pl-[18px] [&_.ws-results-caption]:text-[11px] [&_.ws-results-caption]:leading-[1.6] [&_.ws-results-caption]:text-[color:#70796a] [&_.ws-results-caption]:[background:#f8f9f5] max-[760px]:[&_.ws-results-caption]:pt-2.5 max-[760px]:[&_.ws-results-caption]:pr-[13px] max-[760px]:[&_.ws-results-caption]:pb-2.5 max-[760px]:[&_.ws-results-caption]:pl-[13px] max-[760px]:[&_.ws-results-caption]:text-[10px] [&_.ws-results-caption_output]:shrink-0 [&_.ws-results-caption_output]:text-[12px] [&_.ws-results-caption_output]:text-[color:#48553b] max-[760px]:[&_.ws-results-caption>:last-child]:max-w-[150px] [&_.ws-row-description]:mt-[5px] [&_.ws-row-description]:[display:-webkit-box] [&_.ws-row-description]:overflow-hidden [&_.ws-row-description]:text-[12px] [&_.ws-row-description]:leading-[1.75] [&_.ws-row-description]:[white-space:normal] [&_.ws-row-description]:text-[color:#626e56] [&_.ws-row-description]:[-webkit-box-orient:vertical] [&_.ws-row-description]:[-webkit-line-clamp:2] max-[760px]:[&_.ws-row-description]:text-[12px] [&_.ws-row-info>strong]:flex-wrap [&_.ws-row-info>strong]:gap-2 [&_.ws-row-info>strong]:text-[14px] [&_.ws-row-info>strong]:leading-[1.5] [&_.ws-row-info>strong]:font-bold [&_.ws-row-info>strong]:text-[color:#303a27] max-[760px]:[&_.ws-row-info>strong]:text-[13px] [&_.ws-row-meta]:mt-[9px] [&_.ws-row-meta]:gap-2.5 [&_.ws-row-meta]:text-[11px] [&_.ws-row-meta]:text-[color:#768369] [&_.ws-row-meta>span:first-child]:[border-color:#dfe6d4] [&_.ws-row-meta>span:first-child]:pt-[3px] [&_.ws-row-meta>span:first-child]:pr-1.5 [&_.ws-row-meta>span:first-child]:pb-[3px] [&_.ws-row-meta>span:first-child]:pl-1.5 [&_.ws-row-meta>span:first-child]:text-[10px] [&_.ws-row-meta>span:first-child]:text-[color:#5a6d48] [&_.ws-row-meta>span:first-child]:[background:#f8faf4] [&_.ws-row-number]:w-5 [&_.ws-row-number]:text-[11px] [&_.ws-row-number]:text-[color:#7c886f] [&_.ws-row-price]:min-w-[73px] max-[760px]:[&_.ws-row-price]:min-w-[61px] max-[760px]:[&_.ws-row-price]:pt-0.5 [&_.ws-row-price_small]:mt-1.5 [&_.ws-row-price_small]:text-[10px] [&_.ws-row-price_small]:text-[color:#727e65] [&_.ws-row-price_strong]:text-[15px] [&_.ws-row-price_strong]:[font-weight:650] [&_.ws-row-price_strong]:text-[color:#35412b] max-[760px]:[&_.ws-row-price_strong]:text-[14px] [&_.ws-row-version]:text-[11px] [&_.ws-row-version]:text-[color:#748166] [&_.ws-search-area]:rounded-[14px_14px_0_0] [&_.ws-search-area]:[border-color:#dedfd8] [&_.ws-search-area_input]:h-9 [&_.ws-search-area_input]:text-[14px] [&_.ws-search-area_input]:leading-[1.5] [&_.ws-search-area_input]:text-[color:#2d3328] max-[760px]:[&_.ws-search-area_input]:text-[16px] [&_.ws-search-area_input::placeholder]:text-[color:#72786b] [&_.ws-search-area_kbd]:rounded-[5px] [&_.ws-search-area_kbd]:pt-1 [&_.ws-search-area_kbd]:pr-1.5 [&_.ws-search-area_kbd]:pb-1 [&_.ws-search-area_kbd]:pl-1.5 [&_.ws-search-area_kbd]:[font-family:inherit] [&_.ws-search-area_kbd]:text-[11px] [&_.ws-search-area_kbd]:text-[color:#6c7461] [&_.ws-search-area_kbd]:[background:#fff] [&_.ws-search-area_kbd]:[border:1px_solid_#e0e3d9] [&_.ws-search-area_search_form]:mt-4 [&_.ws-search-area_search_form]:mr-4 [&_.ws-search-area_search_form]:mb-4 [&_.ws-search-area_search_form]:ml-4 [&_.ws-search-area_search_form]:min-h-[50px] [&_.ws-search-area_search_form]:gap-3 [&_.ws-search-area_search_form]:rounded-[10px] [&_.ws-search-area_search_form]:[border-color:#d9ddd2] [&_.ws-search-area_search_form]:pt-1.5 [&_.ws-search-area_search_form]:pr-[7px] [&_.ws-search-area_search_form]:pb-1.5 [&_.ws-search-area_search_form]:pl-[15px] [&_.ws-search-area_search_form]:text-[color:#626b58] [&_.ws-search-area_search_form]:[background:#fcfcfa] max-[760px]:[&_.ws-search-area_search_form]:mt-3 max-[760px]:[&_.ws-search-area_search_form]:mr-3 max-[760px]:[&_.ws-search-area_search_form]:mb-3 max-[760px]:[&_.ws-search-area_search_form]:ml-3 max-[760px]:[&_.ws-search-area_search_form]:gap-[9px] max-[760px]:[&_.ws-search-area_search_form]:pl-3 [&_.ws-search-area_search_form:focus-within]:[border-color:#7c8c68] [&_.ws-search-area_search_form:focus-within]:[box-shadow:0_0_0_3px_#eaf0e1] [&_.ws-search-area_search_form:focus-within]:[background:#fff] [&_.ws-search-submit]:h-9 [&_.ws-search-submit]:w-9 [&_.ws-search-submit]:rounded-[8px] [&_.ws-search-submit]:[border-color:#24251f] [&_.ws-search-submit]:text-[color:#fff] [&_.ws-search-submit]:[background:#24251f] [&_.ws-search-submit:hover]:[background:#3d4535] [&_.ws-sort]:ml-auto [&_.ws-sort]:flex [&_.ws-sort]:items-center [&_.ws-sort]:gap-[7px] [&_.ws-sort]:text-[11px] [&_.ws-sort]:text-[color:#707968] max-[760px]:[&_.ws-sort]:[align-self:flex-end] [&_.ws-sort_select]:min-h-[34px] [&_.ws-sort_select]:max-w-[none] [&_.ws-sort_select]:rounded-[6px] [&_.ws-sort_select]:pt-[5px] [&_.ws-sort_select]:pr-[7px] [&_.ws-sort_select]:pb-[5px] [&_.ws-sort_select]:pl-[7px] [&_.ws-sort_select]:text-[11px] [&_.ws-sort_select]:text-[color:#49543e] [&_.ws-sort_select]:[background:#fff] [&_.ws-sort_select]:[border:1px_solid_#e2e5db] [&_.ws-topbar]:sticky [&_.ws-topbar]:top-0 [&_.ws-topbar]:z-20" : ""}`}
     >
       <a
         className="ws-skip fixed top-[-80px] left-5 z-100 rounded-[12px] bg-[#222] px-5 py-3 text-white [&:focus]:top-3"
@@ -727,7 +433,8 @@ const Workspace = () => {
           {/* eslint-disable no-nested-ternary */}
           {catalogView ? (
             <div
-              className={`ws-discovery grid [grid-template-columns:minmax(0,_1fr)_330px] [align-items:start] gap-[22px] max-[1280px]:[grid-template-columns:minmax(0,_1fr)_310px] max-[1280px]:gap-4 max-[1100px]:[grid-template-columns:minmax(0,_1fr)] min-[1700px]:[grid-template-columns:minmax(0,_1fr)_370px] min-[1700px]:gap-7 ${detailOpen ? "detail-is-open max-[1100px]:[&_.ws-inspector]:[grid-row:1] max-[1100px]:[&_.ws-inspector]:block" : ""}`}
+              className={`ws-discovery ${detailStyles.discovery}`}
+              data-detail-open={detailOpen}
             >
               <section
                 className="ws-catalog min-w-0"
@@ -926,11 +633,11 @@ const Workspace = () => {
               </section>
               <aside
                 ref={inspector}
-                className="ws-inspector sticky top-5 min-w-0 overflow-hidden rounded-[15px] bg-white p-5 shadow-[0_4px_18px_#3b4f1404] [border:1px_solid_#e0e5d6] max-[1100px]:static max-[1100px]:hidden max-[1100px]:[scroll-margin-top:20px] max-[760px]:p-[19px] min-[1700px]:p-6 [&_.ws-button]:w-full [&_.ws-field_input]:text-[10px] max-[760px]:[&_.ws-field_input]:min-h-[42px] max-[760px]:[&_.ws-field_input]:text-[16px] [&_.ws-form]:gap-[13px] max-[1100px]:[&_.ws-form]:grid max-[1100px]:[&_.ws-form]:grid-cols-[1fr_1fr] max-[760px]:[&_.ws-form]:flex max-[1100px]:[&_.ws-form>:nth-child(n+3)]:[grid-column:1/-1] [&_.ws-inspector-price]:mx-0 [&_.ws-inspector-price]:my-[23px] [&_.ws-inspector-price_small]:text-[11px] [&_.ws-inspector-price_small]:text-[#68715e] [&_.ws-inspector-price>strong]:text-[24px] [&_.ws-inspector-price>strong]:text-[#32392b] [&_.ws-inspector-price>strong]:[font-variant-numeric:tabular-nums] [&_.ws-tool-title]:mb-3 [&_.ws-tool-title_h2]:text-[20px] [&_.ws-tool-title_h2]:leading-[1.45] [&_.ws-tool-title_h2]:tracking-[-0.04em] [&_.ws-tool-title_h2]:text-[#292d25] [&.ws-inspector-heading]:mb-[17px] [&.ws-inspector-heading]:flex [&.ws-inspector-heading]:items-center [&.ws-inspector-heading]:justify-between [&.ws-inspector-tabs]:flex [&.ws-inspector-tabs]:gap-[19px] [&.ws-inspector-tabs]:[border-bottom:1px_solid_var(--ws-line)] [&.ws-inspector-tabs_button]:px-0 [&.ws-inspector-tabs_button]:py-2.5 [&.ws-inspector-tabs_button]:text-[10px] [&.ws-inspector-tabs_button]:text-[#686f60] [&.ws-inspector-tabs_button]:[background:none] [&.ws-inspector-tabs_button]:[border-bottom:2px_solid_transparent] [&.ws-inspector-tabs_button]:[border:0] [&.ws-inspector-tabs_button[aria-pressed='true']]:[border-bottom-color:#768960] [&.ws-inspector-tabs_button[aria-pressed='true']]:[font-weight:650] [&.ws-inspector-tabs_button[aria-pressed='true']]:text-[#61764b] [&>.ws-tool-mark]:mb-[13px] [&>.ws-tool-mark]:h-[42px] [&>.ws-tool-mark]:w-[42px] [&>.ws-tool-mark]:rounded-[12px] [&>.ws-tool-mark]:bg-white"
+                className={`ws-inspector ${detailStyles.inspector}`}
                 aria-label="Selected capability"
               >
                 {selected ? (
-                  <Inspector
+                  <CapabilityDetails
                     key={selected.id}
                     tool={selected}
                     catalog={visibleCatalog}

@@ -3,7 +3,7 @@ import path from "node:path";
 
 const nectar = path.resolve(import.meta.dir, "../../apps/nectar");
 
-test("Nectar keeps the shared Tailwind theme plus the scoped landing stylesheet", async () => {
+test("Nectar keeps the shared Tailwind theme and explicit scoped stylesheets", async () => {
   const files: string[] = [];
   for await (const file of new Bun.Glob("**/*.css").scan({
     cwd: nectar,
@@ -13,9 +13,10 @@ test("Nectar keeps the shared Tailwind theme plus the scoped landing stylesheet"
       files.push(file);
     }
   }
-  // The landing page ships one scoped stylesheet for its scroll scenes.
+  // Scroll scenes and the capability detail panel have explicit scoped styles.
   expect(files.toSorted()).toEqual([
     "app/(marketing)/landing.css",
+    "app/dashboard/capability-details.module.css",
     "app/globals.css",
   ]);
   const css = await Bun.file(path.join(nectar, "app/globals.css")).text();

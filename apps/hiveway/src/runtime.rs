@@ -23,6 +23,7 @@ pub struct RuntimeConfig {
     pub oauth: OAuth,
     pub code_index: CodeIndex,
     pub memory: Memory,
+    pub workflows: Workflows,
     pub providers: Providers,
 }
 /// Bring-your-own-key providers that Hiveway calls on an account's behalf.
@@ -212,6 +213,65 @@ pub struct CodeIndex {
     pub snippets_per_file: usize,
     pub read_lines: usize,
     pub symbols_per_file: usize,
+}
+/// Multi-tool workflows and automatic publishing of repeated tool chains.
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Workflows {
+    /// Steps per workflow definition.
+    pub max_steps: usize,
+    /// Items one `for_each` step may fan out to.
+    pub max_items: usize,
+    /// Tool calls one run may make, across steps and items.
+    pub max_tool_calls: usize,
+    /// Steps (or items) that run at the same time within one run.
+    pub step_concurrency: usize,
+    /// Nested workflow calls.
+    pub max_depth: usize,
+    /// How long one step waits for its tool, and the deadline for a whole run.
+    pub step_wait_seconds: u64,
+    pub run_seconds: u64,
+    /// How long `run_workflow` waits before returning a run handle.
+    pub call_wait_seconds: u64,
+    pub runs_per_owner: usize,
+    pub runs_per_process: usize,
+    pub run_retention_seconds: i64,
+    /// Bytes of one step's result kept for later steps and the stored run.
+    pub step_result_bytes: usize,
+    pub definition_bytes: usize,
+    pub workflows_per_owner: usize,
+    /// Publish a private workflow after a tool chain repeats this often (0 disables).
+    pub auto_publish_after: u32,
+    /// Window in which consecutive calls can form a chain.
+    pub chain_window_seconds: u64,
+    /// Accounts whose recent calls are tracked per process.
+    pub tracked_owners: usize,
+}
+impl Workflows {
+    fn validate(&self, connectors: &ConnectorLimits) -> anyhow::Result<()> {
+        if !(1..=32).contains(&self.max_steps)
+            || !(1..=200).contains(&self.max_items)
+            || !(1..=500).contains(&self.max_tool_calls)
+            || !(1..=16).contains(&self.step_concurrency)
+            || self.max_depth > 4
+            || !(1..=1800).contains(&self.step_wait_seconds)
+            || self.run_seconds < self.step_wait_seconds
+            || self.run_seconds > 7200
+            || self.call_wait_seconds > self.run_seconds
+            || !(1..=64).contains(&self.runs_per_owner)
+            || !(1..=4096).contains(&self.runs_per_process)
+            || self.run_retention_seconds < 60
+            || !(1024..=connectors.result_bytes).contains(&self.step_result_bytes)
+            || !(1024..=262_144).contains(&self.definition_bytes)
+            || !(1..=1000).contains(&self.workflows_per_owner)
+            || self.auto_publish_after > 100
+            || !(10..=86_400).contains(&self.chain_window_seconds)
+            || !(1..=1_000_000).contains(&self.tracked_owners)
+        {
+            bail!("invalid workflow limits");
+        }
+        Ok(())
+    }
 }
 /// Repository memory and decisions.
 #[derive(Clone, Deserialize)]
@@ -518,6 +578,7 @@ impl RuntimeConfig {
         self.oauth.validate()?;
         self.code_index.validate(h)?;
         self.memory.validate()?;
+        self.workflows.validate(&self.connectors)?;
         self.providers.validate()?;
         if self.payment.decimals != 6
             || !(1..=86_400).contains(&self.payment.reorg_margin_seconds)

@@ -1,7 +1,7 @@
 //! CPU/memory bounded JSON-in/JSON-out WebAssembly capabilities.
 mod data;
 mod engine;
-mod schemas;
+pub(crate) mod schemas;
 use crate::{
     features::common::error::{ApiError, ApiResult},
     runtime::SandboxLimits,

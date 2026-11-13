@@ -618,7 +618,7 @@ async fn resolve_alias(state: &AppState, c: &Credential, suffix: &str) -> ApiRes
     }
     let integration = crate::features::integrations::shared(label)
         .filter(|item| item.tools.iter().any(|name| name == tool))
-        .ok_or_else(ApiError::forbidden)?;
+        .ok_or_else(|| not_connected(label))?;
     let owner = integration
         .shared_owner
         .clone()
@@ -632,6 +632,30 @@ async fn resolve_alias(state: &AppState, c: &Credential, suffix: &str) -> ApiRes
         tool: tool.to_owned(),
         shared: Some(integration),
     })
+}
+/// No connection serves `label` for this caller; explain how to add one.
+fn not_connected(label: &str) -> ApiError {
+    let item = crate::features::integrations::registry()
+        .iter()
+        .find(|item| item.slug == label);
+    let detail = match item {
+        Some(item) if item.local.is_some() => format!(
+            "{} runs on your own computer through Hive Local. Install hive-local, run `hive-local enable {}`, keep `hive-local run` running, then retry.",
+            item.name, item.slug
+        ),
+        Some(item) if item.byok => format!(
+            "Save your own {} API key in the Hive dashboard (Integrations) or connect it with Hive Local, then retry.",
+            item.name
+        ),
+        _ => format!(
+            "No MCP connection named `{label}` is connected for this account. Use search_tools to find available tools."
+        ),
+    };
+    ApiError {
+        status: axum::http::StatusCode::FORBIDDEN,
+        code: "mcp_connection_not_connected",
+        detail: Some(detail),
+    }
 }
 /// Parse the owner-only `external_<connection>_<tool>` form.
 fn resolve_external(c: &Credential, name: &str) -> ApiResult<Target> {

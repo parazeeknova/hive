@@ -94,6 +94,8 @@ pub struct CallContext {
     /// MRTR retry: `inputResponses` keyed like the earlier `inputRequests`.
     pub input_responses: Option<Value>,
     pub slot: Option<AdmissionSlot>,
+    /// Overrides `call_wait_seconds`, for workflow steps that run in the background.
+    pub wait: Option<Duration>,
 }
 impl CallContext {
     /// Wait synchronously, never detach and decline any user input request.
@@ -280,7 +282,10 @@ pub(super) async fn await_outcome(
     ctx: &CallContext,
 ) -> ApiResult<Outcome> {
     let limits = limits(state);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(limits.call_wait_seconds);
+    let deadline = tokio::time::Instant::now()
+        + ctx
+            .wait
+            .unwrap_or_else(|| Duration::from_secs(limits.call_wait_seconds));
     ctx.park();
     let outcome = realtime::wait_for(
         &state.realtime,

@@ -1,0 +1,467 @@
+[
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000001",
+    "slug": "web_page_to_file",
+    "name": "Save a web page or document as Markdown on your computer",
+    "description": "Converts a public web page, PDF or office document to Markdown with MarkItDown (shared by Hive), then writes it to a file in one of your approved folders with Hive Local's filesystem tool.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https:// URL of the page or document"
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute .md file path inside a folder approved in Hive Local"
+          }
+        },
+        "required": ["url", "path"]
+      },
+      "steps": [
+        {
+          "id": "convert",
+          "tool": "mcp_markitdown__convert_to_markdown",
+          "arguments": { "uri": "{{inputs.url}}" }
+        },
+        {
+          "id": "save",
+          "tool": "mcp_filesystem__write_file",
+          "arguments": {
+            "path": "{{inputs.path}}",
+            "content": "{{steps.convert.text}}"
+          }
+        }
+      ],
+      "output": "Saved {{steps.convert.text | length}} characters of Markdown from {{inputs.url}} to {{inputs.path}}."
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000002",
+    "slug": "dataset_profile",
+    "name": "Profile a dataset by URL",
+    "description": "Reads a CSV, Parquet or JSON file by https URL with DuckDB and returns its schema, per-column statistics (min, max, nulls, distinct values) and a 10-row sample. The three queries run at the same time.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https:// URL ending in .csv, .parquet or .json"
+          }
+        },
+        "required": ["url"]
+      },
+      "steps": [
+        {
+          "id": "schema",
+          "tool": "mcp_duckdb__execute_query",
+          "arguments": {
+            "sql": "DESCRIBE SELECT * FROM '{{inputs.url | sql}}'"
+          }
+        },
+        {
+          "id": "stats",
+          "tool": "mcp_duckdb__execute_query",
+          "arguments": {
+            "sql": "SUMMARIZE SELECT * FROM '{{inputs.url | sql}}'"
+          }
+        },
+        {
+          "id": "sample",
+          "tool": "mcp_duckdb__execute_query",
+          "arguments": {
+            "sql": "SELECT * FROM '{{inputs.url | sql}}' LIMIT 10"
+          }
+        }
+      ],
+      "output": {
+        "url": "{{inputs.url}}",
+        "schema": "{{steps.schema.json}}",
+        "statistics": "{{steps.stats.json}}",
+        "sample": "{{steps.sample.json}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000003",
+    "slug": "dataset_question_report",
+    "name": "Answer a data question with SQL and save a report",
+    "description": "Loads a dataset by https URL into a view named data, runs your DuckDB SQL against it and, when a path is given, writes a Markdown report with the query and results to your computer through Hive Local.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https:// URL of a CSV, Parquet or JSON file"
+          },
+          "sql": {
+            "type": "string",
+            "description": "DuckDB SQL that reads from the view `data`, e.g. SELECT species, avg(petal_length) FROM data GROUP BY 1"
+          },
+          "title": { "type": "string", "default": "Data report" },
+          "path": {
+            "type": "string",
+            "default": "",
+            "description": "Optional absolute .md path inside an approved folder"
+          }
+        },
+        "required": ["url", "sql"]
+      },
+      "steps": [
+        {
+          "id": "query",
+          "tool": "mcp_duckdb__execute_query",
+          "arguments": {
+            "sql": "WITH data AS (SELECT * FROM '{{inputs.url | sql}}') {{inputs.sql}}"
+          }
+        },
+        {
+          "id": "save",
+          "tool": "mcp_filesystem__write_file",
+          "when": "{{inputs.path}}",
+          "arguments": {
+            "path": "{{inputs.path}}",
+            "content": "# {{inputs.title}}\n\nSource: {{inputs.url}}\n\n```sql\n{{inputs.sql}}\n```\n\n## Result\n\n```json\n{{steps.query.text}}\n```\n"
+          }
+        }
+      ],
+      "output": {
+        "result": "{{steps.query.json}}",
+        "report": "{{inputs.path | default: 'not saved'}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000004",
+    "slug": "document_to_memory",
+    "name": "Read a document and remember it for a repository",
+    "description": "Converts a web page or document to Markdown with MarkItDown and stores it as a note in Hive repository memory, so later sessions and other agents can recall it.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "https:// URL of the page or document"
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository, e.g. github.com/acme/app, or global"
+          },
+          "title": { "type": "string", "description": "Short memory title" }
+        },
+        "required": ["url", "repo", "title"]
+      },
+      "steps": [
+        {
+          "id": "convert",
+          "tool": "mcp_markitdown__convert_to_markdown",
+          "arguments": { "uri": "{{inputs.url}}" }
+        },
+        {
+          "id": "remember",
+          "tool": "remember",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "kind": "note",
+            "title": "{{inputs.title}}",
+            "body": "Source: {{inputs.url}}\n\n{{steps.convert.text | truncate: 7000}}",
+            "tags": ["source"]
+          }
+        }
+      ],
+      "output": "Remembered {{inputs.title}} for {{inputs.repo}} from {{inputs.url}}."
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000005",
+    "slug": "research_notes",
+    "name": "Read several sources and save combined research notes",
+    "description": "Converts up to 25 web pages or documents to Markdown in parallel with MarkItDown and saves the combined excerpts as one repository memory note.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "urls": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "maxItems": 25
+          },
+          "repo": {
+            "type": "string",
+            "description": "Repository, e.g. github.com/acme/app, or global"
+          },
+          "title": { "type": "string", "description": "Short memory title" }
+        },
+        "required": ["urls", "repo", "title"]
+      },
+      "steps": [
+        {
+          "id": "read",
+          "tool": "mcp_markitdown__convert_to_markdown",
+          "for_each": "{{inputs.urls}}",
+          "arguments": { "uri": "{{item}}" },
+          "on_error": "continue"
+        },
+        {
+          "id": "remember",
+          "tool": "remember",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "kind": "note",
+            "title": "{{inputs.title}}",
+            "body": "Sources: {{inputs.urls | join: ', '}}\n\n{{steps.read.text | truncate: 7500}}",
+            "tags": ["research"]
+          }
+        }
+      ],
+      "output": {
+        "sources": "{{inputs.urls | length}}",
+        "all_read": "{{steps.read.ok}}",
+        "note": "{{inputs.title}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000006",
+    "slug": "video_quick_look",
+    "name": "Quick look at a video file",
+    "description": "On your computer through Hive Local: reads a video's duration, codecs and resolution with FFmpeg, extracts its audio track and a set of evenly spaced frames, and reports the output files.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Absolute path to the video inside an approved folder"
+          },
+          "frames": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 6
+          },
+          "audio_format": {
+            "enum": ["mp3", "aac", "wav", "flac", "ogg", "opus"],
+            "default": "mp3"
+          }
+        },
+        "required": ["file_path"]
+      },
+      "steps": [
+        {
+          "id": "info",
+          "tool": "mcp_ffmpeg__ffmpeg_get_info",
+          "arguments": { "file_path": "{{inputs.file_path}}" }
+        },
+        {
+          "id": "audio",
+          "tool": "mcp_ffmpeg__ffmpeg_extract_audio",
+          "after": ["info"],
+          "arguments": {
+            "file_path": "{{inputs.file_path}}",
+            "audio_format": "{{inputs.audio_format}}"
+          }
+        },
+        {
+          "id": "frames",
+          "tool": "mcp_ffmpeg__ffmpeg_extract_frames",
+          "after": ["info"],
+          "arguments": {
+            "file_path": "{{inputs.file_path}}",
+            "count": "{{inputs.frames}}",
+            "format": "jpg"
+          }
+        }
+      ],
+      "output": {
+        "media": "{{steps.info.json}}",
+        "audio": "{{steps.audio.text}}",
+        "frames": "{{steps.frames.text}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000007",
+    "slug": "code_change_brief",
+    "name": "Brief before changing a symbol in an indexed repository",
+    "description": "Before editing code in a repository indexed in Hive: finds where a symbol is defined and used, recalls recorded decisions about it and summarizes the repository's layout and commands, all at the same time.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "description": "Indexed repository, e.g. github.com/acme/app"
+          },
+          "symbol": {
+            "type": "string",
+            "description": "Function, type or constant name"
+          }
+        },
+        "required": ["repo", "symbol"]
+      },
+      "steps": [
+        {
+          "id": "definition",
+          "tool": "find_symbol",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "name": "{{inputs.symbol}}",
+            "exact": true
+          }
+        },
+        {
+          "id": "references",
+          "tool": "find_references",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "symbol": "{{inputs.symbol}}",
+            "limit": 50
+          }
+        },
+        {
+          "id": "memory",
+          "tool": "recall",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "query": "{{inputs.symbol}}"
+          }
+        },
+        {
+          "id": "overview",
+          "tool": "repo_overview",
+          "arguments": { "repo": "{{inputs.repo}}" },
+          "on_error": "continue"
+        }
+      ],
+      "output": {
+        "definition": "{{steps.definition.json}}",
+        "references": "{{steps.references.json}}",
+        "memories": "{{steps.memory.json.memories}}",
+        "repository": "{{steps.overview.json}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000008",
+    "slug": "live_symbol_impact",
+    "name": "Impact of changing a symbol in your working copy",
+    "description": "On your computer through Hive Local and Serena: reads a symbol's current body, finds every symbol that references it and the file's diagnostics, including uncommitted code, and recalls decisions recorded in Hive memory.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "name_path": {
+            "type": "string",
+            "description": "Symbol name path, e.g. MyClass/my_method"
+          },
+          "relative_path": {
+            "type": "string",
+            "description": "File path relative to the Serena project"
+          },
+          "repo": {
+            "type": "string",
+            "default": "global",
+            "description": "Repository for recalled memories"
+          }
+        },
+        "required": ["name_path", "relative_path"]
+      },
+      "steps": [
+        {
+          "id": "body",
+          "tool": "mcp_serena__find_symbol",
+          "arguments": {
+            "name_path_pattern": "{{inputs.name_path}}",
+            "relative_path": "{{inputs.relative_path}}",
+            "include_body": true
+          }
+        },
+        {
+          "id": "callers",
+          "tool": "mcp_serena__find_referencing_symbols",
+          "arguments": {
+            "name_path": "{{inputs.name_path}}",
+            "relative_path": "{{inputs.relative_path}}"
+          }
+        },
+        {
+          "id": "diagnostics",
+          "tool": "mcp_serena__get_diagnostics_for_file",
+          "arguments": { "relative_path": "{{inputs.relative_path}}" },
+          "on_error": "continue"
+        },
+        {
+          "id": "memory",
+          "tool": "recall",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "query": "{{inputs.name_path}}"
+          },
+          "on_error": "continue"
+        }
+      ],
+      "output": {
+        "symbol": "{{steps.body.text}}",
+        "referenced_by": "{{steps.callers.text}}",
+        "diagnostics": "{{steps.diagnostics.text}}",
+        "memories": "{{steps.memory.json.memories}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000009",
+    "slug": "folder_digest",
+    "name": "Digest the documents in a folder",
+    "description": "On your computer through Hive Local: finds files matching a pattern in an approved folder and reads the first lines of each (up to 25 files) so you can review a folder in one call.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute folder path inside an approved folder"
+          },
+          "pattern": {
+            "type": "string",
+            "default": "**/*.md",
+            "description": "Glob pattern, e.g. **/*.md"
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          }
+        },
+        "required": ["path"]
+      },
+      "steps": [
+        {
+          "id": "find",
+          "tool": "mcp_filesystem__search_files",
+          "arguments": {
+            "path": "{{inputs.path}}",
+            "pattern": "{{inputs.pattern}}"
+          }
+        },
+        {
+          "id": "read",
+          "tool": "mcp_filesystem__read_text_file",
+          "for_each": "{{steps.find.text | split}}",
+          "arguments": { "path": "{{item}}", "head": "{{inputs.lines}}" },
+          "on_error": "continue"
+        }
+      ],
+      "output": {
+        "files": "{{steps.find.text | split}}",
+        "excerpts": "{{steps.read.items | pluck: text}}"
+      }
+    }
+  }
+]

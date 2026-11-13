@@ -18,6 +18,14 @@ async fn main() -> anyhow::Result<()> {
 async fn serve() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let state = AppState::connect(&config).await?;
+    // Catalog updates ship with the binary: integrations and official workflows
+    // are upserted on every start, with no migration or manual step.
+    hiveway::features::integrations::sync(&state.postgres)
+        .await
+        .context("syncing official integrations")?;
+    hiveway::features::hiveway::workflows::sync_official(&state)
+        .await
+        .map_err(|error| anyhow::anyhow!("syncing official workflows: {}", error.code))?;
     if let Err(error) = hiveway::features::hiveway::embeddings::prune(&state).await {
         tracing::warn!(error = error.code, "Stale tool embeddings were not pruned");
     }
@@ -146,6 +154,9 @@ async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Re
         // Shutdown is observed between ticks so financial recovery is not cancelled midway.
         if let Err(error) = hiveway::features::pollen::worker::tick(&state).await {
             tracing::error!(error = error.code, "Pollen recovery cycle failed");
+        }
+        if let Err(error) = hiveway::features::hiveway::workflows::engine::cleanup(&state).await {
+            tracing::warn!(error = error.code, "Workflow retention cleanup failed");
         }
     }
 }
