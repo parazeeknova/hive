@@ -182,6 +182,30 @@ enum Reply {
     /// A connected MCP request, possibly still running or awaiting input.
     Connected(Outcome),
 }
+impl Reply {
+    /// Only routing outcomes and results from Hive's own workflow handlers carry lifecycle state.
+    fn lifecycle(&self, name: &str) -> Option<tool_activity::Lifecycle> {
+        match self {
+            Self::Connected(Outcome::Running { job, .. } | Outcome::InputRequired { job, .. }) => {
+                Some(tool_activity::Lifecycle::Task(*job))
+            }
+            Self::Value(value)
+                if name.starts_with(workflows::PREFIX)
+                    || matches!(name, "run_workflow" | "get_workflow_run") =>
+            {
+                let run = &value["structuredContent"];
+                run["run_id"]
+                    .as_str()
+                    .and_then(|id| id.parse().ok())
+                    .map(|id| tool_activity::Lifecycle::Workflow {
+                        id,
+                        pending: run["status"] == "running",
+                    })
+            }
+            _ => None,
+        }
+    }
+}
 /// Per-request client facts used while routing a call.
 struct Call {
     ctx: CallContext,
@@ -268,7 +292,6 @@ async fn call(
             Ok(Reply::Value(json!({"cancellation_requested":true})))
         }
         "call_tool" => {
-            identity::authenticate(&state, &headers, "capabilities:invoke").await?;
             let target = args["name"]
                 .as_str()
                 .filter(|name| discoverable(name))
@@ -325,6 +348,7 @@ pub(crate) fn invoke_tool<'a>(
         let credential = identity::authenticate(state, headers, "").await?;
         let activity = tool_activity::Call::start(state, &credential, name, headers).await;
         let span = tracing::info_span!("mcp.workflow_tool", call_id = %activity.id, credential_id = %credential.id, tool = name);
+        let mut lifecycle = None;
         let outcome: ApiResult<Value> = async {
             let routing = Call {
                 ctx: CallContext {
@@ -332,8 +356,10 @@ pub(crate) fn invoke_tool<'a>(
                     ..CallContext::blocking()
                 },
             };
+            let reply = Box::pin(call(state.clone(), headers.clone(), name, args, &routing)).await?;
+            lifecycle = reply.lifecycle(name);
             Ok(
-                match Box::pin(call(state.clone(), headers.clone(), name, args, &routing)).await? {
+                match reply {
                     Reply::Value(value) => {
                         let failed = tool_activity::failed(&value);
                         tool_result(name, value, failed)?
@@ -363,7 +389,7 @@ pub(crate) fn invoke_tool<'a>(
             Err(error) => (json!({"isError":true}), Some(error.code)),
         };
         activity
-            .finish(state, &result, error)
+            .finish(state, &result, error, lifecycle)
             .instrument(span)
             .await;
         outcome
@@ -775,6 +801,10 @@ pub async fn gateway(
             let outcome = Box::pin(call(state.clone(), headers, name, args, &routing))
                 .instrument(span.clone())
                 .await;
+            let lifecycle = outcome
+                .as_ref()
+                .ok()
+                .and_then(|reply| reply.lifecycle(&target));
             let (value, failed, error_code) = match outcome {
                 Ok(Reply::Value(value)) => {
                     let failed = tool_activity::failed(&value);
@@ -794,7 +824,7 @@ pub async fn gateway(
                 }
             };
             activity
-                .finish(&state, &value, error_code)
+                .finish(&state, &value, error_code, lifecycle)
                 .instrument(span)
                 .await;
             discovery::record_usage(&state, &c.wallet, &target, failed).await;
@@ -925,9 +955,32 @@ pub async fn notifications(
 
 #[cfg(test)]
 mod tests {
-    use super::{MODERN, Rpc, metadata};
+    use super::{MODERN, Outcome, Reply, Rpc, Uuid, metadata, tool_activity};
     use axum::http::{HeaderMap, HeaderValue, StatusCode};
     use serde_json::json;
+    #[test]
+    fn lifecycle_handles_come_from_gateway_routing() {
+        let id = Uuid::new_v4();
+        let payload = json!({"isError":false,"structuredContent":{"isError":true,"task_id":id,"run_id":id,"status":"running"},"_meta":{"dev.hive/task":{"taskId":id,"status":"working"}}});
+        assert!(
+            Reply::Connected(Outcome::Complete(payload.clone()))
+                .lifecycle("mcp_provider__read")
+                .is_none()
+        );
+        assert!(Reply::Value(payload.clone()).lifecycle("recall").is_none());
+        assert!(matches!(
+            Reply::Value(payload).lifecycle("run_workflow"),
+            Some(tool_activity::Lifecycle::Workflow { pending: true, .. })
+        ));
+        assert!(matches!(
+            Reply::Connected(Outcome::Running {
+                job: id,
+                task: json!({"status":"queued"})
+            })
+            .lifecycle("mcp_provider__read"),
+            Some(tool_activity::Lifecycle::Task(_))
+        ));
+    }
     #[test]
     fn connected_content_blocks_reach_mcp_clients() -> super::ApiResult<()> {
         let upstream = json!({"content":[{"type":"text","text":"Preview"},{"type":"image","mimeType":"image/webp","data":"aW1hZ2U="}],"isError":false});

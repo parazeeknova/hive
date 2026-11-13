@@ -225,6 +225,7 @@ async fn artifact_schemas(
 async fn catalog_caps(
     state: &AppState,
     query: Option<&str>,
+    dependencies: &[Uuid],
 ) -> ApiResult<Vec<crate::entities::capabilities::Model>> {
     let config = &state.settings.runtime.discovery;
     let mut catalog = CapabilitiesEntity::find()
@@ -246,7 +247,24 @@ async fn catalog_caps(
         }
         catalog = catalog.filter(matching);
     }
-    Ok(catalog.all(&state.postgres).await?)
+    let mut caps = catalog.all(&state.postgres).await?;
+    // Required capabilities are looked up directly, independent of search terms
+    // and listing limits, while preserving the usual scoped schema checks below.
+    let missing: Vec<Uuid> = dependencies
+        .iter()
+        .copied()
+        .filter(|id| !caps.iter().any(|cap| cap.id == *id))
+        .collect();
+    if !missing.is_empty() {
+        caps.extend(
+            CapabilitiesEntity::find()
+                .filter(CapabilitiesColumn::Active.eq(true))
+                .filter(CapabilitiesColumn::Id.is_in(missing))
+                .all(&state.postgres)
+                .await?,
+        );
+    }
+    Ok(caps)
 }
 fn hive_native_tools(state: &AppState, c: &Credential, tools: &mut Vec<Value>) {
     let wait = state.settings.runtime.connectors.poll_wait_seconds;
@@ -293,12 +311,22 @@ fn hive_native_tools(state: &AppState, c: &Credential, tools: &mut Vec<Value>) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 pub(super) async fn tools(
     state: &AppState,
     c: &Credential,
     query: Option<&str>,
     expanded: bool,
+) -> ApiResult<Value> {
+    tools_with_dependencies(state, c, query, expanded, &[]).await
+}
+
+#[allow(clippy::too_many_lines)]
+pub(super) async fn tools_with_dependencies(
+    state: &AppState,
+    c: &Credential,
+    query: Option<&str>,
+    expanded: bool,
+    dependencies: &[Uuid],
 ) -> ApiResult<Value> {
     let mut tools = if expanded {
         connection_tools(state, c).await?
@@ -307,7 +335,15 @@ pub(super) async fn tools(
     };
     let discovery = &state.settings.runtime.discovery;
     tools.push(hive_tool("search_tools", "Find the best available tools for the current task, including connected MCPs and newly published user artifacts. Start here for website inspiration, library documentation, web research, or missing functionality. Pass repo or stack to rank tools for the current project. Returns relevant schemas and workflow guidance; avoid loading the full catalog.", json!({"query":{"type":"string","minLength":1,"maxLength":200},"limit":{"type":"integer","minimum":1,"maximum":discovery.max_results},"stack":{"type":"array","maxItems":12,"items":{"type":"string","maxLength":40}},"repo":{"type":"string","maxLength":512}}), json!(["query"]), true));
-    if has(c, "capabilities:invoke") {
+    if [
+        "capabilities:invoke",
+        "code:read",
+        "memory:read",
+        "memory:write",
+    ]
+    .iter()
+    .any(|scope| has(c, scope))
+    {
         tools.push(tool("call_tool", "Call an available tool found by search_tools using its exact name and arguments. Inspect its schema, price and side effects first. Caller-owned connections only. Never automatically retry a mutation after an uncertain failure.", json!({"name":{"type":"string","maxLength":128},"arguments":{"type":"object"}}),json!(["name","arguments"]),false));
     }
     hive_native_tools(state, c, &mut tools);
@@ -336,7 +372,7 @@ pub(super) async fn tools(
         tools.push(tool("invoke_capability","Invoke a quote. An unsigned request returns x402 payment requirements; use a client wallet to sign. Never provide private keys.",json!({"invocation_id":{"type":"string","format":"uuid"},"payment_signature":{"type":"string"}}),json!(["invocation_id"]),false));
         tools.push(tool("dodo_checkout","Create a hosted Dodo test checkout for a quoted invocation. Requires a human card checkout.",json!({"invocation_id":{"type":"string","format":"uuid"}}),json!(["invocation_id"]),false));
         let caps = if expanded {
-            catalog_caps(state, query).await?
+            catalog_caps(state, query, dependencies).await?
         } else {
             Vec::new()
         };

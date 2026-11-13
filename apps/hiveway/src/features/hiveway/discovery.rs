@@ -138,15 +138,14 @@ fn intent_score(name: &str, terms: &[String]) -> f64 {
 /// Only return workflows whose routed dependencies are currently reachable. Native steps
 /// still enforce their own repository prerequisites at execution time.
 fn reachable(tool: &Value, names: &HashSet<String>) -> bool {
-    tool["_meta"]["dev.hive/requiresBinding"] != true
-        && tool["_meta"]["dev.hive/requiredTools"]
-            .as_array()
-            .is_none_or(|steps| {
-                steps
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .all(|name| names.contains(name))
-            })
+    tool["_meta"]["dev.hive/requiredTools"]
+        .as_array()
+        .is_none_or(|steps| {
+            steps
+                .iter()
+                .filter_map(Value::as_str)
+                .all(|name| names.contains(name))
+        })
 }
 
 struct Document {
@@ -310,17 +309,48 @@ async fn candidates(
         .as_array()
         .cloned()
         .unwrap_or_default();
+    let dependencies: Vec<uuid::Uuid> = tools
+        .iter()
+        .flat_map(|tool| {
+            tool["_meta"]["dev.hive/requiredTools"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|name| {
+            name.as_str()
+                .and_then(|name| name.strip_prefix("hive_"))
+                .and_then(|id| id.parse().ok())
+        })
+        .collect();
+    let mut callable =
+        super::tools::tools_with_dependencies(state, credential, Some(query), true, &dependencies)
+            .await?["tools"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+    let available = callable_names(&mut callable);
+    tools.retain(|tool| {
+        tool["name"]
+            .as_str()
+            .is_some_and(|name| super::discoverable(name) && available.contains(name))
+            && tool["_meta"]["dev.hive/requiresBinding"] != true
+    });
+    Ok(tools)
+}
+
+/// Execution routes include callable-only native tools and connection-bound catalog
+/// wrappers. Discovery visibility must not remove them from a workflow's dependencies.
+fn callable_names(tools: &mut Vec<Value>) -> HashSet<String> {
     loop {
         let available: HashSet<String> = tools
             .iter()
-            .filter_map(|t| t["name"].as_str().map(str::to_owned))
+            .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
             .collect();
         let previous = tools.len();
-        tools.retain(|tool| {
-            tool["name"].as_str().is_some_and(super::discoverable) && reachable(tool, &available)
-        });
-        if previous == tools.len() {
-            return Ok(tools);
+        tools.retain(|tool| reachable(tool, &available));
+        if tools.len() == previous {
+            return available;
         }
     }
 }
@@ -497,6 +527,20 @@ fn setup_hints(terms: &[String], names: &[String]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn callable_only_dependencies_survive_discovery_filtering() {
+        let workflow = json!({"name":"workflow_chain","_meta":{"dev.hive/requiredTools":["scaffold_project","get_task","search_capabilities","hive_binding"]}});
+        let mut tools = vec![
+            json!({"name":"scaffold_project"}),
+            json!({"name":"get_task"}),
+            json!({"name":"search_capabilities"}),
+            json!({"name":"hive_binding","_meta":{"dev.hive/requiresBinding":true}}),
+            workflow.clone(),
+        ];
+        assert!(callable_names(&mut tools).contains("workflow_chain"));
+        tools.retain(|v| v["name"] != "get_task");
+        assert!(!callable_names(&mut tools).contains("workflow_chain"));
+    }
     #[test]
     fn setup_hints_suggest_unconnected_local_integrations() {
         let terms = vec![stem("video"), stem("trim")];

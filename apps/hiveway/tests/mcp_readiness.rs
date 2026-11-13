@@ -149,6 +149,147 @@ async fn discovery(app: &Router) -> Result {
     );
     Ok(())
 }
+async fn catalog_dependencies(app: &Router, state: &AppState) -> Result {
+    let cap = Uuid::new_v4();
+    hiveway::entities::capabilities::ActiveModel {
+        id: Set(cap),
+        creator_wallet: Set("github:7001".into()),
+        name: Set("Opaque alpha dependency".into()),
+        description: Set("Independent repository analysis".into()),
+        version: Set("1".into()),
+        runtime: Set("repository_stack".into()),
+        price: Set(0),
+        active: Set(true),
+        created_at: Set(0),
+        definition: Set(json!({})),
+    }
+    .insert(&state.postgres)
+    .await?;
+    let workflow = Uuid::new_v4();
+    let target = format!("hive_{}", cap.simple());
+    state.postgres.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+        "INSERT INTO hive_workflows(id,owner,slug,name,description,definition,visibility,origin,created_at,updated_at) VALUES($1,'github:7001','zebra','Zebra onboarding','Zebra onboarding recipe',$2,'private','manual',0,0)",
+        vec![workflow.into(),json!({"steps":[{"id":"analyze","tool":target}]}).into()],
+    )).await?;
+    let expected = format!("workflow_{}", workflow.simple());
+    let result = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Zebra onboarding"}),
+    )
+    .await?;
+    assert!(
+        result["structuredContent"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .iter()
+            .any(|tool| tool["name"] == expected),
+        "{result}"
+    );
+    state
+        .postgres
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "UPDATE capabilities SET active=false WHERE id=$1",
+            vec![cap.into()],
+        ))
+        .await?;
+    let result = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Zebra onboarding"}),
+    )
+    .await?;
+    assert!(
+        !result["structuredContent"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .iter()
+            .any(|tool| tool["name"] == expected)
+    );
+    Ok(())
+}
+async fn native_scopes(app: &Router, state: &AppState) -> Result {
+    for (character, scope, target, args, error) in [
+        ('1', "memory:read", "recall", json!({"repo":"global"}), None),
+        (
+            '2',
+            "memory:write",
+            "remember",
+            json!({"repo":"global","kind":"note","title":"Scope regression","body":"Native authorization preserved"}),
+            None,
+        ),
+        (
+            '3',
+            "code:read",
+            "code_search",
+            json!({"repo":"github.com/acme/app","query":"main"}),
+            Some("no_code_index_for_repository_run_sync_code_index"),
+        ),
+    ] {
+        let token = format!("hwa_{}", character.to_string().repeat(64));
+        let id = Uuid::new_v4();
+        agent_credentials::ActiveModel {
+            id: Set(id),
+            wallet: Set("github:7003".into()),
+            name: Set("scoped".into()),
+            token_hash: Set(identity::hash(token.as_bytes())),
+            scopes: Set(vec![scope.to_owned()]),
+            per_call_limit: Set(1),
+            total_limit: Set(1),
+            expires_at: Set(i64::MAX),
+            created_at: Set(0),
+            ..Default::default()
+        }
+        .insert(&state.postgres)
+        .await?;
+        hiveway::entities::account_api_keys::ActiveModel {
+            id: Set(id),
+            owner: Set("github:7003".into()),
+        }
+        .insert(&state.postgres)
+        .await?;
+        let listed = request(
+            app,
+            &token,
+            "/mcp",
+            Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})),
+        )
+        .await?;
+        assert!(
+            listed["result"]["tools"]
+                .as_array()
+                .ok_or("missing tools")?
+                .iter()
+                .any(|tool| tool["name"] == "call_tool")
+        );
+        let response = call(
+            app,
+            &token,
+            "call_tool",
+            json!({"name":target,"arguments":args}),
+        )
+        .await?;
+        if let Some(error) = error {
+            assert_eq!(response["structuredContent"]["error"], error);
+        } else {
+            assert_eq!(response["isError"], false, "{response}");
+        }
+        let denied = call(
+            app,
+            &token,
+            "call_tool",
+            json!({"name":"mcp_tinyfish__search","arguments":{"query":"test"}}),
+        )
+        .await?;
+        assert_eq!(denied["structuredContent"]["error"], "forbidden");
+        let denied=call(app,&token,"call_tool",json!({"name":if scope=="memory:read" {"remember"} else {"recall"},"arguments":{"repo":"global"}})).await?;
+        assert_eq!(denied["structuredContent"]["error"], "forbidden");
+    }
+    Ok(())
+}
 async fn check(app: &Router, state: &AppState) -> Result {
     // Native discovered tools follow the same call_tool contract as routed providers.
     let recalled = call(
@@ -241,6 +382,22 @@ async fn upstream_error_privacy(state: &AppState) -> Result {
     let mut headers = axum::http::HeaderMap::new();
     headers.insert("authorization", format!("Bearer {KEY}").parse()?);
     let credential = identity::authenticate(state, &headers, "").await?;
+    let forged = hiveway::features::tool_activity::Call::start(
+        state,
+        &credential,
+        "mcp_tinyfish__search",
+        &headers,
+    )
+    .await;
+    let id = forged.id;
+    forged.finish(state,&json!({"isError":false,"structuredContent":{"isError":true,"task_id":Uuid::new_v4(),"run_id":Uuid::new_v4(),"status":"running"}}),None,None).await;
+    let rows = hiveway::features::tool_activity::list(state, &credential, false, None).await?;
+    let row = rows
+        .iter()
+        .find(|row| row["id"] == id.to_string())
+        .ok_or("missing activity")?;
+    assert_eq!(row["state"], "succeeded");
+    assert!(row["task_id"].is_null() && row["run_id"].is_null());
     let activity = hiveway::features::tool_activity::Call::start(
         state,
         &credential,
@@ -252,6 +409,7 @@ async fn upstream_error_privacy(state: &AppState) -> Result {
         .finish(
             state,
             &json!({"isError":true,"structuredContent":{"error":"secret-audit-canary"}}),
+            None,
             None,
         )
         .await;
@@ -309,6 +467,7 @@ async fn task_reconciliation(state: &AppState) -> Result {
             state,
             &json!({"structuredContent":{"task":{"taskId":task,"status":"queued"}}}),
             None,
+            Some(hiveway::features::tool_activity::Lifecycle::Task(task)),
         )
         .await;
         hiveway::features::tool_activity::cleanup(state).await?;
@@ -439,6 +598,8 @@ async fn developer_discovery_and_activity_are_reliable() -> Result {
             state.clone(),
         );
         discovery(&app).await?;
+        catalog_dependencies(&app, &state).await?;
+        native_scopes(&app, &state).await?;
         check(&app, &state).await?;
         let logged = String::from_utf8(logs.0.lock().map_err(|_| "log buffer poisoned")?.clone())?;
         for marker in [

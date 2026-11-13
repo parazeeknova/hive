@@ -8,7 +8,13 @@ export const activityEntries = (
     ...(activity?.invocations ?? []),
     ...(activity?.tool_calls ?? []),
   ];
-  return [
-    ...new Map(entries.map((entry) => [entry.id, entry])).values(),
-  ].toSorted((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id));
+  const unique = new Map<string, Invocation | ToolActivity>();
+  for (const entry of entries) {
+    if (!unique.has(entry.id)) {
+      unique.set(entry.id, entry);
+    }
+  }
+  return [...unique.values()].toSorted(
+    (a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id)
+  );
 };

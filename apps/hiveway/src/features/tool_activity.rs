@@ -29,8 +29,23 @@ fn identifier(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
-fn uuid(value: &Value) -> Option<Uuid> {
-    value.as_str().and_then(|s| s.parse().ok())
+/// Lifecycle handles supplied by gateway routing, never inferred from connector content.
+#[derive(Clone, Copy)]
+pub enum Lifecycle {
+    Task(Uuid),
+    Workflow { id: Uuid, pending: bool },
+}
+fn status(result: &Value, error: Option<&str>, lifecycle: Option<Lifecycle>) -> &'static str {
+    if matches!(
+        lifecycle,
+        Some(Lifecycle::Task(_) | Lifecycle::Workflow { pending: true, .. })
+    ) {
+        "accepted"
+    } else if error.is_some() || failed(result) {
+        "failed"
+    } else {
+        "succeeded"
+    }
 }
 /// MCP semantic failure is independent of HTTP status and arbitrary upstream data fields.
 #[must_use]
@@ -99,30 +114,24 @@ impl Call {
         }
         call
     }
-    pub async fn finish(self, state: &AppState, result: &Value, error: Option<&'static str>) {
+    pub async fn finish(
+        self,
+        state: &AppState,
+        result: &Value,
+        error: Option<&'static str>,
+        lifecycle: Option<Lifecycle>,
+    ) {
         if !self.record {
             return;
         }
-        let value = result.get("structuredContent").unwrap_or(result);
-        let task = uuid(&value["task"]["taskId"])
-            .or_else(|| uuid(&result["_meta"]["dev.hive/task"]["taskId"]))
-            .or_else(|| uuid(&value["task_id"]));
-        let run = uuid(&value["run_id"]);
-        let failed = error.is_some() || failed(result) || failed(value);
-        let pending_task = task.is_some()
-            && (value["task_id"].is_string()
-                || matches!(
-                    value["task"]["status"].as_str(),
-                    Some("queued" | "working" | "input_required")
-                ));
-        let pending = (!failed && run.is_some() && value["status"] == "running") || pending_task;
-        let status = if pending {
-            "accepted"
-        } else if failed {
-            "failed"
-        } else {
-            "succeeded"
+        let (task, run) = match lifecycle {
+            Some(Lifecycle::Task(id)) => (Some(id), None),
+            Some(Lifecycle::Workflow { id, .. }) => (None, Some(id)),
+            None => (None, None),
         };
+        let failed = error.is_some() || failed(result);
+        let status = status(result, error, lifecycle);
+        let pending = status == "accepted";
         // Only gateway-generated codes enter telemetry. Upstream error strings may
         // contain credentials or document contents, even when they look like identifiers.
         let code = error.or(if failed {
@@ -205,6 +214,34 @@ pub async fn counts(state: &AppState, credential: &Credential, account: bool) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn application_data_cannot_change_activity_outcomes() {
+        let id = Uuid::new_v4();
+        let envelope = json!({"isError":false,"structuredContent":{"isError":true,"task_id":id,"task":{"taskId":id,"status":"queued"},"run_id":id,"status":"running"},"_meta":{"dev.hive/task":{"taskId":id,"status":"working"}}});
+        assert_eq!(status(&envelope, None, None), "succeeded");
+        assert_eq!(status(&envelope, Some("gateway_error"), None), "failed");
+        assert_eq!(status(&json!({"isError":true}), None, None), "failed");
+        assert_eq!(
+            status(&envelope, None, Some(Lifecycle::Task(id))),
+            "accepted"
+        );
+        assert_eq!(
+            status(
+                &envelope,
+                None,
+                Some(Lifecycle::Workflow { id, pending: true })
+            ),
+            "accepted"
+        );
+        assert_eq!(
+            status(
+                &envelope,
+                None,
+                Some(Lifecycle::Workflow { id, pending: false })
+            ),
+            "succeeded"
+        );
+    }
     #[test]
     fn distinguishes_tool_errors_from_upstream_status_fields() {
         assert!(!failed(&json!({"status":"failed"})));

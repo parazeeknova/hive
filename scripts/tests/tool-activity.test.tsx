@@ -39,11 +39,18 @@ test("activity orders and deduplicates overlapping pagination results", () => {
   const activity: Activity = {
     budget: { limit: "0", reserved: "0", spent: "0" },
     invocations: [],
-    tool_calls: [event, event, { ...event, created_at: 101, id: "call-2" }],
+    tool_calls: [
+      event,
+      { ...event, state: "running" },
+      { ...event, created_at: 101, id: "call-2" },
+    ],
   };
   expect(activityEntries(activity).map((item) => item.id)).toEqual([
     "call-2",
     "call-1",
   ]);
+  expect(
+    activityEntries(activity).find((item) => item.id === event.id)?.state
+  ).toBe("failed");
   expect(activityEntries(null)).toEqual([]);
 });
