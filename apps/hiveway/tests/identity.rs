@@ -144,6 +144,7 @@ async fn wallet_signatures_replay_scopes_and_revocation() -> TestResult {
         settings: Arc::new(Settings::from_env()?),
         redis: fred::prelude::Builder::default_centralized().build()?,
         http: reqwest::Client::new(),
+        realtime: hiveway::features::realtime::Realtime::default(),
     };
     let app = hiveway::api::router().with_state(state.clone());
     let outcome = async {

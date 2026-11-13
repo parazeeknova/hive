@@ -17,13 +17,15 @@ struct Binding {
     arguments: Value,
     tool: Option<String>,
 }
-/// Validate explicit connection binding.
+/// Validate explicit connection binding against the configured argument ceiling.
 /// # Errors
 /// Rejects malformed or oversized arguments.
-pub fn validate(input: &Value) -> ApiResult<()> {
+pub fn validate(state: &AppState, input: &Value) -> ApiResult<()> {
     let binding: Binding = serde_json::from_value(input.clone())
         .map_err(|_| ApiError::bad("connection_binding_required"))?;
-    if !binding.arguments.is_object() || input.to_string().len() > 131_072 {
+    if !binding.arguments.is_object()
+        || input.to_string().len() > state.settings.runtime.connectors.argument_bytes
+    {
         return Err(ApiError::bad("invalid_mcp_arguments"));
     }
     Ok(())
@@ -76,7 +78,7 @@ pub async fn execute(
     }
     let mut results = Vec::new();
     for (index, (name, binding)) in names.iter().zip(&bindings).enumerate() {
-        validate(binding)?;
+        validate(state, binding)?;
         let binding: Binding = serde_json::from_value(binding.clone())?;
         let default_name = name
             .as_str()
@@ -96,6 +98,8 @@ pub async fn execute(
                 "mcp_artifact_already_dispatched_outcome_may_be_unknown",
             ));
         }
+        // Artifacts run inside a paid invocation: they wait synchronously, never
+        // detach into a task, and decline any interactive upstream input.
         let result = super::invoke(
             state,
             &credential,

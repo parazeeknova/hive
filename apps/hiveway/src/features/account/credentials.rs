@@ -23,15 +23,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 async fn manager(state: &AppState, headers: &HeaderMap) -> ApiResult<Credential> {
-    let parent = identity::authenticate(state, headers, "capabilities:invoke").await?;
-    if !parent.wallet.starts_with("github:")
-        || keys::Entity::find_by_id(parent.id)
-            .one(&state.postgres)
-            .await?
-            .is_some()
-    {
-        return Err(ApiError::forbidden());
-    }
+    // Only browser sessions manage keys: an API key or OAuth token must never mint
+    // longer-lived credentials for itself.
+    let parent = identity::authenticate_session(state, headers).await?;
+    identity::authorize(&parent, "capabilities:invoke")?;
     Ok(parent)
 }
 #[derive(Deserialize)]
@@ -63,22 +58,15 @@ pub async fn issue(
     let scopes: Vec<String> = parent
         .scopes
         .into_iter()
-        .filter(|s| {
-            [
-                "capabilities:read",
-                "capabilities:invoke",
-                "capabilities:publish",
-                "workflows:publish",
-                "repository:analyze",
-                "receipts:read",
-            ]
-            .contains(&s.as_str())
-        })
+        .filter(|s| crate::features::common::model::SESSION_SCOPES.contains(&s.as_str()))
         .collect();
     let token = format!("hwa_{}", hex::encode(rand::random::<[u8; 32]>()));
     let id = Uuid::new_v4();
-    let lifetime = request.expires_in.unwrap_or(3600);
-    if ![3600, 86400, 604_800, 2_592_000, 7_776_000].contains(&lifetime) {
+    let limits = &state.settings.runtime.identity;
+    let lifetime = request
+        .expires_in
+        .unwrap_or(limits.api_key_default_lifetime_seconds);
+    if !limits.api_key_lifetimes_seconds.contains(&lifetime) {
         return Err(ApiError::bad("invalid_api_key_expiry"));
     }
     let expires_at = now() + lifetime;
@@ -98,7 +86,7 @@ pub async fn issue(
         .filter(credentials::Column::RevokedAt.is_null())
         .count(&tx)
         .await?;
-    if count >= 100 {
+    if count >= limits.api_keys_per_account {
         return Err(ApiError::bad("api_key_limit_remove_an_old_key"));
     }
     credentials::ActiveModel {
@@ -141,7 +129,7 @@ pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResul
         .filter(credentials::Column::RevokedAt.is_null())
         .order_by_desc(credentials::Column::CreatedAt)
         .order_by_desc(credentials::Column::Id)
-        .limit(100)
+        .limit(state.settings.runtime.identity.api_keys_per_account)
         .all(&state.postgres)
         .await?;
     Ok(Json(

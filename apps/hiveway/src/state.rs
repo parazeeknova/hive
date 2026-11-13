@@ -14,6 +14,8 @@ pub struct AppState {
     pub postgres: DatabaseConnection,
     pub redis: fred::clients::Client,
     pub http: reqwest::Client,
+    /// Cross-replica wakeups for connector jobs, tasks and subscriptions.
+    pub realtime: crate::features::realtime::Realtime,
 }
 
 impl AppState {
@@ -59,12 +61,16 @@ impl AppState {
         let sandbox = Arc::new(crate::features::cell::runtime::Sandbox::new(
             settings.runtime.sandbox.clone(),
         ));
+        let realtime = crate::features::realtime::Realtime::new(
+            settings.runtime.mcp.subscriptions_per_process,
+        );
         Ok(Self {
             sandbox,
             settings,
             postgres,
             redis,
             http,
+            realtime,
         })
     }
 }

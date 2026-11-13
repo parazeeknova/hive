@@ -56,6 +56,7 @@ async fn exercise(db: sea_orm::DatabaseConnection) -> Result {
         http: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()?,
+        realtime: hiveway::features::realtime::Realtime::default(),
     };
     let token = format!("hwa_{}", Uuid::new_v4().simple().to_string().repeat(2));
     agent_credentials::ActiveModel {

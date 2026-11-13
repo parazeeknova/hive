@@ -1,7 +1,7 @@
 pub mod config;
 mod guard;
 use crate::{
-    features::{account, builder, comb, hiveway, identity, pollen, scout, waggle, wax},
+    features::{account, builder, comb, hiveway, identity, oauth, pollen, scout, waggle, wax},
     state::AppState,
 };
 use axum::{
@@ -10,8 +10,8 @@ use axum::{
     http::{HeaderValue, Method, header},
     routing::{get, post},
 };
-pub use guard::HandlerDrain;
-use tower_http::cors::CorsLayer;
+pub use guard::{AdmissionSlot, HandlerDrain};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -32,7 +32,28 @@ pub fn router() -> Router<AppState> {
         )
         .route("/v1/builds", get(builder::list).post(builder::submit))
         .route("/v1/builds/{id}", get(builder::get))
-        .route("/mcp", post(hiveway::gateway))
+        .route("/mcp", post(hiveway::gateway).get(hiveway::notifications))
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get(oauth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get(oauth::protected_resource),
+        )
+        .route(
+            "/.well-known/oauth-authorization-server",
+            get(oauth::authorization_server),
+        )
+        .route("/oauth/register", post(oauth::register))
+        .route("/oauth/token", post(oauth::token))
+        .route("/oauth/revoke", post(oauth::revoke))
+        .route("/v1/oauth/authorize", post(oauth::authorize))
+        .route("/v1/account/oauth/grants", get(oauth::grants))
+        .route(
+            "/v1/account/oauth/grants/{id}/revoke",
+            post(oauth::revoke_owned_grant),
+        )
         .route("/v1/capabilities/page", get(scout::discovery::page))
         .route("/v1/capabilities/{id}", get(scout::detail::detail))
         .route(
@@ -83,8 +104,14 @@ pub fn router() -> Router<AppState> {
 /// # Errors
 /// Rejects an origin that cannot be represented as an HTTP header.
 pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
+    let app = origin.parse::<HeaderValue>()?;
+    // The web app may call everything; browser-based MCP clients on any origin may
+    // reach only the unauthenticated OAuth discovery and token endpoints.
+    let allow = AllowOrigin::predicate(move |requested, parts| {
+        *requested == app || guard::public_oauth_path(parts.uri.path())
+    });
     Ok(CorsLayer::new()
-        .allow_origin(origin.parse::<HeaderValue>()?)
+        .allow_origin(allow)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([
             header::HeaderName::from_static("x-hive-model"),
@@ -102,6 +129,8 @@ pub fn cors(origin: &str) -> anyhow::Result<CorsLayer> {
         .expose_headers([
             header::HeaderName::from_static("payment-required"),
             header::HeaderName::from_static("payment-response"),
+            header::WWW_AUTHENTICATE,
+            header::RETRY_AFTER,
         ]))
 }
 
@@ -133,16 +162,18 @@ pub async fn ready(
 
 /// Add admission control after attaching shared state.
 pub fn protect(router: Router, state: AppState) -> (Router, HandlerDrain) {
+    let http = state.settings.runtime.http.clone();
     let admission = guard::Admission {
-        requests: std::sync::Arc::new(tokio::sync::Semaphore::new(
-            state.settings.runtime.http.concurrency,
-        )),
-        peers: std::sync::Arc::default(),
+        requests: std::sync::Arc::new(tokio::sync::Semaphore::new(http.concurrency)),
+        idle: std::sync::Arc::new(tokio::sync::Semaphore::new(http.idle_waiters)),
+        windows: std::sync::Arc::default(),
         state,
     };
     let drain = HandlerDrain::new(
         admission.requests.clone(),
-        admission.state.settings.runtime.http.concurrency,
+        http.concurrency,
+        admission.idle.clone(),
+        http.idle_waiters,
     );
     (
         router.layer(axum::middleware::from_fn_with_state(

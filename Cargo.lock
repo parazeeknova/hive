@@ -1367,12 +1367,13 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hiveway"
-version = "0.0.68"
+version = "0.0.69"
 dependencies = [
  "anyhow",
  "axum",
  "base64 0.23.1",
  "fred",
+ "futures-util",
  "hex",
  "jsonschema",
  "k256",
@@ -1386,6 +1387,8 @@ dependencies = [
  "sea-orm-migration",
  "serde",
  "serde_json",
+ "serde_urlencoded",
+ "sha1",
  "sha2 0.11.1",
  "sha3",
  "standardwebhooks",

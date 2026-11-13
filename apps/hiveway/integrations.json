@@ -65,7 +65,11 @@
       "36b4cd50-0031-4099-8180-d2373e9f1146",
       "0254cd86-7113-41bb-8466-7c196b6b63cc"
     ],
-    "shared_owner": "github:117758952"
+    "shared_owner": "github:117758952",
+    "session_hint": "For website inspiration, search templr with the actual business type, show 3-5 real get_preview images, and let the user choose before coding. For clickable HTML previews use the user's local-preview connection, which downloads files to their computer and starts a loopback server; never claim VPS localhost links are user-local previews.",
+    "search_tools": ["search_templates"],
+    "cache_scope": "public",
+    "upstream": null
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7002",
@@ -78,7 +82,16 @@
     "guidance": "For library/framework/SDK/API setup, usage, migration or version-specific questions, resolve-library-id first, then query-docs for the specific topic. Skip resolution only when an exact /org/project library ID is already provided. Keep queries focused and never put credentials or private source into documentation queries.",
     "previews": [],
     "legacy_ids": [],
-    "shared_owner": null
+    "shared_owner": null,
+    "session_hint": "Use Context7 for current library and SDK documentation instead of remembered APIs.",
+    "search_tools": ["resolve-library-id"],
+    "cache_scope": "caller",
+    "upstream": {
+      "url": "https://mcp.context7.com/mcp",
+      "auth": "bearer",
+      "header": "Authorization",
+      "read_only_tools": ["resolve-library-id", "query-docs"]
+    }
   },
   {
     "id": "edddf5ca-e693-4b26-a574-ac1bd1ff7003",
@@ -135,6 +148,15 @@
     "guidance": "Use Tinyfish when a task requires remote browsing or web interaction and its actual advertised tools fit. Inspect the current input schema. Respect the user's instruction about browsers and approvals; never submit purchases, messages or other consequential actions without authorization. Do not assume a tool name or invent a browser result.",
     "previews": [],
     "legacy_ids": [],
-    "shared_owner": null
+    "shared_owner": null,
+    "session_hint": "Use Tinyfish when external research or remote browser interaction fits, respecting the user's preferred tools and browsers.",
+    "search_tools": ["search"],
+    "cache_scope": "caller",
+    "upstream": {
+      "url": "https://agent.tinyfish.ai/mcp",
+      "auth": "header",
+      "header": "X-API-Key",
+      "read_only_tools": []
+    }
   }
 ]

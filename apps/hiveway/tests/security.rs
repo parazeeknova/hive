@@ -3,6 +3,8 @@
 mod account;
 #[path = "security/activity.rs"]
 mod activity;
+#[path = "security/agent_platform.rs"]
+mod agent_platform;
 #[path = "security/api_keys.rs"]
 mod api_keys;
 #[path = "security/artifacts.rs"]
@@ -297,6 +299,10 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
     // This suite exercises many independent authorization scenarios on one test peer.
     // Rate-limit behavior has dedicated guard tests.
     settings.runtime.http.requests_per_minute = 1000;
+    settings.runtime.http.credential_requests_per_minute = 100_000;
+    settings.runtime.http.authenticated_ip_requests_per_minute = 100_000;
+    // Long-running connector calls detach into tasks quickly in tests.
+    settings.runtime.connectors.call_wait_seconds = 3;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     settings.facilitator_url = format!("http://{}", listener.local_addr()?);
     settings.builder = Some(hiveway::features::builder::config::Config {
@@ -343,6 +349,7 @@ async fn adversarial_http_access_and_input_boundaries() -> Result {
         settings: Arc::new(settings),
         redis: fred::prelude::Builder::default_centralized().build()?,
         http: reqwest::Client::new(),
+        realtime: hiveway::features::realtime::Realtime::default(),
     };
     let (app, _drain) = hiveway::api::protect(
         hiveway::api::router().with_state(state.clone()),
@@ -673,10 +680,15 @@ async fn free_agent_credential(app: Router, state: &AppState, headers: &[(&str, 
             "receipts:read",
             "capabilities:invoke",
             "capabilities:publish",
-            "workflows:publish"
+            "workflows:publish",
+            "code:read",
+            "code:index",
+            "memory:read",
+            "memory:write"
         ])
     );
     free_publishing::exercise(app.clone(), &bearer, state).await?;
+    agent_platform::exercise(app.clone(), &bearer, headers, state).await?;
     Box::pin(builder::exercise(app.clone(), state, &bearer)).await?;
     free_agent_invocation(app.clone(), state, &bearer).await?;
     let (status, _) = attack(

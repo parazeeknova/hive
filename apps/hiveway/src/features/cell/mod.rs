@@ -378,7 +378,7 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
     if capability.runtime == "connected_mcp" {
-        return crate::features::connections::artifacts::validate(input);
+        return crate::features::connections::artifacts::validate(state, input);
     }
     if capability.definition["mcp_tools"].is_array() {
         let steps = input["steps"]
@@ -392,7 +392,7 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
             return Err(ApiError::bad("invalid_mcp_steps"));
         }
         for step in steps {
-            crate::features::connections::artifacts::validate(step)?;
+            crate::features::connections::artifacts::validate(state, step)?;
         }
         return Ok(());
     }

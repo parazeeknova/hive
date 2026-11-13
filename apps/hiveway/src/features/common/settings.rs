@@ -3,6 +3,8 @@ use std::env;
 
 pub struct Settings {
     pub builder: Option<crate::features::builder::config::Config>,
+    /// Optional semantic ranking for `search_tools`.
+    pub embeddings: Option<crate::features::hiveway::embeddings::Config>,
     pub runtime: crate::runtime::RuntimeConfig,
     pub public_url: String,
     pub auth_domain: String,
@@ -41,6 +43,7 @@ impl Settings {
         let optional = |key| env::var(key).ok().filter(|s| !s.is_empty());
         Ok(Self {
             builder: crate::features::builder::config::Config::load()?,
+            embeddings: crate::features::hiveway::embeddings::Config::load()?,
             public_url,
             auth_domain,
             auth_uri,

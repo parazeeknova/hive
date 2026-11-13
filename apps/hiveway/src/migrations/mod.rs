@@ -20,6 +20,7 @@ mod m20261101_000016_mcp_connections;
 mod m20261101_000017_mcp_artifacts;
 mod m20261112_000018_mcp_cache;
 mod m20261113_000019_hive_integrations;
+mod m20261114_000020_agent_platform;
 pub struct Migrator;
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -44,6 +45,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261101_000017_mcp_artifacts::Migration),
             Box::new(m20261112_000018_mcp_cache::Migration),
             Box::new(m20261113_000019_hive_integrations::Migration),
+            Box::new(m20261114_000020_agent_platform::Migration),
         ]
     }
 }
