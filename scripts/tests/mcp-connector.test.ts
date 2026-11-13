@@ -43,8 +43,15 @@ test.each(["stdio", "filesystem"] as const)(
     let registered = false;
     let failedPoll = false;
     let failedCompletion = false;
+    const waits: unknown[] = [];
     const server = Bun.serve({
       async fetch(request) {
+        // Public limits are read without credentials, before registration.
+        if (new URL(request.url).pathname === "/api/config") {
+          return Response.json({
+            connectors: { poll_wait_seconds: 1, result_bytes: 524_288 },
+          });
+        }
         authorized &&=
           request.headers.get("authorization") === "Bearer fixture-private-key";
         const body = (await request.json()) as {
@@ -58,7 +65,12 @@ test.each(["stdio", "filesystem"] as const)(
             data = { id: crypto.randomUUID() };
             break;
           }
+          case "progress_mcp": {
+            data = { cancel_requested: false };
+            break;
+          }
           case "poll_mcp": {
+            waits.push(body.params.arguments.wait_seconds);
             if (!failedPoll) {
               failedPoll = true;
               return new Response("unavailable", { status: 503 });
@@ -138,6 +150,8 @@ test.each(["stdio", "filesystem"] as const)(
       expect(failedPoll && failedCompletion).toBe(true);
       expect(registered).toBe(true);
       expect(authorized).toBe(true);
+      // The worker long-polls with the wait the deployment publishes.
+      expect(waits.every((wait) => wait === 1)).toBe(true);
       expect(results).toHaveLength(3);
       if (mode === "stdio") {
         expect(

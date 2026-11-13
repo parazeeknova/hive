@@ -1,262 +1,347 @@
-/* oxlint-disable no-await-in-loop, no-unmodified-loop-condition -- A single multiplexed poller bounds all local connections to one request per second; close() stops it. */
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
+import path from "node:path";
 
-import {
-  Client,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/client";
 import {
   CallToolResultSchema,
+  GetPromptResultSchema,
+  ListPromptsResultSchema,
+  ListResourceTemplatesResultSchema,
+  ListResourcesResultSchema,
   ListToolsResultSchema,
+  ReadResourceResultSchema,
 } from "@modelcontextprotocol/core";
 import { Server } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 
+import { syncRepository } from "./code-index";
+import { contains } from "./directories";
 import { HiveRpc } from "./hive-rpc";
-import { withinResultLimit } from "./limits";
+import type { HiveConfig } from "./hive-rpc";
 import { LocalPreviews, previewTools } from "./local-preview";
-import { FatalHiveError } from "./session";
+import { FEATURES, Upstream, failure } from "./upstream";
+import type { ClaimedJob, Outcome, Snapshot } from "./upstream";
+import { serve } from "./worker";
+import type { Service } from "./worker";
 
-type ProviderName = "context7" | "tinyfish";
+/** A bring-your-own-key upstream. URL and auth default to what Hive publishes for the slug. */
+export interface ProviderConfig {
+  keyFile: string;
+  url?: string;
+  auth?: "bearer" | "header";
+  header?: string;
+  readOnlyTools?: string[];
+}
 export interface AgentConfig {
   hive: string;
   keyFile: string;
   previews?: boolean;
+  /** Shorthand for providers Hive publishes, e.g. `"context7": {"keyFile": ...}`. */
   context7?: { keyFile: string };
   tinyfish?: { keyFile: string };
+  /** Any number of named providers; names become `mcp_<name>__<tool>` in Hive. */
+  providers?: Record<string, ProviderConfig>;
+  /** Directories whose git repositories `sync_code_index` may upload to your code index. */
+  codeIndex?: { roots: string[] };
+  /** Probe upstreams for MCP 2026-07-28 before using the 2025 handshake. */
+  negotiate?: boolean;
 }
-interface Service {
-  name: string;
-  id?: string;
+interface LocalService extends Service {
   tools: Tool[];
-  call: (
-    name: string,
-    args: Record<string, unknown>
-  ) => Promise<CallToolResult>;
+  snapshot: Partial<Snapshot>;
   close: () => Promise<void>;
 }
 const ignore = () => null;
-const READ_ONLY_CONTEXT7 = new Set(["resolve-library-id", "query-docs"]);
-const provider = async (
-  name: ProviderName,
-  keyFile: string
-): Promise<Service> => {
+const VALID_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
+
+const readKey = async (keyFile: string) => {
   const raw = await readFile(keyFile, "utf-8");
   const key = raw.trim();
   if (!key || /[\r\n]/u.test(key)) {
     throw new Error("Invalid provider key file");
   }
-  const url =
-    name === "context7"
-      ? "https://mcp.context7.com/mcp"
-      : "https://agent.tinyfish.ai/mcp";
-  const headers =
-    name === "context7"
-      ? { Authorization: key.startsWith("Bearer ") ? key : `Bearer ${key}` }
-      : { "X-API-Key": key };
-  let client = new Client({ name: "hive-local", version: "1" });
-  const connect = async () => {
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(url), {
-        requestInit: { headers, redirect: "error" },
-      })
-    );
-  };
-  await connect();
-  const { tools } = await client.listTools();
-  // These two Context7 operations only read documentation. Other upstream hints
-  // are preserved; no browsing/mutation operation is classified by name alone.
-  if (name === "context7") {
-    for (const tool of tools) {
-      if (READ_ONLY_CONTEXT7.has(tool.name)) {
-        tool.annotations = { ...tool.annotations, readOnlyHint: true };
-      }
+  return key;
+};
+/** Merge explicit provider settings with the upstreams Hive publishes. */
+export const resolveProviders = (
+  config: AgentConfig,
+  published: HiveConfig
+) => {
+  const entries: [string, ProviderConfig][] = [
+    ...(["context7", "tinyfish"] as const).flatMap((name) => {
+      const entry = config[name];
+      return entry
+        ? [[name, { keyFile: entry.keyFile }] as [string, ProviderConfig]]
+        : [];
+    }),
+    ...Object.entries(config.providers ?? {}),
+  ];
+  const resolved: (Required<Omit<ProviderConfig, "url">> & {
+    name: string;
+    url: string;
+  })[] = [];
+  for (const [name, entry] of entries) {
+    const known = published.integrations.find(
+      (item) => item.slug === name
+    )?.upstream;
+    const url = entry.url ?? known?.url;
+    if (!VALID_NAME.test(name) || !url || !url.startsWith("https://")) {
+      console.error(
+        `Hive Local: provider ${name} needs a valid name and an https url.`
+      );
+      continue;
+    }
+    resolved.push({
+      auth: entry.auth ?? known?.auth ?? "bearer",
+      header: entry.header ?? known?.header ?? "Authorization",
+      keyFile: entry.keyFile,
+      name,
+      readOnlyTools: entry.readOnlyTools ?? known?.read_only_tools ?? [],
+      url,
+    });
+  }
+  return resolved;
+};
+const providerService = async (
+  rpc: HiveRpc,
+  spec: ReturnType<typeof resolveProviders>[number],
+  negotiate: boolean,
+  inputWait: number
+): Promise<LocalService> => {
+  const key = await readKey(spec.keyFile);
+  const value =
+    spec.auth === "bearer" && !key.startsWith("Bearer ")
+      ? `Bearer ${key}`
+      : key;
+  const upstream = new Upstream({
+    name: spec.name,
+    negotiate,
+    transport: () =>
+      new StreamableHTTPClientTransport(new URL(spec.url), {
+        requestInit: { headers: { [spec.header]: value }, redirect: "error" },
+      }),
+  });
+  await upstream.connect();
+  const snapshot = await upstream.snapshot();
+  // Operator-verified read-only tools are marked so Hive can cache them. Other
+  // upstream hints are preserved; nothing is classified by name alone.
+  for (const tool of snapshot.tools) {
+    if (spec.readOnlyTools.includes(String(tool.name))) {
+      tool.annotations = {
+        ...(tool.annotations as object),
+        readOnlyHint: true,
+      };
     }
   }
   let lastUsed = Date.now();
-  const repair = async () => {
-    await client.close().catch(ignore);
-    client = new Client({ name: "hive-local", version: "1" });
-    await connect();
-  };
-  return {
-    async call(tool, args) {
+  const service: LocalService = {
+    close: () => upstream.close(),
+    name: spec.name,
+    async run(job) {
       // Check an idle session before the call. A failed ping is repaired, but a
       // failed call is never repeated: its upstream outcome may be unknown.
       if (Date.now() - lastUsed > 30_000) {
-        try {
-          await client.ping({ timeout: 5000 });
-        } catch {
-          await repair();
-        }
+        await upstream.client
+          .ping({ timeout: 5000 })
+          .catch(() => upstream.repair());
       }
       lastUsed = Date.now();
-      try {
-        return CallToolResultSchema.parse(
-          await client.callTool(
-            { arguments: args, name: tool },
-            { timeout: 25_000 }
-          )
-        );
-      } catch {
-        await repair().catch(ignore);
-        throw new Error(
-          "Upstream call failed; execution outcome may be unknown. No automatic retry was made."
-        );
-      }
+      return upstream.run(rpc, service.id as string, job, inputWait);
     },
-    close: () => client.close(),
-    name,
-    tools,
+    snapshot,
+    tools: snapshot.tools as unknown as Tool[],
   };
+  return service;
 };
-const failure: CallToolResult = {
-  content: [
-    {
-      text: "Local/upstream tool failed or exceeded limits. Execution outcome may be unknown; no automatic retry was made.",
-      type: "text",
-    },
-  ],
-  isError: true,
+const codeIndexTool: Tool = {
+  annotations: {
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+    readOnlyHint: false,
+  },
+  description:
+    "Upload the committed HEAD of a local git repository to your Hive code index (only files Hive has not seen), so code_search, find_symbol, read_code and repo_overview work for it. The directory must be inside a root the user configured for Hive Local. Uncommitted changes are not uploaded.",
+  inputSchema: {
+    additionalProperties: false,
+    properties: { directory: { type: "string" } },
+    required: ["directory"],
+    type: "object",
+  },
+  name: "sync_code_index",
 };
-const connectProviders = async (config: AgentConfig) => {
-  const wanted = (["context7", "tinyfish"] as const).flatMap((name) => {
-    const entry = config[name];
-    return entry ? [{ keyFile: entry.keyFile, name }] : [];
-  });
-  const results = await Promise.allSettled(
-    wanted.map(({ name, keyFile }) => provider(name, keyFile))
+const codeIndexService = (rpc: HiveRpc, roots: string[]): LocalService => ({
+  close: () => Promise.resolve(),
+  name: "code-index",
+  async run(job: ClaimedJob): Promise<Outcome> {
+    const directory = job.request.arguments?.directory;
+    if (
+      job.request.name !== "sync_code_index" ||
+      typeof directory !== "string" ||
+      !path.isAbsolute(directory)
+    ) {
+      return { result: failure as unknown as Record<string, unknown> };
+    }
+    const target = await realpath(directory);
+    const allowed = await Promise.all(
+      roots.map((root) => realpath(root).catch(() => null))
+    );
+    if (!allowed.some((root) => root && contains(root, target))) {
+      return {
+        result: {
+          content: [
+            {
+              text: "This directory is outside the code index roots configured for Hive Local.",
+              type: "text",
+            },
+          ],
+          isError: true,
+        },
+      };
+    }
+    const synced = await syncRepository(rpc, target);
+    return {
+      result: {
+        content: [
+          {
+            text: `Indexed ${synced.repo} at ${synced.commit.slice(0, 12)}: ${synced.files} files, ${synced.uploaded} uploaded, ${synced.skipped} skipped.`,
+            type: "text",
+          },
+        ],
+        structuredContent: synced as unknown as Record<string, unknown>,
+      },
+    };
+  },
+  snapshot: { tools: [codeIndexTool as unknown as Record<string, unknown>] },
+  tools: [codeIndexTool],
+});
+
+export const startAgent = async (config: AgentConfig) => {
+  const rpc = new HiveRpc(config.hive, await readFile(config.keyFile, "utf-8"));
+  const published = await rpc.config();
+  const inputWait = Math.max(1, published.connectors.poll_wait_seconds);
+  const previews = new LocalPreviews(rpc);
+  const services: LocalService[] = [];
+  if (config.previews !== false) {
+    services.push({
+      close: () => {
+        previews.close();
+        return Promise.resolve();
+      },
+      name: "local-preview",
+      run: async (job) => ({
+        result: (await previews.call(
+          job.request.name ?? "",
+          job.request.arguments ?? {}
+        )) as unknown as Record<string, unknown>,
+      }),
+      snapshot: { tools: previewTools as unknown as Record<string, unknown>[] },
+      tools: previewTools,
+    });
+  }
+  if (config.codeIndex?.roots.length) {
+    services.push(codeIndexService(rpc, config.codeIndex.roots));
+  }
+  const providers = await Promise.allSettled(
+    resolveProviders(config, published).map((spec) =>
+      providerService(rpc, spec, config.negotiate === true, inputWait)
+    )
   );
-  const services: Service[] = [];
-  for (const [index, result] of results.entries()) {
+  for (const result of providers) {
     if (result.status === "fulfilled") {
       services.push(result.value);
     } else {
       console.error(
-        `Hive Local: ${wanted[index]?.name} could not connect; check its key file.`
+        "Hive Local: a provider could not connect; check its key file and url."
       );
     }
   }
-  return services;
-};
-export const startAgent = async (config: AgentConfig) => {
-  const rpc = new HiveRpc(config.hive, await readFile(config.keyFile, "utf-8"));
-  const previews = new LocalPreviews(rpc);
-  const services: Service[] =
-    config.previews === false
-      ? []
-      : [
-          {
-            call: (name, args) => previews.call(name, args),
-            close: () => {
-              previews.close();
-              return Promise.resolve();
-            },
-            name: "local-preview",
-            tools: previewTools,
-          },
-        ];
-  services.push(...(await connectProviders(config)));
-  for (const service of services) {
-    const result = await rpc.operation("register_mcp_connection", {
-      name: service.name,
-      tools: service.tools,
-    });
-    if (typeof result.id !== "string") {
-      throw new TypeError("Hive registration failed");
-    }
-    service.id = result.id;
-    console.error(`Hive Local: ${service.name} connected through Hive.`);
-  }
-  let running = true;
-  const busy = new Set<string>();
-  const active = new Set<Promise<void>>();
-  const execute = async (service: Service, job: Record<string, unknown>) => {
-    let result: CallToolResult;
-    try {
-      const request = job.request as {
-        name: string;
-        arguments: Record<string, unknown>;
-      };
-      if (!service.tools.some((tool) => tool.name === request.name)) {
-        throw new Error("Tool is not registered locally");
-      }
-      result = await service.call(request.name, request.arguments);
-      if (!withinResultLimit(result)) {
-        throw new Error("Upstream result exceeds Hive's 512 KiB limit");
-      }
-    } catch {
-      result = failure;
-    }
-    // Exactly one completion attempt. Never execute a claimed job twice.
-    await rpc.operation("complete_mcp", {
-      connection_id: service.id,
-      job_id: job.id,
-      lease: job.lease,
-      result,
-    });
-  };
-  const dispatch = (available: Service[], job: Record<string, unknown>) => {
-    const service = available.find((item) => item.id === job.connection_id);
-    if (!service?.id) {
-      return;
-    }
-    const { id } = service;
-    busy.add(id);
-    const task = execute(service, job)
-      .catch(() => {
-        console.error(
-          "Hive Local: completion was not acknowledged; the claimed call will not be repeated."
-        );
-      })
-      .finally(() => {
-        busy.delete(id);
-        active.delete(task);
+  await Promise.all(
+    services.map(async (service) => {
+      const result = await rpc.operation("register_mcp_connection", {
+        features: FEATURES,
+        name: service.name,
+        ...service.snapshot,
+        tools: service.tools,
       });
-    active.add(task);
-  };
-  const loop = async () => {
-    let delay = 1000;
-    while (running) {
-      const available = services.filter(
-        (service) => service.id && !busy.has(service.id)
-      );
-      if (available.length > 0) {
-        try {
-          // One request claims at most one job across every idle local service,
-          // so adding providers does not multiply the polling rate.
-          const polled = await rpc.operation("poll_mcp_batch", {
-            connection_ids: available.map((service) => service.id),
-          });
-          const { job } = polled;
-          if (job && typeof job === "object" && !Array.isArray(job)) {
-            dispatch(available, job as Record<string, unknown>);
-          }
-          delay = 1000;
-        } catch (error) {
-          if (error instanceof FatalHiveError) {
-            throw error;
-          }
-          delay = Math.min(10_000, delay * 2);
-        }
+      if (typeof result.id !== "string") {
+        throw new TypeError("Hive registration failed");
       }
-      await Bun.sleep(delay);
-    }
-  };
-  const stopped = loop();
+      service.id = result.id;
+      console.error(`Hive Local: ${service.name} connected through Hive.`);
+    })
+  );
+  let running = true;
+  const stopped = serve({
+    isRunning: () => running,
+    pollIntervalMs: 1000,
+    resultLimit: published.connectors.result_bytes,
+    rpc,
+    services,
+    waitSeconds: published.connectors.poll_wait_seconds,
+  });
   return {
     async close() {
       running = false;
       previews.close();
       await Promise.allSettled(services.map((service) => service.close()));
-      await Promise.allSettled(active);
       await stopped.catch(ignore);
     },
     names: services.map((service) => service.name),
     rpc,
     stopped,
   };
+};
+const proxied = (
+  agent: Awaited<ReturnType<typeof startAgent>>,
+  instructions: string
+) => {
+  const server = new Server(
+    { name: "Hive", version: "2" },
+    { capabilities: { prompts: {}, resources: {}, tools: {} }, instructions }
+  );
+  const forward = (method: string, params: unknown) =>
+    agent.rpc.request(
+      method,
+      (params ?? {}) as Record<string, unknown>,
+      60_000
+    );
+  server.setRequestHandler("tools/list", async () =>
+    ListToolsResultSchema.parse(await forward("tools/list", {}))
+  );
+  server.setRequestHandler(
+    "tools/call",
+    async (request) =>
+      CallToolResultSchema.parse(
+        await forward("tools/call", {
+          arguments: request.params.arguments ?? {},
+          name: request.params.name,
+        })
+      ) as CallToolResult
+  );
+  server.setRequestHandler("resources/list", async (request) =>
+    ListResourcesResultSchema.parse(
+      await forward("resources/list", request.params)
+    )
+  );
+  server.setRequestHandler("resources/templates/list", async (request) =>
+    ListResourceTemplatesResultSchema.parse(
+      await forward("resources/templates/list", request.params)
+    )
+  );
+  server.setRequestHandler("resources/read", async (request) =>
+    ReadResourceResultSchema.parse(
+      await forward("resources/read", request.params)
+    )
+  );
+  server.setRequestHandler("prompts/list", async (request) =>
+    ListPromptsResultSchema.parse(await forward("prompts/list", request.params))
+  );
+  server.setRequestHandler("prompts/get", async (request) =>
+    GetPromptResultSchema.parse(await forward("prompts/get", request.params))
+  );
+  return server;
 };
 const main = async () => {
   const index = process.argv.indexOf("--config");
@@ -270,25 +355,15 @@ const main = async () => {
   const agent = await startAgent(config);
   const initialized = await agent.rpc.request("initialize", {
     capabilities: {},
-    clientInfo: { name: "hive-local", version: "1" },
+    clientInfo: { name: "hive-local", version: "2" },
     protocolVersion: "2025-11-25",
   });
   const handle = serveStdio(() => {
-    const server = new Server(
-      { name: "Hive", version: "1" },
-      {
-        capabilities: { tools: {} },
-        instructions:
-          typeof initialized.instructions === "string"
-            ? initialized.instructions
-            : "Use Hive search_tools before each new task; use call_tool with a discovered schema.",
-      }
-    );
-    server.setRequestHandler("tools/list", async () =>
-      ListToolsResultSchema.parse(await agent.rpc.request("tools/list", {}))
-    );
-    server.setRequestHandler("tools/call", (request) =>
-      agent.rpc.tool(request.params.name, request.params.arguments ?? {})
+    const server = proxied(
+      agent,
+      typeof initialized.instructions === "string"
+        ? initialized.instructions
+        : "Use Hive search_tools before each new task; use call_tool with a discovered schema."
     );
     // oxlint-disable-next-line unicorn/prefer-add-event-listener -- The MCP SDK exposes only an onclose callback.
     server.onclose = () => {
