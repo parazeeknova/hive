@@ -9,7 +9,7 @@ The `Hiveway` workflow runs four validation jobs in parallel:
 | `miri` | All isolated Miri tests |
 | `integration` | All native Rust tests including PostgreSQL/security, payment fixtures, creator/buyer and MCP acceptance |
 
-`validate` remains the aggregate required check. It fails if any validation job fails, is cancelled, or is skipped. Both container publications require `validate`, and deployment requires both published images. Superseded pull-request runs are cancelled; pushes remain queued so a new commit cannot interrupt deployment.
+`validate` remains the aggregate required check. It fails if any validation job fails, is cancelled, or is skipped. Both container publications require `validate`, and deployment requires both published images. Superseded pull-request runs are cancelled. Pushes keep the active release running and only the newest pending commit, so stale queued releases cannot build a backlog. This uses GitHub's default [single pending slot](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 JavaScript runs directly on Node/Bun. Rust jobs use the development environment from `devenv.lock`; the CLI is installed from its pinned nixpkgs revision too. PostgreSQL and Redis run only in the integration job. Native tests and acceptance share a runner so they reuse compilation and infrastructure.
 
@@ -17,4 +17,4 @@ Caches preserve Bun downloads, Next.js compilation, Cargo downloads, compiled Ru
 
 The first run populates caches; compare later runs to measure the warm-cache benefit. Tests and security audits always execute even when build caches hit. For a suspected stale cache, bump the corresponding `v1` namespace in the setup action or workflow. Cache restore failures do not replace the normal build.
 
-Validate workflow changes with `actionlint` and the repository's formatting check. Older actionlint releases may need to ignore the existing `ubuntu-26.04` runner label and `concurrency.queue` setting until their schemas catch up.
+Validate workflow changes with `actionlint` and the repository's formatting check. Older actionlint releases may need to ignore the existing `ubuntu-26.04` runner label until their schemas catch up.

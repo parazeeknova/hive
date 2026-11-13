@@ -23,7 +23,7 @@ concurrency:
   group: hiveway-${{ github.ref }}
   # Do not interrupt a release after publishing images or starting deployment.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-  queue: max
+  # Use the default single pending slot: newer commits replace queued older ones.
 env:
   CI: "true"
   NEXT_TELEMETRY_DISABLED: "1"
