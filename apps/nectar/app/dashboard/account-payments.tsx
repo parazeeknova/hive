@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
+import { Spinner } from "../../components/spinner";
 import type { WalletBalance } from "../../lib/account";
 import { sendUsdc, networkLabel, parseTransferAmount } from "../../lib/account";
 import { atomicMoney, errorMessage, hiveway, shortId } from "../../lib/hiveway";
@@ -161,7 +162,7 @@ const AccountPaymentDialog = ({
             disabled={busy || Boolean(hash)}
           >
             {busy ? "Waiting for wallet…" : "Review in wallet"}
-            <Icon name="arrow" size={14} />
+            {busy ? <Spinner size={14} /> : <Icon name="arrow" size={14} />}
           </button>
         </form>
       ) : (
@@ -306,6 +307,18 @@ const PaymentConnection = ({
   );
 };
 
+const BalanceStatus = ({
+  loading,
+  status,
+}: {
+  loading: boolean;
+  status: string;
+}) => (
+  <span className="inline-flex items-center gap-1.5">
+    {loading && <Spinner size={12} />}
+    {status}
+  </span>
+);
 export const AccountBalance = ({
   balance,
   error,
@@ -379,7 +392,7 @@ export const AccountBalance = ({
         </div>
         <div className="ws-balance-health is-unknown text-[color:var(--balance-color)] [--balance-color:#6c8554] [&_small]:text-[10px] [&_small]:text-[#8a9180] [&.is-low]:[--balance-color:#bd6353] [&.is-medium]:[--balance-color:#b58b30] [&.is-unknown]:[--balance-color:#a4a99d] [&>div:first-child]:mb-[9px] [&>div:first-child]:flex [&>div:first-child]:items-center [&>div:first-child]:justify-between [&>div:first-child]:gap-2.5 [&>div:first-child]:text-[11px]">
           <div>
-            <span>{status}</span>
+            <BalanceStatus loading={loading} status={status} />
             <small>
               {connected
                 ? networkLabel(balance?.chain_id)

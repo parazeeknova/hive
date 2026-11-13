@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SubmitEvent } from "react";
 
 import { Icon } from "../../components/icon";
+import { Spinner } from "../../components/spinner";
 import {
   usesJsonInput,
   connectedCapability,
@@ -149,7 +150,7 @@ export const SessionDialog = ({
           void connect();
         }}
       >
-        <Icon name="wallet" size={16} />
+        {busy ? <Spinner size={16} /> : <Icon name="wallet" size={16} />}
         {busy ? "Connecting…" : "Connect wallet"}
       </button>
       <details className="ws-disclosure text-[10px] text-[#686f60] [border-bottom:1px_solid_var(--ws-line)] [&_p]:pb-[13px] [&_p]:leading-[1.9] [&_p]:text-[#686f60] [&_summary]:px-0 [&_summary]:py-3">
@@ -383,6 +384,7 @@ export const ActivityPanel = ({
             onClick={onLoadMore}
             disabled={loadingMore}
           >
+            {loadingMore && <Spinner size={14} />}
             {loadingMore ? "Loading…" : "Load older activity"}
           </button>
         )}
@@ -434,6 +436,7 @@ export const ActivityPanel = ({
                   void load(receipt.id, true);
                 }}
               >
+                {busy && <Spinner size={14} />}
                 {busy ? "Checking…" : "Reconcile receipt"}
               </button>
             )}
@@ -706,6 +709,7 @@ export const QuoteForm = ({
         disabled={busy || Boolean(quote)}
         onClick={token ? undefined : onConnect}
       >
+        {busy && <Spinner size={14} />}
         {quoteLabel}
         <Icon name="arrow" size={15} />
       </button>
@@ -888,6 +892,7 @@ const SampleForm = ({
         disabled={busy}
         type="submit"
       >
+        {busy && <Spinner size={14} />}
         {busy ? "Running…" : "Run test"}
       </button>
       {error && <p role="alert">{error}</p>}

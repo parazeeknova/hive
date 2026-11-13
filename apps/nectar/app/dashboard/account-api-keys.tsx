@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Icon } from "../../components/icon";
+import { LoadingState, Spinner } from "../../components/spinner";
 import {
   publicApiOrigin as apiOrigin,
   errorMessage,
@@ -137,7 +138,8 @@ const ApiKeys = () => {
           type="submit"
           disabled={pending || !name.trim()}
         >
-          <Icon name="plus" size={14} /> Create API key
+          {pending ? <Spinner size={14} /> : <Icon name="plus" size={14} />}{" "}
+          Create API key
         </button>
       </form>
       <p className="ws-fine mt-3 text-[10px] leading-[1.9] [overflow-wrap:anywhere] text-[#686f60]">
@@ -217,11 +219,7 @@ const ApiKeys = () => {
             {errorMessage(keys.error)}
           </p>
         )}
-        {keys.isPending && (
-          <p className="ws-muted text-[11px] leading-[1.85] text-[#686f60]">
-            Loading API keys…
-          </p>
-        )}
+        {keys.isPending && <LoadingState label="Loading API keys…" />}
         {keys.data?.keys.length === 0 && (
           <div className="ws-api-key-empty px-0 py-[30px] text-[#727c67] [&_h3]:mt-3 [&_h3]:text-[14px] [&_h3]:text-[#303a27] [&_p]:mx-0 [&_p]:mt-2 [&_p]:mb-4 [&_p]:text-[12px] [&_p]:leading-[1.7] [&_p]:text-[#727c67]">
             <Icon name="code" size={22} />

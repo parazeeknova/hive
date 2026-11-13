@@ -2,6 +2,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { Spinner } from "../../components/spinner";
 import { errorMessage, hiveway } from "../../lib/hiveway";
 import { Json } from "./workspace-pages";
 
@@ -179,6 +180,7 @@ const HostedBuilder = ({ token }: { token: string }) => {
             busy || !configuration.data?.builder || running(builds.data)
           }
         >
+          {busy && <Spinner size={14} />}
           {busy ? "Queuing build…" : "Build and publish free"}
         </button>
         {error && <p role="alert">{error}</p>}
@@ -191,13 +193,15 @@ const HostedBuilder = ({ token }: { token: string }) => {
           key={build.id}
           onClick={() => setId(build.id)}
         >
+          {active(build) && <Spinner size={13} />}
           {build.request.name} · {build.state}
         </button>
       ))}
       {selected.error && <p role="alert">{errorMessage(selected.error)}</p>}
       {selected.data && (
         <div aria-live="polite">
-          <p>
+          <p className="inline-flex items-center gap-1.5">
+            {active(selected.data) && <Spinner size={13} />}
             {selected.data.state} · {selected.data.model} ·{" "}
             {selected.data.attempts} attempts
           </p>

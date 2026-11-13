@@ -2,6 +2,7 @@
 import Image from "next/image";
 
 import { Icon } from "../../components/icon";
+import { Spinner } from "../../components/spinner";
 import type { CatalogMetadata } from "../../lib/hiveway";
 
 export const PublisherSummary = ({
@@ -11,8 +12,9 @@ export const PublisherSummary = ({
 }) => {
   if (!metadata) {
     return (
-      <span className="ws-muted text-[11px] leading-[1.85] text-[#686f60]">
-        Publisher details loading…
+      <span className="ws-muted inline-flex items-center gap-1.5 text-[11px] leading-[1.85] text-[#686f60]">
+        <Spinner size={11} />
+        Loading publisher…
       </span>
     );
   }
