@@ -1,0 +1,43 @@
+name: Set up Rust
+description: Restore the pinned Nix environment, Cargo dependencies and compiled artifacts.
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+    - name: Cache Nix store
+      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+      with:
+        primary-key: ${{ runner.os }}-${{ runner.arch }}-nix-v1-${{ hashFiles('devenv.lock', 'devenv.nix', 'devenv.yaml', 'rust-toolchain.toml') }}
+        # All Rust jobs use the same environment; only one uploads the store.
+        save: ${{ github.job == 'miri' }}
+    - name: Install pinned development environment
+      shell: bash
+      run: |
+        revision=$(python3 -c 'import json; print(json.load(open("devenv.lock"))["nodes"]["nixpkgs-src"]["locked"]["rev"])')
+        nix profile install "github:NixOS/nixpkgs/${revision}#devenv"
+        devenv shell -- true
+    - name: Cache Cargo downloads
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-v1-${{ hashFiles('Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-${{ runner.arch }}-cargo-downloads-v1-
+    - name: Cache compiled Rust artifacts
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: target
+        # Separate jobs have different profiles (Clippy, native tests and Miri).
+        # Source-specific keys refresh successful builds; prefix restores reuse dependencies.
+        key: ${{ runner.os }}-${{ runner.arch }}-rust-v1-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'devenv.lock', 'devenv.nix', 'devenv.yaml') }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-rust-v1-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'devenv.lock', 'devenv.nix', 'devenv.yaml') }}-${{ hashFiles('Cargo.lock') }}-
+          ${{ runner.os }}-${{ runner.arch }}-rust-v1-${{ github.job }}-${{ hashFiles('rust-toolchain.toml', 'devenv.lock', 'devenv.nix', 'devenv.yaml') }}-
+    - name: Cache Miri sysroot
+      if: github.job == 'miri'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: ~/.cache/miri
+        key: ${{ runner.os }}-${{ runner.arch }}-miri-sysroot-v1-${{ hashFiles('rust-toolchain.toml', 'devenv.lock', 'devenv.nix', 'devenv.yaml') }}
