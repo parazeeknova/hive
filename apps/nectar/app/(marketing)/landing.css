@@ -1221,13 +1221,17 @@ html.lenis {
   }
   @media (max-width: 700px) {
     #capabilities .showcase__item {
-      height: max(64svh, 500px);
+      /* min-height, not height: long cards (payments) must grow instead of
+         spilling into the next section. */
+      min-height: max(64svh, 500px);
     }
     #capabilities .showcase__frame {
       --hive-shape-tlw: 78cqw;
       --hive-shape-tlh: 90px;
       --hive-shape-brw: 92cqw;
       --hive-shape-brh: 150px;
+      /* Clear the 90px name tab and the 150px facts tab. */
+      padding: 106px 0 166px;
     }
     #capabilities .showcase__name {
       width: 78cqw;

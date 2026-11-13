@@ -1,6 +1,6 @@
 {
   "name": "@hive/connector",
-  "version": "0.0.68",
+  "version": "0.0.78",
   "private": true,
   "description": "Outbound connector for private external MCP servers through Hive",
   "type": "module",

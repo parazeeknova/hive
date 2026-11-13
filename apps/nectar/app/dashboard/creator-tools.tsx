@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 
+import { Spinner } from "../../components/spinner";
 import { hiveway, errorMessage } from "../../lib/hiveway";
 import { Json } from "./workspace-pages";
 
@@ -108,6 +109,7 @@ const CreatorTools = ({
         type="submit"
         disabled={busy}
       >
+        {busy && <Spinner size={14} />}
         {busy ? "Submitting…" : operations[operation].label}
       </button>
       {error && <p role="alert">{error}</p>}

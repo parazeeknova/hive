@@ -144,14 +144,15 @@ pub async fn challenge(
         .await?
         .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?
         .try_get_by_index(0)?;
-    if count >= 10 {
+    let limits = &state.settings.runtime.identity;
+    if count >= limits.challenges_per_peer_minute {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "challenge_rate_limit",
         ));
     }
     let id = Uuid::new_v4();
-    let expires = at + 300;
+    let expires = at + limits.challenge_ttl_seconds;
     let policy_hash = hex::encode(hash(&serde_json::to_vec(&request.action)?));
     let statement = match &request.action {
         WalletAction::Issue { policy } => format!(
@@ -308,21 +309,45 @@ pub async fn authenticate(
         .await?
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "invalid_credential"))?;
     authorize(&credential, "")?;
-    // Existing browser sessions receive the current free-publishing policy.
-    // Issued API keys retain their original explicit scopes until replaced.
-    if credential.wallet.starts_with("github:")
-        && crate::entities::account_api_keys::Entity::find_by_id(credential.id)
-            .one(&state.postgres)
-            .await?
-            .is_none()
-    {
-        for permission in ["capabilities:publish", "workflows:publish"] {
+    // Existing browser sessions receive the current free-use session policy.
+    // Issued API keys and OAuth grants retain their explicit scopes.
+    if credential.wallet.starts_with("github:") && is_browser_session(state, credential.id).await? {
+        for permission in crate::features::common::model::SESSION_UPGRADE_SCOPES {
             if !credential.scopes.iter().any(|s| s == permission) {
-                credential.scopes.push(permission.into());
+                credential.scopes.push((*permission).into());
             }
         }
     }
     authorize(&credential, scope)?;
+    Ok(credential)
+}
+/// Browser sessions are GitHub credentials that are neither account API keys
+/// nor OAuth access tokens. Only they may manage keys or approve OAuth clients.
+/// # Errors
+/// Returns database errors.
+pub async fn is_browser_session(state: &AppState, id: Uuid) -> ApiResult<bool> {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let row = state
+        .postgres
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT EXISTS(SELECT 1 FROM account_api_keys WHERE id=$1) OR EXISTS(SELECT 1 FROM oauth_tokens WHERE credential_id=$1) AS delegated",
+            vec![id.into()],
+        ))
+        .await?
+        .ok_or_else(|| sea_orm::DbErr::RecordNotFound("required row missing".into()))?;
+    Ok(!row.try_get::<bool>("", "delegated")?)
+}
+/// Authenticate a GitHub browser session (not an API key or OAuth token).
+/// # Errors
+/// Rejects other credential kinds.
+pub async fn authenticate_session(state: &AppState, headers: &HeaderMap) -> ApiResult<Credential> {
+    let credential = authenticate(state, headers, "").await?;
+    if !credential.wallet.starts_with("github:")
+        || !is_browser_session(state, credential.id).await?
+    {
+        return Err(ApiError::forbidden());
+    }
     Ok(credential)
 }
 /// # Errors

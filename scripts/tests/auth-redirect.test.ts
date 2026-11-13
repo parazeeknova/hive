@@ -5,6 +5,10 @@ import {
   dashboardReturnPath,
 } from "../../apps/nectar/lib/auth-redirect";
 import { readOAuthHandshake } from "../../apps/nectar/lib/oauth";
+import {
+  authorizeRequest,
+  consentPath,
+} from "../../apps/nectar/lib/oauth-consent";
 
 describe("landing search through authentication", () => {
   test("preserves search terms and the Discover view", () => {
@@ -21,6 +25,26 @@ describe("landing search through authentication", () => {
       verifier: "a".repeat(43),
     });
     expect(readOAuthHandshake(handshake, "state", "code").next).toBe(path);
+  });
+  test("returns to MCP OAuth consent with its request intact", () => {
+    const request = authorizeRequest({
+      client_id: "https://client.example/meta.json",
+      code_challenge: "c".repeat(43),
+      extra: "dropped",
+      redirect_uri: ["http://127.0.0.1:9000/cb", "ignored"],
+      state: "s",
+    });
+    expect(request).toEqual({
+      client_id: "https://client.example/meta.json",
+      code_challenge: "c".repeat(43),
+      redirect_uri: "http://127.0.0.1:9000/cb",
+      state: "s",
+    });
+    const path = consentPath(request);
+    expect(dashboardReturnPath(path)).toBe(path);
+    expect(dashboardReturnPath("//evil.invalid/oauth/authorize")).toBe(
+      "/dashboard"
+    );
   });
   test("rejects external and non-dashboard OAuth return destinations", () => {
     for (const value of [

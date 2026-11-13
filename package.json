@@ -1,11 +1,12 @@
 {
   "name": "hive",
-  "version": "0.0.68",
+  "version": "0.0.78",
   "private": true,
   "description": "Hive: an agent-native capability network. Hiveway API and Nectar web app.",
   "license": "MIT",
   "workspaces": [
-    "apps/*",
+    "apps/hiveway",
+    "apps/nectar",
     "packages/*"
   ],
   "type": "module",

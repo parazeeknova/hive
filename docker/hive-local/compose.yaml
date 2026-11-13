@@ -1,0 +1,46 @@
+name: hive-shared
+services:
+  helper:
+    build:
+      context: ../..
+      dockerfile: docker/hive-local/Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 1536m
+    cpus: 2
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1g,uid=10001,gid=10001
+    environment:
+      HIVE_SHARED_SANDBOX: "1"
+      HIVE_SHARED_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      HTTP_PROXY: http://egress:3128
+    volumes:
+      - ${HIVE_SHARED_CONFIG:?set HIVE_SHARED_CONFIG}:/run/secrets/hive-local.json:ro
+      - ${HIVE_SHARED_KEY:?set HIVE_SHARED_KEY}:/run/secrets/hive-key:ro
+    networks: [isolated]
+    depends_on: [egress]
+  egress:
+    build:
+      context: .
+      dockerfile: Proxy.Dockerfile
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 1
+    pids_limit: 32
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=32m,mode=1777
+    networks: [isolated, public]
+    # No published port: the proxy is private to these workers.
+networks:
+  isolated:
+    internal: true
+  public: {}

@@ -18,6 +18,17 @@ async fn main() -> anyhow::Result<()> {
 async fn serve() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let state = AppState::connect(&config).await?;
+    // Catalog updates ship with the binary: integrations and official workflows
+    // are upserted on every start, with no migration or manual step.
+    hiveway::features::integrations::sync(&state.postgres)
+        .await
+        .context("syncing official integrations")?;
+    hiveway::features::hiveway::workflows::sync_official(&state)
+        .await
+        .map_err(|error| anyhow::anyhow!("syncing official workflows: {}", error.code))?;
+    if let Err(error) = hiveway::features::hiveway::embeddings::prune(&state).await {
+        tracing::warn!(error = error.code, "Stale tool embeddings were not pruned");
+    }
     let listener = tokio::net::TcpListener::bind(config.bind_address).await?;
     tracing::info!(
         service = "hiveway",
@@ -84,28 +95,40 @@ async fn serve() -> anyhow::Result<()> {
 async fn background_workers(state: AppState, shutdown: tokio::sync::oneshot::Receiver<()>) {
     let (stop_recovery, recovery_shutdown) = tokio::sync::oneshot::channel();
     let (stop_builder, builder_shutdown) = tokio::sync::oneshot::channel();
+    let (stop_listener, listener_shutdown) = tokio::sync::oneshot::channel();
     let builder = builder_worker(
         || hiveway::features::builder::worker::tick(&state),
+        std::time::Duration::from_secs(state.settings.runtime.worker.builder_interval_seconds),
         builder_shutdown,
+    );
+    // Cross-replica wakeups for connector jobs, tasks and subscriptions.
+    let listener = state.realtime.listen(
+        state.postgres.get_postgres_connection_pool().clone(),
+        listener_shutdown,
     );
     let stop = async {
         let _ = shutdown.await;
         let _ = stop_recovery.send(());
         let _ = stop_builder.send(());
+        let _ = stop_listener.send(());
     };
     tokio::join!(
         recovery_worker(state.clone(), recovery_shutdown),
         builder,
+        listener,
         stop
     );
 }
 
-async fn builder_worker<F, Fut>(mut tick: F, mut shutdown: tokio::sync::oneshot::Receiver<()>)
-where
+async fn builder_worker<F, Fut>(
+    mut tick: F,
+    period: std::time::Duration,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = hiveway::features::common::error::ApiResult<()>>,
 {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+    let mut interval = tokio::time::interval(period);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! { biased; _=&mut shutdown=>break, _=interval.tick()=>{} }
@@ -131,6 +154,9 @@ async fn recovery_worker(state: AppState, mut shutdown: tokio::sync::oneshot::Re
         // Shutdown is observed between ticks so financial recovery is not cancelled midway.
         if let Err(error) = hiveway::features::pollen::worker::tick(&state).await {
             tracing::error!(error = error.code, "Pollen recovery cycle failed");
+        }
+        if let Err(error) = hiveway::features::hiveway::workflows::engine::cleanup(&state).await {
+            tracing::warn!(error = error.code, "Workflow retention cleanup failed");
         }
     }
 }
@@ -172,6 +198,7 @@ mod tests {
                     std::future::pending().await
                 }
             },
+            std::time::Duration::from_secs(2),
             shutdown,
         ));
         tokio::time::timeout(std::time::Duration::from_secs(2), started.notified()).await?;

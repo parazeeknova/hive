@@ -4,6 +4,8 @@ Run external MCPs through your authenticated Hive endpoint. A connector runs bes
 
 Hive routing is free and requires no wallet. Upstream billing still applies. Connections are private to the account that registers them and are not public marketplace artifacts. Use a dedicated, revocable Hive API key with only the `capabilities:publish` scope. Use a separate invoke-scoped key for the agent. Store it outside every filesystem allowed directory.
 
+Agents do not need an API key at all when their client supports MCP OAuth: add `https://hiveway.itssingularity.com/mcp` as a remote server and the client discovers Hive's authorization server, signs you in with GitHub and receives a scoped, revocable token. Connected apps are listed and revoked through `/v1/account/oauth/grants`.
+
 ## Free filesystem MCP
 
 The official `@modelcontextprotocol/server-filesystem` package is included. Install dependencies with `bun install`, create an empty workspace directory, and save this local trusted configuration outside that workspace:
@@ -48,13 +50,60 @@ docker run -d --name hive-connector-templr --network <hive-network> \
 
 `/run/secrets/templr-connector.json` holds the example config (edit `keyFile` only if your key lives elsewhere); `/run/secrets/hive-key` holds your account's `hwa_…` invoke key. The connector registers the connection under your account, then `connect_mcp` exposes it as `external_<connection-id>_<tool>` tools. Publish a `runtime: "connected_mcp"` capability against the saved `connectionId` to share it through the catalog. Changing templr's tools only needs a connector restart: re-registering under the same name refreshes the snapshot on the existing connection.
 
-For stdio, replace `command`, `args` and optional `env` in trusted local configuration. Only explicitly provided environment overrides are passed alongside the SDK's minimal inherited environment. For HTTP, use `"transport": "http"`, `"url": "https://your-server.example/mcp"` and optional `headers`. Upstream secrets remain with the connector; Hive's key is never forwarded. There is no OAuth enrollment UI; complete any upstream authorization separately.
+For stdio, replace `command`, `args` and optional `env` in trusted local configuration. Only explicitly provided environment overrides are passed alongside the SDK's minimal inherited environment. For HTTP, use `"transport": "http"`, `"url": "https://your-server.example/mcp"` and optional `headers`. Set `"negotiate": true` to probe upstreams for MCP 2026-07-28 before falling back to the 2025 handshake. Upstream secrets remain with the connector; Hive's key is never forwarded. There is no OAuth enrollment UI for upstreams; complete any upstream authorization separately.
 
 ## Operation and limits
 
-Gateway replicas share PostgreSQL connection records and indexed queues. Workers claim jobs with `SKIP LOCKED` and an unpredictable lease; completion is single-use. A connection is offline after 60 seconds without polling. Limits: eight connections per account, 64 tools per connection, 16 pending calls per connection, 128 KiB arguments, 512 KiB results, and a 30-second gateway wait. A worker executes one call at a time, with a 25-second upstream timeout. Calls are never automatically retried. A timeout can have an unknown mutation outcome; inspect the upstream state before retrying. A connector continues polling after transient transport or stale-completion failures, with exponential backoff capped at 10 seconds and without repeating the claimed call. Result limits are measured as UTF-8 JSON bytes. Invalid/revoked credentials stop it. Supervise/restart it with its saved ID.
+Gateway replicas share PostgreSQL connection records and indexed queues. Workers claim jobs with `SKIP LOCKED` and an unpredictable lease; completion is single-use. Every limit comes from the deployment's `[connectors]` configuration, which connectors read from `/api/config` at startup instead of hardcoding. The defaults: 8 connections per account, 64 tools, 256 resources and 64 prompts per connection, 16 pending calls per connection, 128 KiB arguments, 512 KiB results, offline after 60 seconds without polling.
 
-Upstream descriptions, schemas, and results are untrusted. Tool names are namespaced; callers must already have account invocation access. Upstream tool lists are snapshotted at registration and refreshed on restart under the same connection name. MCP resources, prompts, interactive sampling, and elicitation are not forwarded by this tools-only bridge. Direct connector calls do not create catalog receipts; connected MCP artifacts do use the catalog invocation and receipt pipeline.
+Waiting is event-driven. A worker long-polls (`wait_seconds`, default 20) and Hive wakes it through PostgreSQL `LISTEN/NOTIFY` the moment a call is queued, so there is no 1-second polling loop and an idle connector costs one request per poll window. A gateway caller waits up to `call_wait_seconds` (25). If the call is still running, MCP clients that declare the `io.modelcontextprotocol/tasks` extension receive a task handle and poll `tasks/get`; other clients receive a Hive job handle and follow it with `get_task`. Either way the call keeps running up to `job_ttl_seconds` (30 minutes), so builds, test runs and deep research no longer fail at 30 seconds. `tasks/cancel` or `cancel_task` asks the connector to abort the upstream request; unclaimed calls are cancelled immediately.
+
+While a call runs, the worker forwards upstream progress notifications (`progress_mcp`) and a heartbeat that reports cancellation. When an upstream server asks the user for input (`elicitation/create`), the worker relays it with `elicit_mcp`. Hive returns it to the caller as an MCP 2026-07-28 `input_required` result (or as `input_required` task state), the client's answer comes back through `await_input_mcp`, and the upstream continues. Callers that cannot display a form receive an automatic decline, so a connector never stalls on a question nobody can answer. Sampling and roots requests are not relayed; they are deprecated in MCP 2026-07-28.
+
+Calls are never automatically retried. A failure after a call was claimed can have an unknown mutation outcome; inspect the upstream state before retrying. A connector continues polling after transient transport or stale-completion failures, with exponential backoff capped at 10 seconds and without repeating the claimed call. Result limits are measured as UTF-8 JSON bytes. Invalid/revoked credentials stop it. Supervise/restart it with its saved ID.
+
+Upstream descriptions, schemas, and results are untrusted. Tool names are namespaced; callers must already have account invocation access. Upstream `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` and `title` annotations are passed through to Hive clients, so read-only tools do not trigger write approvals. Snapshots are refreshed on restart under the same connection name and when the upstream sends `list_changed`; a changed snapshot invalidates cached results and notifies subscribed clients. Results of read-only tools are cached for `connected_tool_ttl_seconds`; cache hits carry `_meta["dev.hive/cache"]`. Direct connector calls do not create catalog receipts; connected MCP artifacts do use the catalog invocation and receipt pipeline.
+
+## Resources and prompts
+
+Connectors that register the `bridge` feature (both workers in this package do) also expose the upstream's resources, resource templates and prompts. Hive lists them under `hive-mcp://<connection>/<original-uri>` and `<connection>__<prompt>`, and routes `resources/read` and `prompts/get` back to the connector. Only URIs the upstream listed, or that match a listed template, are forwarded.
+
+## Code index
+
+`code-index.ts` uploads a repository's committed `HEAD` to the account's code index so agents can use `repo_overview`, `code_search`, `find_symbol`, `find_references` and `read_code` instead of reading many files:
+
+```bash
+bun packages/connector/src/code-index.ts --dir . --hive https://hiveway.itssingularity.com/mcp --key-file ~/.config/hive/hive.key
+```
+
+The manifest comes from `git ls-tree`, so only files Hive has not seen before (from any commit, machine or CI run of the account) are read and uploaded, each verified against its git blob id. Binary files and vendored directories stay local. Uncommitted changes are not uploaded. In CI, set `HIVE_URL` and `HIVE_API_KEY` (a key with the `code:index` scope) and run the same command after checkout, for example in GitHub Actions:
+
+```yaml
+- run: bun packages/connector/src/code-index.ts --dir .
+  env:
+    HIVE_URL: https://hiveway.itssingularity.com/mcp
+    HIVE_API_KEY: ${{ secrets.HIVE_CODE_INDEX_KEY }}
+```
+
+Hive Local exposes the same sync as the `sync_code_index` tool for repositories under the roots you configure with `setup-hive-local.ts --code-index-root /absolute/path`.
+
+## Hive Local providers
+
+Hive Local connects bring-your-own-key upstreams on your machine. Provider URLs, auth headers and verified read-only tools come from the integrations Hive publishes at `/api/config`, so `"context7": {"keyFile": "..."}` is enough. Any other provider can be added with an explicit entry:
+
+```json
+{
+  "providers": {
+    "sentry": {
+      "keyFile": "/home/me/.config/hive/sentry.key",
+      "url": "https://mcp.sentry.dev/mcp",
+      "auth": "bearer"
+    }
+  }
+}
+```
+
+Hive Local also proxies resources and prompts, so stdio clients see bridged resources too.
 
 Build the optional worker image with `docker build -f docker/connector/Dockerfile -t hive-connector .`. Run it with a read-only root filesystem, `--cap-drop ALL --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64`, a writable persistent workspace volume owned by the image's `bun` user, and read-only mounts for `/run/secrets/connector.json` and `/run/secrets/hive-key`. Keep worker credentials/configuration out of the workspace. The gateway itself requires migration 16 before connecting.
 

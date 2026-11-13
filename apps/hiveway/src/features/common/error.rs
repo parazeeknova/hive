@@ -11,17 +11,35 @@ use utoipa::ToSchema;
 pub struct ApiError {
     pub status: StatusCode,
     pub code: &'static str,
+    /// A human-readable explanation for callers, e.g. which workflow step is invalid.
+    pub detail: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct ErrorBody {
     pub error: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 impl ApiError {
     #[must_use]
     pub const fn new(status: StatusCode, code: &'static str) -> Self {
-        Self { status, code }
+        Self {
+            status,
+            code,
+            detail: None,
+        }
+    }
+    /// A 400 error with an explanation of what to change.
+    #[must_use]
+    pub fn detailed(code: &'static str, detail: impl Into<String>) -> Self {
+        let detail: String = detail.into().chars().take(500).collect();
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code,
+            detail: Some(detail),
+        }
     }
     #[must_use]
     pub const fn bad(code: &'static str) -> Self {
@@ -42,6 +60,7 @@ impl IntoResponse for ApiError {
             self.status,
             Json(ErrorBody {
                 error: self.code.to_owned(),
+                detail: self.detail,
             }),
         )
             .into_response()

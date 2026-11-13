@@ -7,6 +7,7 @@ import type { SubmitEvent, KeyboardEvent } from "react";
 
 import { Icon } from "../../components/icon";
 import type { IconName } from "../../components/icon";
+import { LoadingState, Spinner } from "../../components/spinner";
 import type { Profile, WalletBalance } from "../../lib/account";
 import {
   publicApiOrigin as apiOrigin,
@@ -19,6 +20,7 @@ import {
 import type { Credential, RegistryCapability } from "../../lib/hiveway";
 import ApiKeys from "./account-api-keys";
 import { AccountBalance } from "./account-payments";
+import ProviderKeys from "./account-provider-keys";
 import CreatorTools from "./creator-tools";
 import HostedBuilder from "./hosted-builder";
 import { PublisherSummary } from "./publisher";
@@ -136,6 +138,7 @@ const ProfileForm = ({
             className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
             disabled={pending}
           >
+            {pending && <Spinner size={14} />}
             {pending ? "Saving…" : "Save profile"}
           </button>
         </div>
@@ -501,7 +504,12 @@ const AccountPanel = ({
         tabIndex={0}
         hidden={tab !== "api-keys"}
       >
-        {tab === "api-keys" && <ApiKeys />}
+        {tab === "api-keys" && (
+          <>
+            <ApiKeys />
+            <ProviderKeys />
+          </>
+        )}
       </div>
       <div
         id="account-panel-profile"
@@ -511,6 +519,7 @@ const AccountPanel = ({
         tabIndex={0}
         hidden={tab !== "profile"}
       >
+        {profile.isPending && <LoadingState label="Loading profile…" />}
         {profile.data ? (
           <ProfileForm
             profile={profile.data}
@@ -523,22 +532,20 @@ const AccountPanel = ({
             }}
           />
         ) : (
-          <EmptyState
-            title={
-              profile.error ? "Unable to load profile" : "Loading profile…"
-            }
-          >
-            {profile.error ? errorMessage(profile.error) : ""}
-            <button
-              className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
-              type="button"
-              onClick={() => {
-                void profile.refetch();
-              }}
-            >
-              Retry
-            </button>
-          </EmptyState>
+          profile.error && (
+            <EmptyState title="Unable to load profile">
+              {errorMessage(profile.error)}
+              <button
+                className="ws-button inline-flex min-h-[38px] cursor-pointer items-center justify-center gap-[9px] rounded-[999px] bg-white px-[15px] py-[9px] text-center text-[11px] [font-weight:650] shadow-[inset_0_1px_0_#ffffff80,_0_1px_2px_#252a1b04] [border:1px_solid_#dedfd7] disabled:cursor-not-allowed disabled:opacity-[0.45] [&.ws-primary]:[border-color:transparent] [&.ws-primary]:text-[#fff] [&.ws-primary]:shadow-[inset_0_1px_2px_#ffffff33,inset_0_-2px_4px_#0006,inset_1px_0_3px_#ffffff0b] [&.ws-primary]:[background:radial-gradient(ellipse_at_50%_0%,#ffffff0c,transparent_70%)_padding-box,linear-gradient(180deg,#333_0%,#222_24%,#151515_58%,#101010_80%,#1b1b1b_100%)_padding-box,linear-gradient(180deg,#505050,#171717_65%,#080808)_border-box] [&.ws-primary:hover]:brightness-[1.12] [&.ws-small]:min-h-[33px] [&.ws-small]:px-3 [&.ws-small]:py-[7px] [&.ws-small]:text-[10px] [&:hover]:[border-color:#bbc1ae] [&:hover]:bg-[#f4f5ee]"
+                type="button"
+                onClick={() => {
+                  void profile.refetch();
+                }}
+              >
+                Retry
+              </button>
+            </EmptyState>
+          )
         )}
         <aside className="ws-account-secondary min-w-0 p-[var(--account-pad)] [border-left:1px_solid_var(--ws-line)] max-[900px]:[border-width:1px_0_0]">
           <AccountSession

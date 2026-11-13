@@ -13,6 +13,10 @@ pub struct PublicConfig {
     pub payment: PublicPayment,
     pub features: Features,
     pub limits: PublicLimits,
+    pub connectors: ConnectorConfig,
+    pub integrations: Vec<PublicIntegration>,
+    /// Changes whenever the integration catalog changes; helpers re-sync on change.
+    pub catalog_version: String,
 }
 #[derive(Serialize, ToSchema)]
 pub struct PublicBuilder {
@@ -32,9 +36,45 @@ pub struct PublicPayment {
     pub creator_payouts: &'static str,
 }
 #[derive(Serialize, ToSchema)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Features {
     pub dodo_test_checkout: bool,
     pub wasm_artifacts: bool,
+    pub mcp_oauth: bool,
+    pub semantic_tool_search: bool,
+    pub code_index: bool,
+    pub repository_memory: bool,
+    /// Accounts can save provider API keys in the dashboard.
+    pub provider_keys: bool,
+}
+/// Limits connectors, Hive Local and the code-index CLI read instead of hardcoding.
+#[derive(Serialize, ToSchema)]
+pub struct ConnectorConfig {
+    pub argument_bytes: usize,
+    pub result_bytes: usize,
+    pub poll_wait_seconds: u64,
+    pub job_ttl_seconds: i64,
+    pub input_requests_per_job: usize,
+    pub code_file_bytes: usize,
+    pub code_manifest_files_per_call: usize,
+    pub code_blobs_per_upload: usize,
+}
+/// An integration as Hive Local and the shared helper see it: how to start it
+/// and which operator hints and argument checks apply.
+#[derive(Serialize, ToSchema)]
+pub struct PublicIntegration {
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub byok: bool,
+    pub tools: Vec<String>,
+    pub upstream: Option<crate::features::integrations::Upstream>,
+    pub local: Option<crate::features::integrations::Launch>,
+    pub shared_launch: Option<crate::features::integrations::Launch>,
+    pub annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub shared_annotations: std::collections::BTreeMap<String, serde_json::Value>,
+    pub path_arguments: Vec<String>,
+    pub url_arguments: Vec<String>,
 }
 #[derive(Serialize, ToSchema)]
 pub struct PublicLimits {
@@ -77,7 +117,40 @@ pub async fn configuration(State(state): State<AppState>) -> Json<PublicConfig> 
                 && settings.dodo_product_id.is_some()
                 && settings.dodo_webhook_secret.is_some(),
             wasm_artifacts: true,
+            mcp_oauth: true,
+            semantic_tool_search: settings.embeddings.is_some(),
+            code_index: true,
+            repository_memory: true,
+            provider_keys: settings.secrets_key.is_some(),
         },
+        connectors: ConnectorConfig {
+            argument_bytes: settings.runtime.connectors.argument_bytes,
+            result_bytes: settings.runtime.connectors.result_bytes,
+            poll_wait_seconds: settings.runtime.connectors.poll_wait_seconds,
+            job_ttl_seconds: settings.runtime.connectors.job_ttl_seconds,
+            input_requests_per_job: settings.runtime.connectors.input_requests_per_job,
+            code_file_bytes: settings.runtime.code_index.file_bytes,
+            code_manifest_files_per_call: settings.runtime.code_index.manifest_files_per_call,
+            code_blobs_per_upload: settings.runtime.code_index.blobs_per_upload,
+        },
+        integrations: crate::features::integrations::registry()
+            .iter()
+            .map(|item| PublicIntegration {
+                slug: item.slug.clone(),
+                name: item.name.clone(),
+                description: item.description.clone(),
+                byok: item.byok,
+                tools: item.tools.clone(),
+                upstream: item.upstream.clone(),
+                local: item.local.clone(),
+                shared_launch: item.shared_launch.clone(),
+                annotations: item.annotations.clone(),
+                shared_annotations: item.shared_annotations.clone(),
+                path_arguments: item.path_arguments.clone(),
+                url_arguments: item.url_arguments.clone(),
+            })
+            .collect(),
+        catalog_version: crate::features::integrations::catalog_version(),
         limits: PublicLimits {
             request_body_bytes: settings.runtime.http.body_bytes,
             artifact_bytes: sandbox.artifact_bytes,

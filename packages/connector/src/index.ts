@@ -1,18 +1,16 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
-/* eslint-disable no-await-in-loop, no-unmodified-loop-condition -- A sequential worker must finish one leased mutation before claiming the next; signals stop it. */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  Client,
-  StreamableHTTPClientTransport,
-} from "@modelcontextprotocol/client";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
 import { Directories } from "./directories";
-import { withinResultLimit } from "./limits";
-import { FatalHiveError, reconnect } from "./session";
+import { HiveRpc } from "./hive-rpc";
+import { FEATURES, Upstream } from "./upstream";
+import type { ClaimedJob, Outcome } from "./upstream";
+import { serve } from "./worker";
 
 type Config = {
   name: string;
@@ -20,6 +18,8 @@ type Config = {
   keyFile: string;
   connectionId?: string;
   workingDirectory?: string;
+  /** Probe upstreams for MCP 2026-07-28 before using the 2025 handshake. */
+  negotiate?: boolean;
 } & (
   | {
       transport: "stdio";
@@ -33,65 +33,8 @@ type Config = {
 const config = JSON.parse(
   await readFile(process.argv[2] ?? "hive-connector.json", "utf-8")
 ) as Config;
-const hive = new URL(config.hive);
-if (
-  hive.protocol !== "https:" &&
-  !(
-    hive.protocol === "http:" &&
-    ["localhost", "127.0.0.1"].includes(hive.hostname)
-  )
-) {
-  throw new Error("Hive requires HTTPS, except loopback development");
-}
-if (hive.username || hive.password) {
-  throw new Error("Use keyFile for Hive authentication");
-}
-const keyContents = await readFile(config.keyFile, "utf-8");
-const key = keyContents.trim();
-const rpc = async (name: string, args: Record<string, unknown>) => {
-  const response = await fetch(hive, {
-    body: JSON.stringify({
-      id: crypto.randomUUID(),
-      jsonrpc: "2.0",
-      method: "tools/call",
-      params: { arguments: args, name },
-    }),
-    headers: {
-      Accept: "application/json, text/event-stream",
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      "MCP-Protocol-Version": "2025-11-25",
-    },
-    method: "POST",
-    redirect: "error",
-    signal: AbortSignal.timeout(40_000),
-  });
-  if (response.status === 401 || response.status === 403) {
-    throw new FatalHiveError("Hive credentials rejected");
-  }
-  if (!response.ok) {
-    throw new Error(`Hive request failed (${response.status})`);
-  }
-  const value = (await response.json()) as {
-    error?: unknown;
-    result?: { isError?: boolean; structuredContent?: Record<string, unknown> };
-  };
-  if (
-    value.error ||
-    value.result?.isError ||
-    !value.result?.structuredContent
-  ) {
-    if (
-      ["forbidden", "invalid_connection_id"].includes(
-        String(value.result?.structuredContent?.error)
-      )
-    ) {
-      throw new FatalHiveError("Hive connection is unavailable or revoked");
-    }
-    throw new Error("Hive connector operation failed");
-  }
-  return value.result.structuredContent;
-};
+const rpc = new HiveRpc(config.hive, await readFile(config.keyFile, "utf-8"));
+const settings = await rpc.config();
 // Only local, explicitly trusted configuration can select executables or upstream URLs.
 // Hive credentials are never passed to the upstream process or remote MCP.
 const directories = new Directories(config.keyFile);
@@ -102,20 +45,21 @@ const quarantine =
   config.transport === "filesystem"
     ? await mkdtemp(path.join(os.tmpdir(), "hive-filesystem-"))
     : null;
+const filesystemServer = () =>
+  fileURLToPath(
+    import.meta.resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
+  );
 const buildTransport = () => {
   if (config.transport === "filesystem") {
     return new StdioClientTransport({
       args: [
-        fileURLToPath(
-          import.meta
-            .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
-        ),
+        filesystemServer(),
         ...directories.approved,
         ...(quarantine ? [quarantine] : []),
       ],
       command: process.execPath,
       env: {},
-      maxBufferSize: 524_288,
+      maxBufferSize: settings.connectors.result_bytes,
       stderr: "ignore",
     });
   }
@@ -124,7 +68,7 @@ const buildTransport = () => {
       args: config.args,
       command: config.command,
       env: config.env ?? {},
-      maxBufferSize: 524_288,
+      maxBufferSize: settings.connectors.result_bytes,
       stderr: "ignore",
     });
   }
@@ -132,58 +76,97 @@ const buildTransport = () => {
     requestInit: { headers: config.headers ?? {}, redirect: "error" },
   });
 };
-let transport = buildTransport();
-let client = new Client({ name: "hive-connector", version: "1.0.0" });
-await client.connect(transport);
-// Re-handshake the upstream without repeating the failed call: server
-// restarts invalidate sessions, and the next job must not inherit a dead one.
-const repairUpstream = async () => {
-  if (config.transport === "filesystem") {
-    return;
-  }
-  try {
-    await client.close();
-  } catch {
-    // Already broken; replace it unconditionally below.
-  }
-  const replacement = buildTransport();
-  const fresh = new Client({ name: "hive-connector", version: "1.0.0" });
-  await fresh.connect(replacement);
-  transport = replacement;
-  client = fresh;
+let refresh = () => {
+  // Replaced once the connection is registered.
 };
-const { tools } = await client.listTools();
-if (config.transport === "filesystem") {
-  tools.push({
-    description:
-      "Request local human approval for an absolute working directory. No access is granted by a remote agent confirmation. Without a local interactive terminal, approval is required and access stays denied.",
-    inputSchema: {
-      additionalProperties: false,
-      properties: { directory: { type: "string" } },
-      required: ["directory"],
-      type: "object",
-    },
-    name: "request_directory_access",
+const upstream = new Upstream({
+  name: config.name,
+  negotiate: config.negotiate === true,
+  onChanged: () => refresh(),
+  transport: buildTransport,
+});
+await upstream.connect();
+const directoryTool = {
+  description:
+    "Request local human approval for an absolute working directory. No access is granted by a remote agent confirmation. Without a local interactive terminal, approval is required and access stays denied.",
+  inputSchema: {
+    additionalProperties: false,
+    properties: { directory: { type: "string" } },
+    required: ["directory"],
+    type: "object",
+  },
+  name: "request_directory_access",
+};
+const snapshot = async () => {
+  const current = await upstream.snapshot();
+  if (config.transport === "filesystem") {
+    current.tools.push(directoryTool);
+  }
+  return current;
+};
+let advertised = await snapshot();
+const register = () =>
+  rpc.operation("register_mcp_connection", {
+    features: FEATURES,
+    name: config.name,
+    ...advertised,
   });
-}
-const allowed = new Set(tools.map((tool) => tool.name));
 let { connectionId } = config;
 if (!connectionId) {
-  const registered = await rpc("register_mcp_connection", {
-    name: config.name,
-    tools,
-  });
+  const registered = await register();
   if (typeof registered.id !== "string") {
     throw new TypeError("Missing connection ID");
   }
   connectionId = registered.id;
 }
+const id = connectionId;
 console.log(
-  `Connected ${config.name}: ${connectionId}. Save connectionId in your config to reuse it.`
+  `Connected ${config.name}: ${id}. Save connectionId in your config to reuse it.`
 );
+// Upstream list changes refresh the snapshot so Hive clients see new tools at once.
+const refreshSnapshot = async () => {
+  try {
+    advertised = await snapshot();
+    await register();
+  } catch {
+    console.error(
+      "Hive connector: snapshot refresh failed; keeping the previous one."
+    );
+  }
+};
+refresh = () => {
+  void refreshSnapshot();
+};
+const approveDirectory = async (job: ClaimedJob): Promise<Outcome> => {
+  const directory = job.request.arguments?.directory;
+  if (typeof directory !== "string") {
+    throw new TypeError("directory is required");
+  }
+  const approved = await directories.allow(directory);
+  if (approved) {
+    await upstream.repair();
+  }
+  return {
+    result: {
+      content: [
+        {
+          text: JSON.stringify({
+            approved,
+            directory,
+            reason: approved
+              ? "approved_for_this_session"
+              : "local_human_approval_required; run connector in an interactive terminal and request again",
+          }),
+          type: "text",
+        },
+      ],
+      isError: !approved,
+    },
+  };
+};
+const allowed = () =>
+  new Set(advertised.tools.map((tool) => String(tool.name)));
 let running = true;
-let retryDelay = 1000;
-let lastUpstreamCheck = Date.now();
 process.on("SIGINT", () => {
   running = false;
 });
@@ -191,130 +174,44 @@ process.on("SIGTERM", () => {
   running = false;
 });
 try {
-  const pollIntervalMs = Math.min(
-    10_000,
-    Math.max(100, Number(process.env.HIVE_POLL_MS ?? 1000) || 1000)
-  );
-  while (running) {
-    try {
-      const { job } = await rpc("poll_mcp", { connection_id: connectionId });
-      retryDelay = 1000;
-      if (!job) {
-        await Bun.sleep(pollIntervalMs);
-        continue;
-      }
-      const claimed = job as {
-        id: string;
-        lease: string;
-        request: { name: string; arguments: Record<string, unknown> };
-      };
-      let result;
-      try {
-        // Check an idle upstream before executing a new call. Repairing a failed
-        // ping never repeats the user's operation, including mutations.
-        if (Date.now() - lastUpstreamCheck > 30_000) {
-          try {
-            await client.ping({ timeout: 5000 });
-          } catch {
-            await repairUpstream();
-          }
-          lastUpstreamCheck = Date.now();
-        }
-        if (!allowed.has(claimed.request.name)) {
-          throw new Error("Tool not in local allowlist");
-        }
-        if (
-          config.transport === "filesystem" &&
-          claimed.request.name === "request_directory_access"
-        ) {
-          const { directory } = claimed.request.arguments;
-          if (typeof directory !== "string") {
-            throw new TypeError("directory is required");
-          }
-          const approved = await directories.allow(directory);
-          if (approved) {
-            await client.close();
-            const replacement = new StdioClientTransport({
-              args: [
-                fileURLToPath(
-                  import.meta
-                    .resolve("@modelcontextprotocol/server-filesystem/dist/index.js")
-                ),
-                ...directories.approved,
-              ],
-              command: process.execPath,
-              env: {},
-              maxBufferSize: 524_288,
-              stderr: "ignore",
-            });
-            client = new Client({ name: "hive-connector", version: "1.0.0" });
-            await reconnect(client, replacement);
-          }
-          result = {
-            content: [
-              {
-                text: JSON.stringify({
-                  approved,
-                  directory,
-                  reason: approved
-                    ? "approved_for_this_session"
-                    : "local_human_approval_required; run connector in an interactive terminal and request again",
-                }),
-                type: "text",
-              },
-            ],
-            isError: !approved,
-          };
-        } else {
-          try {
-            result = await client.callTool(claimed.request, {
-              timeout: 25_000,
-            });
-          } catch (error) {
-            if (error instanceof FatalHiveError) {
-              throw error;
+  await serve({
+    isRunning: () => running,
+    pollIntervalMs: Math.min(
+      10_000,
+      Math.max(100, Number(process.env.HIVE_POLL_MS ?? 1000) || 1000)
+    ),
+    resultLimit: settings.connectors.result_bytes,
+    rpc,
+    services: [
+      {
+        id,
+        name: config.name,
+        run: (job) => {
+          const method = job.method ?? "tools/call";
+          if (method === "tools/call") {
+            if (!allowed().has(job.request.name ?? "")) {
+              throw new Error("Tool not in local allowlist");
             }
-            // Heal a dead upstream session; the failed call is still
-            // reported once and never repeated.
-            await repairUpstream();
-            throw error;
+            if (
+              config.transport === "filesystem" &&
+              job.request.name === "request_directory_access"
+            ) {
+              return approveDirectory(job);
+            }
           }
-        }
-        if (!withinResultLimit(result)) {
-          throw new Error("Result exceeds Hive limit");
-        }
-      } catch (error) {
-        if (error instanceof FatalHiveError) {
-          throw error;
-        }
-        result = {
-          content: [
-            {
-              text: "Upstream MCP call failed or exceeded limits. Execution outcome may be unknown; do not retry mutations automatically.",
-              type: "text",
-            },
-          ],
-          isError: true,
-        };
-      }
-      // No retries: repeating a mutation after an uncertain transport failure is unsafe.
-      await rpc("complete_mcp", {
-        connection_id: connectionId,
-        job_id: claimed.id,
-        lease: claimed.lease,
-        result,
-      });
-    } catch (error) {
-      if (error instanceof FatalHiveError) {
-        throw error;
-      }
-      // Continue polling after transport/stale-completion failures. Never repeat a claimed tool call.
-      await Bun.sleep(retryDelay);
-      retryDelay = Math.min(retryDelay * 2, 10_000);
-    }
-  }
+          return upstream.run(
+            rpc,
+            id,
+            job,
+            Math.max(1, settings.connectors.poll_wait_seconds)
+          );
+        },
+      },
+    ],
+    waitSeconds: settings.connectors.poll_wait_seconds,
+  });
 } finally {
-  await client.close();
+  await upstream.close();
   if (quarantine) {
     await rm(quarantine, { force: true, recursive: true });
   }

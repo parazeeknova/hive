@@ -15,7 +15,53 @@ pub const SCOPES: &[&str] = &[
     "receipts:read",
     "sales:read",
     "workflows:publish",
+    "code:read",
+    "code:index",
+    "memory:read",
+    "memory:write",
 ];
+/// Free-use scopes a GitHub browser session holds and may delegate to API keys
+/// and OAuth clients. Payment-bearing wallet credentials are issued separately.
+pub const SESSION_SCOPES: &[&str] = &[
+    "capabilities:read",
+    "capabilities:invoke",
+    "capabilities:publish",
+    "workflows:publish",
+    "repository:analyze",
+    "receipts:read",
+    "code:read",
+    "code:index",
+    "memory:read",
+    "memory:write",
+];
+/// Free-use scopes existing browser sessions gain automatically when policy
+/// expands. Invocation scopes are never added after the session was issued.
+pub const SESSION_UPGRADE_SCOPES: &[&str] = &[
+    "capabilities:publish",
+    "workflows:publish",
+    "code:read",
+    "code:index",
+    "memory:read",
+    "memory:write",
+];
+/// Human-readable consent text for each scope.
+#[must_use]
+pub fn scope_description(scope: &str) -> &'static str {
+    match scope {
+        "capabilities:read" => "Search and read the Hive capability catalog",
+        "capabilities:invoke" => "Run capabilities and your connected MCP tools",
+        "capabilities:publish" => "Publish capabilities and manage your MCP connectors",
+        "workflows:publish" => "Compose and publish workflows",
+        "repository:analyze" => "Run repository analysis capabilities",
+        "receipts:read" => "Read your invocation receipts",
+        "sales:read" => "Read your capability sales",
+        "code:read" => "Search your indexed repositories",
+        "code:index" => "Upload repository snapshots to your code index",
+        "memory:read" => "Read your repository memories and decisions",
+        "memory:write" => "Record and remove repository memories and decisions",
+        _ => "Unknown permission",
+    }
+}
 
 #[must_use]
 pub fn now() -> i64 {

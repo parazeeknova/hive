@@ -97,16 +97,31 @@ if (process.env.HIVE_LOCAL_PAYMENTS === "1") {
 // Compile first so the first page request can reach the API while Next starts.
 await run(["cargo", "build", "--locked", "--package", "hiveway"]);
 
-const child = spawn("lerna", ["run", "dev", "--parallel", "--stream"], {
-  cwd: root,
-  detached: true,
-  env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NX_DAEMON: "false" },
-  stdio: "inherit",
-});
+// Launch the JS entry point directly: Windows npm .cmd shims require a shell.
+const child = spawn(
+  "node",
+  ["node_modules/lerna/dist/cli.js", "run", "dev", "--parallel", "--stream"],
+  {
+    cwd: root,
+    detached: process.platform !== "win32",
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", NX_DAEMON: "false" },
+    stdio: "inherit",
+  }
+);
 
 const stop = (signal: NodeJS.Signals) => {
   if (child.pid !== undefined) {
     try {
+      if (process.platform === "win32") {
+        const stopped = Bun.spawnSync(
+          ["taskkill.exe", "/PID", String(child.pid), "/T", "/F"],
+          { stderr: "ignore", stdout: "ignore" }
+        );
+        if (stopped.exitCode !== 0 && child.exitCode === null) {
+          child.kill();
+        }
+        return;
+      }
       process.kill(-child.pid, signal);
     } catch (error) {
       if (

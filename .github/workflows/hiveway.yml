@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/hiveway/**"
+      - "apps/hive-local/**"
       - "apps/nectar/**"
       - "packages/**"
       - "scripts/**"
@@ -126,6 +127,7 @@ jobs:
       - name: Exercise independent creator and buyer agents
         env:
           HIVE_DEMO_REPOSITORY: https://github.com/${{ github.repository }}
+          HIVE_GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           devenv shell -- bun packages/local/src/agents/serve.ts > .hive/local/backend.log 2>&1 &
@@ -136,7 +138,7 @@ jobs:
             sleep 1
           done
           curl --fail --silent http://127.0.0.1:3001/api/ready
-          HIVE_DEMO_REVISION="$GITHUB_SHA" devenv shell -- bun packages/local/src/agents/demo.ts
+          HIVE_DEMO_REVISION="${{ github.event.pull_request.head.sha || github.sha }}" devenv shell -- bun packages/local/src/agents/demo.ts
           devenv shell -- bun packages/local/src/agents/hosted-demo.ts
           devenv shell -- bun packages/local/src/agents/mcp-demo.ts
       - name: Collect diagnostics on failure
@@ -148,8 +150,63 @@ jobs:
         if: always()
         run: docker compose --profile payments down
 
+  local-platforms:
+    name: Hive Local (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, windows-2025, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/hiveway/integrations.json
+      - name: Install Linux media dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg cmake clang
+      - name: Install macOS media dependencies
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install Windows build and media dependencies
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg nasm -y --no-progress
+      - name: Load the pinned Rust toolchain
+        shell: bash
+        run: rustup show active-toolchain
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ runner.arch }}-hive-local-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-hive-local-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+      - name: Native helper tests and all five upstreams
+        env:
+          HIVE_TEST_UPSTREAMS: "1"
+        run: cargo test --locked -p hive-local -- --include-ignored
+      - name: Native gateway and workflow unit tests
+        run: cargo test --locked -p hiveway --lib
+      - name: Build release helper
+        run: cargo build --locked --release -p hive-local
+      - name: Validate Windows autostart script syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $parseErrors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'apps/hive-local/autostart/install-windows.ps1'), [ref]$null, [ref]$parseErrors)
+          if ($parseErrors.Count) { throw $parseErrors }
+      - name: Validate Unix autostart script syntax
+        if: runner.os != 'Windows'
+        run: sh -n apps/hive-local/autostart/install-macos.sh
+
   validate:
-    needs: [javascript, rust-check, miri, integration]
+    needs: [javascript, rust-check, miri, integration, local-platforms]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 2
@@ -177,6 +234,15 @@ jobs:
     uses: ./.github/workflows/container.yml
     with:
       app: hiveway
+  publish-hive-local:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+    with:
+      app: hive-local
   deploy:
     needs: [publish-nectar, publish-hiveway]
     runs-on: ubuntu-26.04

@@ -33,6 +33,19 @@ struct GithubUser {
     login: String,
 }
 
+/// An HTTPS GitHub endpoint from the environment, or the public default.
+fn github_url(key: &str, default: &str) -> ApiResult<String> {
+    let value = std::env::var(key)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| default.to_owned());
+    let url = reqwest::Url::parse(&value)
+        .map_err(|_| ApiError::unavailable("github_oauth_not_configured"))?;
+    if url.scheme() != "https" || url.query().is_some() || !url.username().is_empty() {
+        return Err(ApiError::unavailable("github_oauth_not_configured"));
+    }
+    Ok(value.trim_end_matches('/').to_owned())
+}
 /// Exchange a one-use OAuth code using PKCE and create a revocable database session.
 /// # Errors
 /// Rejects unconfigured OAuth, invalid codes and unavailable providers.
@@ -59,15 +72,19 @@ pub async fn exchange(
         ("code", input.code),
         ("code_verifier", input.verifier),
     ];
-    let mut url = reqwest::Url::parse("https://github.com/login/oauth/access_token")
-        .map_err(|_| ApiError::bad("invalid_oauth_url"))?;
+    // GitHub Enterprise deployments override both endpoints.
+    let web = github_url("GITHUB_OAUTH_URL", "https://github.com")?;
+    let api = github_url("GITHUB_API_URL", "https://api.github.com")?;
+    let token_url = format!("{web}/login/oauth/access_token");
+    let mut url =
+        reqwest::Url::parse(&token_url).map_err(|_| ApiError::bad("invalid_oauth_url"))?;
     // Form encoding without placing credentials in the URL or logs.
     url.query_pairs_mut()
         .extend_pairs(params.iter().map(|(k, v)| (*k, v.as_str())));
     let body = url.query().unwrap_or_default().to_owned();
     let response: Value = state
         .http
-        .post("https://github.com/login/oauth/access_token")
+        .post(&token_url)
         .header("accept", "application/json")
         .header("content-type", "application/x-www-form-urlencoded")
         .body(body)
@@ -83,7 +100,7 @@ pub async fn exchange(
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "github_login_failed"))?;
     let user: GithubUser = state
         .http
-        .get("https://api.github.com/user")
+        .get(format!("{api}/user"))
         .bearer_auth(access)
         .send()
         .await
@@ -94,22 +111,19 @@ pub async fn exchange(
         .await
         .map_err(|_| ApiError::unavailable("github_invalid_response"))?;
     let token = format!("hwa_{}", hex::encode(rand::random::<[u8; 32]>()));
-    let expires = now() + 86400;
+    let limits = &state.settings.runtime.identity;
+    let expires = now() + limits.session_ttl_seconds;
     agent_credentials::ActiveModel {
         id: Set(Uuid::new_v4()),
         wallet: Set(format!("github:{}", user.id)),
         name: Set(user.login),
         token_hash: Set(hash(token.as_bytes())),
-        scopes: Set(vec![
-            "capabilities:read".into(),
-            "capabilities:invoke".into(),
-            "capabilities:publish".into(),
-            "workflows:publish".into(),
-            "repository:analyze".into(),
-            "receipts:read".into(),
-        ]),
-        per_call_limit: Set(1_000_000),
-        total_limit: Set(10_000_000),
+        scopes: Set(crate::features::common::model::SESSION_SCOPES
+            .iter()
+            .map(|scope| (*scope).to_owned())
+            .collect()),
+        per_call_limit: Set(limits.session_per_call_limit),
+        total_limit: Set(limits.session_total_limit),
         expires_at: Set(expires),
         created_at: Set(now()),
         ..Default::default()

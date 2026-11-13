@@ -152,11 +152,20 @@ async fn github_json<T: serde::de::DeserializeOwned>(
         .get(format!("https://api.github.com{path}"))
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
+    let request = if let Some(token) = &state.settings.github_token {
+        request.bearer_auth(token)
+    } else {
+        request
+    };
     let mut response = request
         .send()
         .await
         .map_err(|_| ApiError::unavailable("github_unavailable"))?;
     if !response.status().is_success() {
+        tracing::warn!(
+            status = response.status().as_u16(),
+            "GitHub repository API request failed"
+        );
         return Err(ApiError::unavailable("github_request_failed"));
     }
     let mut body = Vec::new();
@@ -171,6 +180,13 @@ async fn github_json<T: serde::de::DeserializeOwned>(
         body.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&body).map_err(|_| ApiError::unavailable("invalid_github_response"))
+}
+fn require_public_repository(metadata: &Value) -> ApiResult<()> {
+    if metadata.get("private") == Some(&Value::Bool(false)) {
+        Ok(())
+    } else {
+        Err(ApiError::unavailable("github_request_failed"))
+    }
 }
 fn manifest(path: &str) -> bool {
     matches!(
@@ -256,6 +272,12 @@ fn inspect(path: &str, content: &str, found: &mut BTreeSet<String>) {
 /// Rejects invalid repositories, unsuccessful upstream requests, and oversized or malformed manifests.
 pub async fn execute(state: &AppState, input: &RepositoryInput) -> ApiResult<Value> {
     let (owner, repo) = validate(input)?;
+    if state.settings.github_token.is_some() {
+        // A server token raises GitHub's API quota, not the caller's access.
+        // Never expose a private repository merely because the operator can read it.
+        let metadata: Value = github_json(state, &format!("/repos/{owner}/{repo}"), 65_536).await?;
+        require_public_repository(&metadata)?;
+    }
     let tree: Tree = github_json(
         state,
         &format!(
@@ -378,7 +400,7 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
         .await?
         .ok_or_else(|| ApiError::new(axum::http::StatusCode::NOT_FOUND, "capability_not_found"))?;
     if capability.runtime == "connected_mcp" {
-        return crate::features::connections::artifacts::validate(input);
+        return crate::features::connections::artifacts::validate(state, input);
     }
     if capability.definition["mcp_tools"].is_array() {
         let steps = input["steps"]
@@ -392,7 +414,7 @@ pub async fn validate_input(state: &AppState, id: uuid::Uuid, input: &Value) -> 
             return Err(ApiError::bad("invalid_mcp_steps"));
         }
         for step in steps {
-            crate::features::connections::artifacts::validate(step)?;
+            crate::features::connections::artifacts::validate(state, step)?;
         }
         return Ok(());
     }
@@ -533,6 +555,18 @@ mod tests {
             })
             .is_err()
         );
+    }
+    #[test]
+    fn authenticated_repository_analysis_requires_explicit_public_visibility() {
+        assert!(require_public_repository(&json!({"private":false})).is_ok());
+        for metadata in [
+            json!({"private":true}),
+            json!({}),
+            json!({"private":null}),
+            json!({"private":"false"}),
+        ] {
+            assert!(require_public_repository(&metadata).is_err());
+        }
     }
     #[test]
     fn detects_only_declared_package_names() {

@@ -1,0 +1,16 @@
+[Unit]
+Description=Hive Local background MCP bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/hive-local run
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

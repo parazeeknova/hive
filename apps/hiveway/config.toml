@@ -9,7 +9,19 @@ dodo_api_url = "https://test.dodopayments.com"
 
 [http]
 concurrency = 32
+# Bursts beyond `concurrency` wait up to queue_wait_ms in a bounded queue before
+# being shed with 503 and Retry-After.
+queue_depth = 512
+queue_wait_ms = 3000
+# Anonymous traffic per client address.
 requests_per_minute = 120
+# Authenticated traffic is limited per credential across replicas (Redis), with a
+# higher per-address flood ceiling so CI agents behind one NAT do not collide.
+credential_requests_per_minute = 600
+authenticated_ip_requests_per_minute = 3000
+rate_limit_redis_timeout_ms = 25
+# Long-polls and task waits that hold no database connection.
+idle_waiters = 1024
 tracked_peers = 4096
 # Allow a 512 KiB connector result plus its JSON-RPC envelope.
 body_bytes = 1048576
@@ -29,10 +41,151 @@ batch_size = 20
 webhook_max_attempts = 20
 execution_timeout_seconds = 60
 stale_after_seconds = 180
+builder_interval_seconds = 2
 
 [cache]
 connected_tool_ttl_seconds = 60
 connected_tool_max_bytes = 65536
+list_ttl_ms = 30000
+discover_ttl_ms = 3600000
+
+[identity]
+challenge_ttl_seconds = 300
+challenges_per_peer_minute = 10
+session_ttl_seconds = 86400
+session_per_call_limit = 1000000
+session_total_limit = 10000000
+api_keys_per_account = 100
+api_key_default_lifetime_seconds = 3600
+api_key_lifetimes_seconds = [3600, 86400, 604800, 2592000, 7776000]
+
+[connectors]
+connections_per_account = 8
+tools_per_connection = 64
+resources_per_connection = 256
+prompts_per_connection = 64
+# Tool, resource and prompt snapshots together.
+snapshot_bytes = 262144
+argument_bytes = 131072
+result_bytes = 524288
+jobs_per_connection = 16
+shared_jobs_per_caller = 4
+online_window_seconds = 60
+claim_timeout_seconds = 35
+# Long-running calls continue as MCP tasks until this deadline.
+job_ttl_seconds = 1800
+call_wait_seconds = 25
+poll_wait_seconds = 20
+fallback_poll_ms = 1000
+task_poll_interval_ms = 2000
+input_request_bytes = 16384
+input_requests_per_job = 4
+
+[mcp]
+subscription_seconds = 300
+subscriptions_per_credential = 4
+subscriptions_per_process = 512
+keepalive_seconds = 25
+
+[discovery]
+default_results = 6
+max_results = 8
+response_bytes = 32768
+catalog_candidates = 32
+catalog_listing = 100
+max_query_terms = 12
+stopwords = [
+  "find",
+  "tool",
+  "tools",
+  "for",
+  "the",
+  "please",
+  "need",
+  "help",
+  "with",
+  "can",
+  "you",
+  "and",
+  "some",
+  "want",
+  "use",
+  "using",
+  "how",
+  "what",
+  "that",
+  "this",
+  "into",
+  "from",
+  "of",
+  "to",
+  "in",
+  "on",
+  "an",
+  "a",
+  "my",
+  "me",
+  "is",
+  "are",
+  "it",
+]
+lexical_weight = 1.0
+# Used only when HIVE_EMBEDDINGS_* is configured.
+semantic_weight = 1.2
+semantic_floor = 0.35
+usage_weight = 0.35
+stack_weight = 0.5
+embedding_batch = 64
+embedding_timeout_ms = 4000
+
+[oauth]
+access_token_ttl_seconds = 3600
+refresh_token_ttl_seconds = 2592000
+code_ttl_seconds = 300
+client_metadata_bytes = 16384
+client_metadata_cache_seconds = 3600
+redirect_uris_per_client = 8
+unused_client_retention_seconds = 2592000
+
+[code_index]
+file_bytes = 262144
+files_per_snapshot = 50000
+manifest_files_per_call = 4000
+blobs_per_upload = 128
+owner_storage_bytes = 1073741824
+snapshots_per_repo = 20
+search_results = 20
+snippets_per_file = 3
+read_lines = 400
+symbols_per_file = 400
+
+[memory]
+entries_per_repo = 500
+title_bytes = 160
+body_bytes = 8192
+tags_per_entry = 8
+recall_results = 20
+
+[workflows]
+# Multi-tool workflows run each step with the caller's own credential.
+max_steps = 12
+max_items = 25
+max_tool_calls = 60
+step_concurrency = 4
+max_depth = 2
+step_wait_seconds = 300
+run_seconds = 900
+call_wait_seconds = 25
+runs_per_owner = 4
+runs_per_process = 128
+run_retention_seconds = 86400
+step_result_bytes = 262144
+definition_bytes = 65536
+workflows_per_owner = 100
+# A tool chain that repeats this often becomes a private workflow (0 disables).
+auto_publish_after = 3
+chain_window_seconds = 900
+tracked_owners = 256
 
 [payment]
 decimals = 6
@@ -55,3 +208,12 @@ artifacts_per_wallet = 100
 json_depth = 16
 json_nodes = 4096
 collection_items = 256
+
+[providers]
+# Upstream MCP calls Hiveway makes with keys saved in the dashboard.
+concurrency = 64
+validation_timeout_seconds = 15
+session_ttl_seconds = 600
+sessions_cached = 4096
+key_bytes = 1024
+connect_retries = 2
