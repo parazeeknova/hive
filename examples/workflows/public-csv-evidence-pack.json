@@ -8,7 +8,7 @@
         "minLength": 1,
         "maxLength": 2000,
         "default": "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv",
-        "description": "Public HTTPS CSV URL. Private-network destinations are blocked.",
+        "description": "Public HTTPS CSV URL. Private-network blocking applies to shared Hive services; caller-owned DuckDB connections use their own network policy.",
         "pattern": "^https://"
       },
       "notes_url": {

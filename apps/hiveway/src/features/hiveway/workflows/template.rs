@@ -37,8 +37,24 @@ fn fail(message: impl Into<String>) -> TemplateError {
 
 const MAX_EXPRESSION: usize = 512;
 const FILTERS: &[&str] = &[
-    "default", "truncate", "json", "sql", "first", "last", "length", "keys", "join", "lines",
-    "lower", "upper", "trim", "pluck", "number", "string", "split",
+    "default",
+    "truncate",
+    "truncate_bytes",
+    "json",
+    "sql",
+    "first",
+    "last",
+    "length",
+    "keys",
+    "join",
+    "lines",
+    "lower",
+    "upper",
+    "trim",
+    "pluck",
+    "number",
+    "string",
+    "split",
 ];
 
 /// One `{{ ... }}` occurrence.
@@ -237,6 +253,18 @@ fn number_arg(arg: Option<&String>) -> Result<usize, TemplateError> {
     arg.and_then(|a| a.trim().parse().ok())
         .ok_or_else(|| fail("filter needs a whole-number argument"))
 }
+fn truncate_bytes(mut s: String, limit: usize) -> String {
+    if s.len() > limit {
+        let marker = if limit >= "…".len() { "…" } else { "" };
+        let mut end = limit - marker.len();
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        s.truncate(end);
+        s.push_str(marker);
+    }
+    s
+}
 fn apply(value: Value, name: &str, arg: Option<&String>) -> Result<Value, TemplateError> {
     Ok(match name {
         "default" => {
@@ -256,6 +284,7 @@ fn apply(value: Value, name: &str, arg: Option<&String>) -> Result<Value, Templa
                 Value::String(s)
             }
         }
+        "truncate_bytes" => Value::String(truncate_bytes(text(&value), number_arg(arg)?)),
         "json" => Value::String(value.to_string()),
         "sql" => Value::String(text(&value).replace('\'', "''")),
         "first" => match value {
@@ -446,6 +475,49 @@ mod tests {
         assert_eq!(
             render(&json!("'{{inputs.v|sql}}'"), &scope)?,
             json!("'it''s''; DROP TABLE x; --'")
+        );
+        Ok(())
+    }
+    #[test]
+    fn byte_truncation_and_research_note_respect_utf8_limits() -> Result<(), TemplateError> {
+        for limit in 0..12 {
+            let result = apply(
+                json!("界🦀abcdef"),
+                "truncate_bytes",
+                Some(&limit.to_string()),
+            )?;
+            assert!(result.as_str().is_some_and(|s| s.len() <= limit));
+        }
+        assert_eq!(
+            apply(json!("fits"), "truncate_bytes", Some(&"4".into()))?,
+            "fits"
+        );
+        let recipe: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/workflows/implementation-research-brief.json"
+        )))
+        .map_err(|_| fail("invalid research example"))?;
+        let save = recipe["steps"]
+            .as_array()
+            .and_then(|steps| steps.iter().find(|step| step["id"] == "save"))
+            .ok_or_else(|| fail("missing save step"))?;
+        let inputs = json!({"task":"🦀".repeat(1000),"library_name":"界".repeat(600),"repo":"local/byte-budget"});
+        let steps = Map::from_iter([
+            ("docs".into(), json!({"text":"界".repeat(3000)})),
+            ("fetch".into(), json!({"text":"🦀".repeat(2000)})),
+        ]);
+        let args = render(&save["arguments"], &scope_with(&inputs, &steps))?;
+        assert!(args["body"].as_str().is_some_and(|s| s.len() <= 8192));
+        assert!(args["title"].as_str().is_some_and(|s| s.len() <= 160));
+        let inputs = json!({"task":"Question","library_name":"Library","repo":"local/byte-budget"});
+        let steps = Map::from_iter([
+            ("docs".into(), json!({"text":"Docs"})),
+            ("fetch".into(), json!({"text":"Web"})),
+        ]);
+        let args = render(&save["arguments"], &scope_with(&inputs, &steps))?;
+        assert_eq!(
+            args["body"],
+            "Question: Question\n\nDocumentation:\nDocs\n\nWeb evidence:\nWeb"
         );
         Ok(())
     }

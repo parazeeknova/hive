@@ -361,6 +361,23 @@ async fn catalog_dependencies(app: &Router, state: &AppState) -> Result {
     );
     Ok(())
 }
+async fn scoped_bootstrap(app: &Router, token: &str) -> Result {
+    let listed = request(
+        app,
+        token,
+        "/mcp",
+        Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})),
+    )
+    .await?;
+    assert!(
+        listed["result"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .iter()
+            .any(|tool| tool["name"] == "call_tool")
+    );
+    Ok(())
+}
 async fn native_scopes(app: &Router, state: &AppState) -> Result {
     for (character, scope, target, args, error) in [
         ('1', "memory:read", "recall", json!({"repo":"global"}), None),
@@ -385,6 +402,13 @@ async fn native_scopes(app: &Router, state: &AppState) -> Result {
             json!({"repo":"github.com/acme/app","path":"src/lib.rs","name":"main"}),
             Some("no_code_index_for_repository_run_sync_code_index"),
         ),
+        (
+            '5',
+            "code:index",
+            "delete_code_index",
+            json!({"repo":"github.com/acme/app"}),
+            None,
+        ),
     ] {
         let token = format!("hwa_{}", character.to_string().repeat(64));
         let id = Uuid::new_v4();
@@ -408,20 +432,24 @@ async fn native_scopes(app: &Router, state: &AppState) -> Result {
         }
         .insert(&state.postgres)
         .await?;
-        let listed = request(
-            app,
-            &token,
-            "/mcp",
-            Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})),
-        )
-        .await?;
-        assert!(
-            listed["result"]["tools"]
-                .as_array()
-                .ok_or("missing tools")?
-                .iter()
-                .any(|tool| tool["name"] == "call_tool")
-        );
+        scoped_bootstrap(app, &token).await?;
+        if scope == "code:index" {
+            let found = call(
+                app,
+                &token,
+                "search_tools",
+                json!({"query":"Delete repository snapshots"}),
+            )
+            .await?;
+            assert!(
+                found["structuredContent"]["tools"]
+                    .as_array()
+                    .is_some_and(|tools| tools
+                        .iter()
+                        .any(|tool| tool["name"] == "delete_code_index")),
+                "{found}"
+            );
+        }
         let response = call(
             app,
             &token,

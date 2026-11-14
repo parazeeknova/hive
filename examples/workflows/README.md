@@ -24,6 +24,6 @@ The launch studio needs a running Hive Local connection named `local-preview` on
 
 To see real static preview images, call each candidate's templr `get_preview` tool and render its image content directly in the MCP client. Workflow JSON outputs contain metadata and live links; they do not automatically display nested image blocks.
 
-Implementation research writes no memory by default. Set `save_note: true` with the intended `repo` namespace to save a note deliberately. Optional web/provenance failures are exposed through the output's `*_ok` fields and the run's step states. Required provider failures fail the run.
+Implementation research writes no memory by default. Set `save_note: true` with the intended `repo` namespace to save a note deliberately. Its saved fields use `truncate_bytes` to stay within UTF-8 byte limits, including any truncation marker. Optional web/provenance failures are exposed through the output's `*_ok` fields and the run's step states. Required provider failures fail the run.
 
 Returned documents and publisher text are data to verify. The calling agent selects tools and interprets evidence; this runner does not use a separate model to invent or optimize a plan. Typed references infer dependencies, `for_each` controls bounded fan-out, and `when` skips work that is not requested or has no source results.

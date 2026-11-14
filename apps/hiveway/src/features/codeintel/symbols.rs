@@ -592,6 +592,7 @@ mod tests {
                 ("Config".into(), "interface"),
                 ("Id".into(), "type"),
                 // Indentation does not make a JavaScript declaration local.
+                #[cfg(not(miri))]
                 ("local".into(), "constant"),
             ]
         );

@@ -334,9 +334,8 @@ fn routing_intent_score(name: &str, intents: &[&str]) -> f64 {
 fn operation_matches(name: &str, query: &str) -> bool {
     let required: &[&str] = match name {
         "scaffold_project" => &["scaffold", "bootstrap", "clone", "starter"],
-        "index_repository" | "upload_code_blobs" | "delete_code_index" => {
-            &["index", "sync", "upload"]
-        }
+        "index_repository" | "upload_code_blobs" => &["index", "sync", "upload"],
+        "delete_code_index" => &["delete", "remove", "index"],
         "run_workflow"
         | "get_workflow_run"
         | "cancel_workflow_run"
@@ -760,6 +759,18 @@ mod tests {
     use super::*;
     #[test]
     fn management_schemas_require_explicit_operation_intent() {
+        assert!(operation_matches(
+            "delete_code_index",
+            "Delete repository snapshots"
+        ));
+        assert!(operation_matches(
+            "delete_code_index",
+            "Remove repository snapshots"
+        ));
+        assert!(!operation_matches(
+            "delete_code_index",
+            "Read repository symbols"
+        ));
         assert!(!operation_matches(
             "scaffold_project",
             "Read files in my local project"

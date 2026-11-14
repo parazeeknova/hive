@@ -499,7 +499,10 @@ pub(super) fn response(mut result: Value, include_steps: bool) -> Value {
         && let Some(run) = result
             .get_mut("structuredContent")
             .and_then(Value::as_object_mut)
-        && run.contains_key("run_id")
+        && (run.contains_key("run_id")
+            || (run.contains_key("status")
+                && run.contains_key("output")
+                && run.contains_key("tool_calls")))
     {
         run.remove("steps");
     }
@@ -835,6 +838,16 @@ mod tests {
         assert_eq!(compact["isError"], true);
         assert_eq!(compact["structuredContent"]["output"], run["output"]);
         assert_eq!(response(envelope.clone(), true), envelope);
+        let inline = result_value(
+            &json!({"status":"completed","output":{"steps":"application data"},"tool_calls":1,"steps":{"fetch":{"text":"intermediate"}}}),
+        );
+        let compact = response(inline.clone(), false);
+        assert!(compact["structuredContent"].get("steps").is_none());
+        assert_eq!(
+            compact["structuredContent"]["output"]["steps"],
+            "application data"
+        );
+        assert_eq!(response(inline.clone(), true), inline);
         let plan = json!({"dry_run":true,"steps":[{"id":"one"}]});
         assert_eq!(response(plan.clone(), false), plan);
     }

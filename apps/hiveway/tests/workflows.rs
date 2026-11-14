@@ -234,6 +234,10 @@ async fn exercise(app: &Router, state: &AppState) -> Result {
         nested["structuredContent"]["tool_calls"], 2,
         "nested calls share the root budget"
     );
+    assert!(
+        nested["structuredContent"]["output"].get("steps").is_none(),
+        "{nested}"
+    );
     let mut constrained = state.clone();
     let mut settings = Settings::from_env()?;
     settings.runtime.workflows.max_tool_calls = 1;

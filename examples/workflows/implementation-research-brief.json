@@ -82,8 +82,8 @@
       "arguments": {
         "repo": "{{inputs.repo}}",
         "kind": "note",
-        "title": "Research: {{inputs.library_name}}",
-        "body": "Question: {{inputs.task}}\n\nDocumentation:\n{{steps.docs.text | truncate: 3000}}\n\nWeb evidence:\n{{steps.fetch.text | truncate: 2000}}",
+        "title": "Research: {{inputs.library_name | truncate_bytes: 150}}",
+        "body": "Question: {{inputs.task | truncate_bytes: 2000}}\n\nDocumentation:\n{{steps.docs.text | truncate_bytes: 4000}}\n\nWeb evidence:\n{{steps.fetch.text | truncate_bytes: 2000}}",
         "tags": ["workflow-research"]
       },
       "when": "{{inputs.save_note}}"
