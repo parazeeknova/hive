@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import type { Transport } from "@modelcontextprotocol/client";
 import { InMemoryTransport, Server } from "@modelcontextprotocol/server";
 
 import type { HiveRpc } from "../../packages/connector/src/hive-rpc";
@@ -169,7 +170,7 @@ test("an expired read is not retried after repair", async () => {
     { ...job, deadline_ms: Date.now() - 1 },
     1
   );
-  expect(fixture.attempts()).toBe(1);
+  expect(fixture.attempts()).toBe(0);
 });
 
 test("application error envelopes are returned without replay", async () => {
@@ -181,3 +182,142 @@ test("application error envelopes are returned without replay", async () => {
   expect(outcome).toMatchObject({ result: { isError: true } });
   expect(fixture.repairs()).toBe(0);
 });
+
+/** Real sessions exercise SDK catalog caching, validation and abort behavior. */
+const replacementUpstream = async (
+  replacement: "invalid" | "failure" | "silent"
+) => {
+  const calls = [0, 0, 0];
+  const lists = [0, 0, 0];
+  const servers: Server[] = [];
+  const transports: Transport[] = [];
+  const connections: Promise<void>[] = [];
+  for (const index of [0, 1, 2]) {
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    const server = new Server(
+      { name: "replacement-fixture", version: "1" },
+      { capabilities: { tools: {} } }
+    );
+    server.setRequestHandler("tools/list", () => {
+      lists[index] = (lists[index] ?? 0) + 1;
+      return {
+        tools: ["confirm", "write"].map((name) => ({
+          inputSchema: { type: "object" as const },
+          name,
+          outputSchema: {
+            properties: { answer: { type: "integer" } },
+            required: ["answer"],
+            type: "object" as const,
+          },
+        })),
+      };
+    });
+    server.setRequestHandler("tools/call", () => {
+      calls[index] = (calls[index] ?? 0) + 1;
+      if (index === 0 || (index === 1 && replacement === "failure")) {
+        throw new Error("session fault");
+      }
+      if (index === 1 && replacement === "silent") {
+        // oxlint-disable-next-line promise/avoid-new -- Deliberately silent upstream; the client must enforce its deadline.
+        return new Promise<never>(() => {});
+      }
+      return {
+        content: [],
+        structuredContent: { answer: index === 1 ? "invalid" : 42 },
+      };
+    });
+    connections.push(server.connect(serverSide));
+    servers.push(server);
+    transports.push(clientSide);
+  }
+  await Promise.all(connections);
+  let index = 0;
+  const upstream = new Upstream({
+    name: "fixture",
+    readOnlyTools: ["confirm"],
+    transport: () => {
+      const next = transports[index];
+      index += 1;
+      if (!next) {
+        throw new Error("Unexpected extra session");
+      }
+      return next;
+    },
+  });
+  await upstream.connect();
+  await upstream.snapshot();
+  return {
+    calls,
+    close: async () => {
+      await upstream.close();
+      await Promise.all(servers.map((server) => server.close()));
+    },
+    lists,
+    upstream,
+  };
+};
+
+test("replacement clients validate retry output against the refreshed catalog", async () => {
+  const fixture = await replacementUpstream("invalid");
+  try {
+    const outcome = await fixture.upstream.run(
+      hive({}).rpc,
+      "connection",
+      { ...job, deadline_ms: Date.now() + 30_000 },
+      1
+    );
+    expect(outcome).toMatchObject({ result: { isError: true } });
+    expect(fixture.calls).toEqual([1, 1, 0]);
+    expect(fixture.lists).toEqual([1, 1, 0]);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("a failed retry repairs before the next unverified tool is dispatched", async () => {
+  const fixture = await replacementUpstream("failure");
+  try {
+    const outcome = await fixture.upstream.run(
+      hive({}).rpc,
+      "connection",
+      { ...job, deadline_ms: Date.now() + 30_000 },
+      1
+    );
+    expect(outcome).toMatchObject({ result: { isError: true } });
+    expect(fixture.calls).toEqual([1, 1, 0]);
+    const next = await fixture.upstream.run(
+      hive({}).rpc,
+      "connection",
+      {
+        ...job,
+        deadline_ms: Date.now() + 30_000,
+        request: { arguments: {}, name: "write" },
+      },
+      1
+    );
+    expect(next).toMatchObject({
+      result: { structuredContent: { answer: 42 } },
+    });
+    expect(fixture.calls).toEqual([1, 1, 1]);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("a silent retry is aborted at the absolute job deadline", async () => {
+  const fixture = await replacementUpstream("silent");
+  try {
+    const started = Date.now();
+    const outcome = await fixture.upstream.run(
+      hive({}).rpc,
+      "connection",
+      { ...job, deadline_ms: started + 2400 },
+      1
+    );
+    expect(outcome).toMatchObject({ cancelled: true });
+    expect(fixture.calls).toEqual([1, 1, 0]);
+    expect(Date.now() - started).toBeLessThan(4000);
+  } finally {
+    await fixture.close();
+  }
+}, 5000);

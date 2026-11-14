@@ -203,6 +203,40 @@ async fn focused_discovery(app: &Router) -> Result {
         pdf["structuredContent"]["tools"][0]["name"], "mcp_tinyfish__fetch_content",
         "{pdf}"
     );
+    connected_discovery(app).await
+}
+async fn connected_discovery(app: &Router) -> Result {
+    call(app, KEY, "register_mcp_connection", json!({"name":"filesystem","tools":[{"name":"read_file","description":"Read local files","inputSchema":{"type":"object"}}]})).await?;
+    let hints = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"filesystem documentation"}),
+    )
+    .await?;
+    assert!(
+        !hints["structuredContent"]["available_to_enable"]
+            .as_array()
+            .ok_or("missing hints")?
+            .iter()
+            .any(|v| v["slug"] == "filesystem"),
+        "{hints}"
+    );
+    let code = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Search code in repository directory src for authentication"}),
+    )
+    .await?;
+    assert!(
+        code["structuredContent"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .iter()
+            .any(|v| v["name"] == "code_search"),
+        "{code}"
+    );
     Ok(())
 }
 async fn catalog_dependencies(app: &Router, state: &AppState) -> Result {

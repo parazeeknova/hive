@@ -156,7 +156,15 @@ fn task_intents(query: &str) -> Vec<&'static str> {
         ("media", has(&["video", "audio", "ffmpeg"])),
         (
             "code",
-            has(&["symbol", "definition", "references", "refactor", "rename"]),
+            has(&[
+                "symbol",
+                "definition",
+                "references",
+                "refactor",
+                "rename",
+                "code",
+                "repository",
+            ]),
         ),
         ("data", has(&["sql", "csv", "parquet"])),
         (
@@ -256,12 +264,22 @@ fn matches_intent(tool: &Value, intents: &[&str], query: &str) -> bool {
         let terms: &[&str] = match *intent {
             "files" => &["filesystem", "folder", "directory", "file"],
             "media" => &["ffmpeg", "video", "audio"],
-            "code" => &["symbol", "definition", "references", "refactor"],
+            "code" => &[
+                "symbol",
+                "definition",
+                "references",
+                "refactor",
+                "rename",
+                "code",
+                "repository",
+            ],
             "data" => &["sql", "csv", "parquet", "analytics"],
             "document" => &["pdf", "markdown", "document"],
-            "templates" => &["template", "inspiration", "design"],
-            "docs" => &["documentation", "library", "framework", "sdk"],
-            "web" => &["research", "web", "browse"],
+            "templates" => &["template", "inspiration", "design", "landing", "website"],
+            "docs" => &["documentation", "docs", "library", "framework", "sdk"],
+            "web" => &[
+                "research", "web", "website", "browse", "monitor", "latest", "recent", "news",
+            ],
             _ => &[],
         };
         terms.iter().any(|term| text.contains(&stem(term)))
@@ -538,6 +556,10 @@ pub(super) async fn search(
         return Err(ApiError::bad("tool_query_too_general"));
     }
     let mut tools = candidates(state, credential, query).await?;
+    let connected_names: Vec<String> = tools
+        .iter()
+        .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+        .collect();
     let intents = task_intents(query);
     tools.retain(|tool| matches_intent(tool, &intents, query));
     let documents: Vec<Document> = tools.iter().map(document).collect();
@@ -598,7 +620,7 @@ pub(super) async fn search(
         .map(|(score, tool, signals)| json!({"name":tool["name"],"score":(score * 1000.0).round() / 1000.0,"signals":signals}))
         .collect();
     let tools: Vec<Value> = ranked.into_iter().map(|(_, tool, _)| tool).collect();
-    let setup = setup_hints(&terms, &names);
+    let setup = setup_hints(&terms, &connected_names);
     let guidance: Vec<_> = integrations::registry().iter().filter(|item| {
         tools.iter().any(|tool| tool["name"].as_str().is_some_and(|name|name.starts_with(&format!("mcp_{}__",item.slug)) || name == format!("hive_{}",item.id.simple())))
     }).map(|item| json!({"integration":item.name,"source":"Hive operator-maintained workflow","guidance":item.guidance})).collect();
@@ -714,6 +736,29 @@ mod tests {
             ),
             "Double Double a number"
         );
+    }
+    #[test]
+    fn recognized_vocabulary_preserves_matching_tools() {
+        let query = "Search code in repository directory src for authentication";
+        for name in ["code_search", "read_code"] {
+            assert!(matches_intent(
+                &json!({"name": name}),
+                &task_intents(query),
+                query
+            ));
+        }
+        for (query, name) in [
+            ("search docs", "mcp_custom__search_docs"),
+            ("rename", "mcp_custom__rename"),
+            ("latest news", "mcp_custom__latest_news"),
+            ("landing", "mcp_custom__landing"),
+        ] {
+            assert!(matches_intent(
+                &json!({"name": name}),
+                &task_intents(query),
+                query
+            ));
+        }
     }
     #[test]
     fn callable_only_dependencies_survive_discovery_filtering() {
