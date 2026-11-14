@@ -59,7 +59,7 @@ docker compose -f docker/hive-local/compose.yaml up --build -d
 
 The worker has an internal-only network. Its only egress is a private HTTPS CONNECT proxy that rejects private, loopback, link-local, reserved and metadata destinations, including redirected requests. Do not attach another external network to the worker. The container has a read-only root, temporary workspace, resource limits and no host data mounts. Each shared call starts a new upstream session. Shared DuckDB uses a read-only empty database and locked configuration; the HTTP extension is bootstrapped over HTTPS before lockdown. Shared MarkItDown accepts HTTPS and data URLs; local file URIs require the user's own helper. Shared services need this one-time operator deployment; catalog publication alone does not provision running upstreams.
 
-Mount the shared connector key owned by root with mode `0600`. The Rust supervisor reads it; package runners and upstreams drop to uid/gid 10001 and cannot read that key. The supervisor capabilities exist only to drop child privileges. Desktop mode uses your normal OS identity.
+Mount the shared connector key owned by root with mode `0600`. The Rust supervisor reads it; package runners and upstreams drop to uid/gid 10001 and cannot read that key. The supervisor capabilities exist only to drop child privileges and terminate its upstream processes between calls. Desktop mode uses your normal OS identity.
 
 ## Verification
 
