@@ -145,6 +145,30 @@ fn intent_score(name: &str, terms: &[String]) -> f64 {
 /// Strong task intents bound relevance when a requested integration is offline.
 /// Generic project/file words in an unrelated upstream description must not turn
 /// a template search into a substitute for local filesystem or media tools.
+fn documentation_task(words: &HashSet<String>) -> bool {
+    let action = [
+        "implement",
+        "integrate",
+        "configure",
+        "add",
+        "use",
+        "migrate",
+    ]
+    .iter()
+    .any(|word| words.contains(&stem(word)));
+    action
+        && integrations::registry()
+            .iter()
+            .find(|item| item.slug == "context7")
+            .is_some_and(|item| {
+                let keywords: HashSet<_> = item
+                    .discovery_keywords
+                    .iter()
+                    .flat_map(|s| tokens(s))
+                    .collect();
+                words.intersection(&keywords).take(2).count() == 2
+            })
+}
 fn task_intents(query: &str) -> Vec<&'static str> {
     let words: HashSet<_> = tokens(query).into_iter().collect();
     let has = |items: &[&str]| items.iter().any(|word| words.contains(&stem(word)));
@@ -179,7 +203,8 @@ fn task_intents(query: &str) -> Vec<&'static str> {
         ),
         (
             "docs",
-            has(&["documentation", "docs", "library", "framework", "sdk"]),
+            has(&["documentation", "docs", "library", "framework", "sdk"])
+                || documentation_task(&words),
         ),
         (
             "web",
@@ -244,13 +269,16 @@ fn matches_intent(tool: &Value, intents: &[&str], query: &str) -> bool {
         ) {
             return *intent == "code" || (*intent == "files" && has("indexed"));
         }
-        if let Some(steps) = tool["_meta"]["dev.hive/requiredTools"].as_array()
-            && steps
+        if let Some(steps) = tool["_meta"]["dev.hive/requiredTools"].as_array() {
+            let matched = steps
                 .iter()
                 .filter_map(Value::as_str)
-                .any(|name| matches_intent(&json!({"name":name}), &[*intent], query))
-        {
-            return true;
+                .any(|name| matches_intent(&json!({"name":name}), &[*intent], query));
+            // Official recipes have known routed dependencies. Their generic file
+            // descriptions must not override those dependencies' actual domains.
+            if matched || tool["_meta"]["dev.hive/official"] == true {
+                return matched;
+            }
         }
         // Preserve newly published/custom tools when their own names/descriptions
         // fit the intent. This is relevance scoring, never authorization or trust.
@@ -736,6 +764,34 @@ mod tests {
             ),
             "Double Double a number"
         );
+    }
+    #[test]
+    fn official_workflows_follow_dependencies_and_inferred_docs_intent() {
+        let workflow = json!({"name":"workflow_dataset_profile","description":"Profile files and inspect local-looking file names","_meta":{"dev.hive/official":true,"dev.hive/requiredTools":["mcp_duckdb__execute_query"]}});
+        let query = "Read files in my local project and list its folders";
+        assert!(!matches_intent(&workflow, &task_intents(query), query));
+        let query = "Analyze CSV files using SQL";
+        assert!(matches_intent(&workflow, &task_intents(query), query));
+        let query = "How do I implement authentication middleware in Next.js?";
+        let intents = task_intents(query);
+        assert!(intents.contains(&"docs"));
+        assert!(!matches_intent(
+            &json!({"name":"mcp_tinyfish__get_dataset_rows"}),
+            &intents,
+            query
+        ));
+        assert!(matches_intent(
+            &json!({"name":"mcp_context7__resolve-library-id"}),
+            &intents,
+            query
+        ));
+        // Unknown/user workflows retain their own relevance text.
+        let custom = json!({"name":"workflow_custom","description":"Read local files","_meta":{"dev.hive/requiredTools":["hive_unknown"]}});
+        assert!(matches_intent(
+            &custom,
+            &task_intents("Read local files"),
+            "Read local files"
+        ));
     }
     #[test]
     fn recognized_vocabulary_preserves_matching_tools() {

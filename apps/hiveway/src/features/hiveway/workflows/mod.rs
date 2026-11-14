@@ -357,7 +357,7 @@ impl Stored {
                 steps.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" → "),
                 json!({"description": self.description}),
             ),
-            "_meta": {"dev.hive/requiredTools": steps},
+            "_meta": {"dev.hive/requiredTools": steps, "dev.hive/official": self.owner == OFFICIAL},
             "inputSchema": inputs,
             "annotations": {"readOnlyHint": read, "destructiveHint": !read, "idempotentHint": read, "openWorldHint": true, "title": self.name},
         })
@@ -710,7 +710,7 @@ pub fn native_tools(state: &AppState, c: &Credential) -> Vec<Value> {
     });
     tools.push(super::tools::tool(
         "run_workflow",
-        &format!("Run several Hive tools as one workflow in a single call: a saved workflow (workflow_<name>) or an inline definition. Steps run in order; steps that do not depend on each other run concurrently. Pass data between steps with templates in arguments: {{{{inputs.x}}}}, {{{{steps.<id>.text}}}} (text result), {{{{steps.<id>.json.<path>}}}} (structured result), filters like {{{{steps.a.text | truncate: 4000}}}}, | sql (escape for SQL strings), | json, | default: \"x\", | split, | pluck: field, | join: \", \", | length. Use when to skip a step and for_each to repeat it per list item ({{{{item}}}}). Each step uses your own credential and connections, including Hive Local tools. dry_run validates and shows the plan without calling anything. Long runs return a run_id for get_workflow_run. Up to {} steps and {} tool calls per run. Chains you repeat are saved as private workflows automatically.", limits.max_steps, limits.max_tool_calls),
+        &format!("Run several Hive tools as one workflow in a single call: a saved workflow (workflow_<name>) or an inline definition. Choose available tools and inspect their input schemas with search_tools before constructing the plan. Dependencies are inferred from result references; independent steps run concurrently. Pass data between steps with templates in arguments: {{{{inputs.x}}}}, {{{{steps.<id>.text}}}} (text result), {{{{steps.<id>.json.<path>}}}} (structured result), filters like {{{{steps.a.text | truncate: 4000}}}}, | sql (escape for SQL strings), | json, | default: \"x\", | split, | pluck: field, | join: \", \", | length. Use when to skip a step and for_each to repeat it per list item ({{{{item}}}}). Each step uses your own credential and connections, including Hive Local tools. Use on_error=continue for optional steps; required failures stop dependent steps. dry_run validates the graph and inputs without calling tools; availability and permissions are enforced during execution. Long runs return a run_id for get_workflow_run. Up to {} steps and {} tool calls per run. Chains you repeat are saved as private workflows automatically.", limits.max_steps, limits.max_tool_calls),
         json!({"workflow":{"type":"string","description":"workflow_<name> or workflow id"},"definition":definition,"inputs":{"type":"object"},"dry_run":{"type":"boolean"},"wait_seconds":{"type":"integer","minimum":0,"maximum":limits.call_wait_seconds}}),
         json!([]),
         false,

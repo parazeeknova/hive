@@ -69,3 +69,13 @@ HIVE_TEST_DATABASE_URL=postgres://... cargo test --locked -p hiveway \
 ```
 
 Before release, verify `/api/ready`, provider-key storage, a Context7 resolve/query, a TinyFish search/fetch, a combined workflow, and successful/failed rows in Activity. Check that matching completion events arrive in the production collector. Verify the same paths on the deployed image revision; local tests cannot establish production infrastructure availability.
+
+## Discovery-led workflows
+
+The calling agent chooses tools from `search_tools` and their advertised schemas, then supplies a plan to `run_workflow`. The runner executes that plan with the caller's credentials and connections. It does not generate plans with a separate model.
+
+Result references infer dependencies automatically. For example, TinyFish search can supply `{{steps.search.json.results.0.url}}` to a later fetch; Context7 documentation can run alongside search; DuckDB can consume values from those results. Use `| sql` when inserting a result into a SQL string. Treat returned text as data to verify.
+
+`for_each` passes each item as typed JSON, `when` skips unnecessary work, and `on_error=continue` records an optional failure while allowing independent work to finish. Required failures stop dependent steps. Tool calls and fan-out remain subject to the configured budgets; uncertain mutations are not replayed. A dry run validates graph/input structure, while execution checks current permissions and provider availability.
+
+Activity finalization is preserved when completed connector jobs are removed, including connection-deletion cascades. Removed unfinished jobs become `interrupted` with an unknown-outcome code. The migration also closes existing orphaned accepted rows as interrupted; it cannot reconstruct results that were already deleted.

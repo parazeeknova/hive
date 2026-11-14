@@ -203,7 +203,48 @@ async fn focused_discovery(app: &Router) -> Result {
         pdf["structuredContent"]["tools"][0]["name"], "mcp_tinyfish__fetch_content",
         "{pdf}"
     );
+    online_dataset_discovery(app).await?;
     connected_discovery(app).await
+}
+async fn online_dataset_discovery(app: &Router) -> Result {
+    let registered=call(app,KEY,"register_mcp_connection",json!({"name":"duckdb","tools":[{"name":"execute_query","description":"Query CSV files using SQL","inputSchema":{"type":"object"}}]})).await?;
+    let sql = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Analyze CSV files using SQL"}),
+    )
+    .await?;
+    assert!(
+        sql["structuredContent"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .iter()
+            .any(|v| v["name"] == "workflow_dataset_profile"),
+        "{sql}"
+    );
+    let files = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Read files in my local project and list its folders"}),
+    )
+    .await?;
+    assert!(
+        files["structuredContent"]["tools"]
+            .as_array()
+            .ok_or("missing tools")?
+            .is_empty(),
+        "{files}"
+    );
+    call(
+        app,
+        KEY,
+        "disconnect_mcp",
+        json!({"connection_id":registered["structuredContent"]["id"]}),
+    )
+    .await?;
+    Ok(())
 }
 async fn connected_discovery(app: &Router) -> Result {
     call(app, KEY, "register_mcp_connection", json!({"name":"filesystem","tools":[{"name":"read_file","description":"Read local files","inputSchema":{"type":"object"}}]})).await?;
@@ -447,8 +488,10 @@ async fn check(app: &Router, state: &AppState) -> Result {
     task_reconciliation(state).await?;
     shared_readiness(state).await?;
     upstream_error_privacy(state).await?;
+    removed_task_activity(app, state).await?;
     reconciliation(state, &run["structuredContent"]["run_id"]).await?;
-    pagination(app, state).await
+    pagination(app, state).await?;
+    activity_migration_roundtrip(state).await
 }
 async fn shared_readiness(state: &AppState) -> Result {
     let statuses = hiveway::features::connections::required_shared_health(state).await?;
@@ -565,6 +608,109 @@ async fn task_reconciliation(state: &AppState) -> Result {
         assert!(rows.iter().any(|v| v["id"] == id.to_string()
             && v["state"] == expected
             && v["task_id"] == task.to_string()));
+    }
+    Ok(())
+}
+async fn activity_migration_roundtrip(state: &AppState) -> Result {
+    use sea_orm_migration::MigratorTrait;
+    hiveway::migrations::Migrator::down(&state.postgres, Some(1)).await?;
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("authorization", format!("Bearer {KEY}").parse()?);
+    let credential = identity::authenticate(state, &headers, "").await?;
+    let task = Uuid::new_v4();
+    let event = hiveway::features::tool_activity::Call::start(
+        state,
+        &credential,
+        "mcp_removed__read",
+        &headers,
+    )
+    .await;
+    let id = event.id;
+    event
+        .finish(
+            state,
+            &json!({"structuredContent":{"task":{"taskId":task,"status":"working"}}}),
+            None,
+            Some(hiveway::features::tool_activity::Lifecycle::Task(task)),
+        )
+        .await;
+    hiveway::database::migrate(&state.postgres).await?;
+    let row = state
+        .postgres
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT state,error_code FROM mcp_activity WHERE id=$1",
+            vec![id.into()],
+        ))
+        .await?
+        .ok_or("missing orphan activity")?;
+    assert_eq!(row.try_get::<String>("", "state")?, "interrupted");
+    assert_eq!(
+        row.try_get::<String>("", "error_code")?,
+        "execution_outcome_unknown"
+    );
+    Ok(())
+}
+async fn removed_task_activity(app: &Router, state: &AppState) -> Result {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert("authorization", format!("Bearer {KEY}").parse()?);
+    let credential = identity::authenticate(state, &headers, "").await?;
+    for (index, (status, result, expected)) in [
+        (
+            "completed",
+            json!({"isError":false,"structuredContent":{"isError":true}}),
+            "succeeded",
+        ),
+        ("completed", json!({"isError":true}), "failed"),
+        ("failed", json!({}), "failed"),
+        ("cancelled", json!({}), "failed"),
+        ("working", json!({}), "interrupted"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let registered=call(app,KEY,"register_mcp_connection",json!({"name":format!("removal-{index}"),"tools":[{"name":"read","inputSchema":{"type":"object"}}]})).await?;
+        let connection: Uuid = registered["structuredContent"]["id"]
+            .as_str()
+            .ok_or("missing connection")?
+            .parse()?;
+        let task = Uuid::new_v4();
+        state.postgres.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+            "INSERT INTO mcp_jobs(id,connection_id,request,expires_at,caller,status,result,created_at,updated_at) VALUES($1,$2,'{}',3000000000,$3,$4,$5,0,1)",
+            vec![task.into(),connection.into(),credential.wallet.clone().into(),status.into(),result.into()],
+        )).await?;
+        let event = hiveway::features::tool_activity::Call::start(
+            state,
+            &credential,
+            "mcp_removal__read",
+            &headers,
+        )
+        .await;
+        let id = event.id;
+        event
+            .finish(
+                state,
+                &json!({"structuredContent":{"task":{"taskId":task,"status":"working"}}}),
+                None,
+                Some(hiveway::features::tool_activity::Lifecycle::Task(task)),
+            )
+            .await;
+        let disconnected = call(
+            app,
+            KEY,
+            "disconnect_mcp",
+            json!({"connection_id":connection}),
+        )
+        .await?;
+        assert_eq!(disconnected["isError"], false, "{disconnected}");
+        let rows = hiveway::features::tool_activity::list(state, &credential, false, None).await?;
+        let row = rows
+            .iter()
+            .find(|v| v["id"] == id.to_string())
+            .ok_or("missing removed activity")?;
+        assert_eq!(row["state"], expected, "{row}");
+        assert!(row["completed_at"].is_number());
+        assert_eq!(row["error_code"].is_null(), expected == "succeeded");
     }
     Ok(())
 }

@@ -101,7 +101,8 @@ async fn orchestrates_native_and_connected_tools_and_publishes_patterns() -> Res
         workflows::sync_official(&state).await?;
         workflows::sync_official(&state).await?;
         let app = hiveway::api::router().with_state(state.clone());
-        exercise(&app, &state).await
+        exercise(&app, &state).await?;
+        discovery_led_chain(&app).await
     }
     .await;
     db.close().await?;
@@ -326,5 +327,95 @@ async fn cancellation(app: &Router, state: &AppState, connection: &str) -> Resul
         );
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
+    Ok(())
+}
+
+async fn discovery_led_chain(app: &Router) -> Result {
+    let token = "hwa_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let source=rpc(app,token,"register_mcp_connection",json!({"name":"smart-source","tools":[{"name":"lookup","description":"qa_dynamic_producer URL records","inputSchema":{"type":"object"}}]})).await?;
+    let sink=rpc(app,token,"register_mcp_connection",json!({"name":"smart-sink","tools":[{"name":"fetch","description":"qa_dynamic_consumer URL reader","inputSchema":{"type":"object","properties":{"url":{"type":"string"},"sequence":{"type":"integer"}},"required":["url","sequence"]}}]})).await?;
+    let find = |query| rpc(app, token, "search_tools", json!({"query":query}));
+    let producers = find("qa_dynamic_producer").await?;
+    let consumers = find("qa_dynamic_consumer").await?;
+    let source_name = producers["structuredContent"]["tools"]
+        .as_array()
+        .ok_or("missing producer results")?
+        .iter()
+        .find(|t| t["name"] == "mcp_smart-source__lookup")
+        .ok_or("producer not discovered")?["name"]
+        .clone();
+    let sink_name = consumers["structuredContent"]["tools"]
+        .as_array()
+        .ok_or("missing consumer results")?
+        .iter()
+        .find(|t| t["name"] == "mcp_smart-sink__fetch")
+        .ok_or("consumer not discovered")?["name"]
+        .clone();
+    let definition = json!({"steps":[
+        {"id":"search","tool":source_name,"arguments":{"query":"{{inputs.query}}"}},
+        {"id":"context","tool":"recall","arguments":{"repo":"global"}},
+        {"id":"fetch","tool":sink_name,"for_each":"{{steps.search.json.results}}","when":"{{item.enabled}}","arguments":{"url":"{{item.url}}","sequence":"{{index}}"}},
+        {"id":"optional","tool":"mcp_unavailable__read","on_error":"continue"}
+    ],"output":{"items":"{{steps.fetch.json}}","optional_ok":"{{steps.optional.ok}}"}});
+    let dry = rpc(
+        app,
+        token,
+        "run_workflow",
+        json!({"definition":definition,"dry_run":true,"inputs":{"query":"example"}}),
+    )
+    .await?;
+    assert_eq!(dry["structuredContent"]["valid"], true, "{dry}");
+    let worker_app = app.clone();
+    let source_id = source["structuredContent"]["id"].clone();
+    let sink_id = sink["structuredContent"]["id"].clone();
+    let worker = tokio::spawn(async move {
+        let source = rpc(
+            &worker_app,
+            token,
+            "poll_mcp",
+            json!({"connection_id":source_id,"wait_seconds":5}),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let job = &source["structuredContent"]["job"];
+        assert_eq!(job["request"]["arguments"]["query"], "example");
+        let records = json!({"results":[{"url":"https://example.com/a","enabled":true},{"url":"https://example.com/skipped","enabled":false},{"url":"https://example.com/b","enabled":true}]});
+        rpc(&worker_app,token,"complete_mcp",json!({"connection_id":source_id,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":records.to_string()}]}})).await.map_err(|e|e.to_string())?;
+        for _ in 0..2 {
+            let claimed = rpc(
+                &worker_app,
+                token,
+                "poll_mcp",
+                json!({"connection_id":sink_id,"wait_seconds":5}),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            let job = &claimed["structuredContent"]["job"];
+            let args = &job["request"]["arguments"];
+            assert!(
+                args["url"]
+                    .as_str()
+                    .is_some_and(|u| u == "https://example.com/a" || u == "https://example.com/b")
+            );
+            assert!(args["sequence"].is_number());
+            rpc(&worker_app,token,"complete_mcp",json!({"connection_id":sink_id,"job_id":job["id"],"lease":job["lease"],"result":{"content":[{"type":"text","text":args.to_string()}],"structuredContent":args}})).await.map_err(|e|e.to_string())?;
+        }
+        Ok::<(), String>(())
+    });
+    let run = rpc(
+        app,
+        token,
+        "run_workflow",
+        json!({"definition":definition,"inputs":{"query":"example"},"wait_seconds":5}),
+    )
+    .await?;
+    worker.await?.map_err(|e| format!("dynamic worker: {e}"))?;
+    let r = &run["structuredContent"];
+    assert_eq!(r["status"], "completed", "{r}");
+    assert_eq!(r["output"]["items"][0]["url"], "https://example.com/a");
+    assert!(r["output"]["items"][1].is_null());
+    assert_eq!(r["output"]["items"][2]["sequence"], 2);
+    assert_eq!(r["output"]["optional_ok"], false);
+    assert_eq!(r["tool_calls"], 5);
     Ok(())
 }
