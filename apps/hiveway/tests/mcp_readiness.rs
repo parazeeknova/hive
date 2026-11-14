@@ -147,6 +147,62 @@ async fn discovery(app: &Router) -> Result {
             .iter()
             .any(|v| v["slug"] == "duckdb" && v["shared_status"] == "offline")
     );
+    focused_discovery(app).await
+}
+async fn focused_discovery(app: &Router) -> Result {
+    for (query, slug) in [
+        (
+            "Read files in my local project and list its folders",
+            "filesystem",
+        ),
+        ("Compress a local video and extract audio", "ffmpeg"),
+        (
+            "Analyze a CSV dataset using SQL and summarize totals",
+            "duckdb",
+        ),
+    ] {
+        let result = call(app, KEY, "search_tools", json!({"query":query})).await?;
+        let result = &result["structuredContent"];
+        assert!(
+            result["tools"]
+                .as_array()
+                .ok_or("missing tools")?
+                .is_empty(),
+            "{result}"
+        );
+        assert!(
+            result["available_to_enable"]
+                .as_array()
+                .ok_or("missing setup hints")?
+                .iter()
+                .any(|hint| hint["slug"] == slug)
+        );
+    }
+    let code = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Find a function definition and its references before changing the code"}),
+    )
+    .await?;
+    assert!(
+        matches!(
+            code["structuredContent"]["tools"][0]["name"].as_str(),
+            Some("find_symbol" | "find_references" | "workflow_code_change_brief" | "code_search")
+        ),
+        "{code}"
+    );
+    let pdf = call(
+        app,
+        KEY,
+        "search_tools",
+        json!({"query":"Convert a public PDF document into markdown"}),
+    )
+    .await?;
+    assert_eq!(
+        pdf["structuredContent"]["tools"][0]["name"], "mcp_tinyfish__fetch_content",
+        "{pdf}"
+    );
     Ok(())
 }
 async fn catalog_dependencies(app: &Router, state: &AppState) -> Result {

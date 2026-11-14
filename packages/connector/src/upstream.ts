@@ -146,6 +146,8 @@ export interface UpstreamOptions {
   transport: () => Transport;
   /** Probe for the 2026-07-28 protocol before falling back to 2025 initialize. */
   negotiate?: boolean;
+  /** Explicitly verified by the operator, never inferred from an upstream hint. */
+  readOnlyTools?: readonly string[];
   /** Called when the upstream reports that its tools, resources or prompts changed. */
   onChanged?: () => void;
 }
@@ -153,7 +155,8 @@ export interface UpstreamOptions {
 /**
  * One upstream MCP server behind a connector. Server-to-client elicitation is
  * relayed to the Hive caller, progress and cancellation flow both ways, and a
- * failed call heals the session without ever repeating the call.
+ * failed call heals the session. Only explicitly verified read-only tools may
+ * be retried once; mutations and unknown operations are never repeated.
  */
 export class Upstream {
   client: Client;
@@ -188,7 +191,7 @@ export class Upstream {
   async connect() {
     await this.client.connect(this.options.transport());
   }
-  /** Replace the session after a failure. The failed call is never repeated. */
+  /** Replace the session after a failure; retry decisions belong to run(). */
   async repair() {
     await this.client.close().catch(ignore);
     this.client = this.create();
@@ -225,6 +228,12 @@ export class Upstream {
       resources: resources as unknown as Record<string, unknown>[],
       tools: tools as unknown as Record<string, unknown>[],
     };
+  }
+  private isReadOnlyTool(method: string, job: ClaimedJob) {
+    return (
+      method === "tools/call" &&
+      this.options.readOnlyTools?.includes(job.request.name ?? "") === true
+    );
   }
   /** Execute one claimed job against the upstream. */
   async run(
@@ -298,8 +307,57 @@ export class Upstream {
           result: cancelledResult as unknown as Record<string, unknown>,
         };
       }
-      // Heal a dead upstream session; the failed call is reported once and never repeated.
-      await this.repair().catch(ignore);
+      const retryReadOnly = this.isReadOnlyTool(method, job);
+      // Do not print exception messages: upstream failures may contain credentials
+      // or document contents. These fields are sufficient to correlate the fault.
+      console.error(
+        JSON.stringify({
+          connection: this.options.name,
+          event: "upstream_request_failed",
+          job_id: job.id,
+          method,
+          retry_read_only: retryReadOnly,
+        })
+      );
+      const repaired = await this.repair().then(
+        () => true,
+        () => false
+      );
+      if (
+        retryReadOnly &&
+        repaired &&
+        !controller.signal.aborted &&
+        Date.now() < deadline - 2000
+      ) {
+        try {
+          const result = await this.client.callTool(
+            {
+              arguments: job.request.arguments ?? {},
+              name: job.request.name ?? "",
+            },
+            {
+              ...options,
+              maxTotalTimeout: Math.max(1, deadline - Date.now() - 2000),
+            }
+          );
+          console.error(
+            JSON.stringify({
+              connection: this.options.name,
+              event: "upstream_read_recovered",
+              job_id: job.id,
+            })
+          );
+          return { result: result as unknown as Record<string, unknown> };
+        } catch {
+          // One recovery attempt only; never replay application-level tool errors.
+        }
+      }
+      if (controller.signal.aborted) {
+        return {
+          cancelled: true,
+          result: cancelledResult as unknown as Record<string, unknown>,
+        };
+      }
       if (method === "tools/call") {
         return { result: failure as unknown as Record<string, unknown> };
       }

@@ -91,3 +91,93 @@ test("a caller cancellation during input aborts the upstream call", async () => 
     await server.close();
   }
 });
+
+/** A deterministic transport fault without invoking or logging real provider data. */
+const faultingUpstream = (readOnlyTools: string[], failures: number) => {
+  let attempts = 0;
+  let repairs = 0;
+  const upstream = new Upstream({
+    name: "fixture",
+    readOnlyTools,
+    transport: () => InMemoryTransport.createLinkedPair()[0],
+  });
+  upstream.client.callTool = () => {
+    attempts += 1;
+    if (attempts <= failures) {
+      return Promise.reject(
+        new Error("sensitive-provider-error-must-not-be-logged")
+      );
+    }
+    return Promise.resolve({ content: [{ text: "recovered", type: "text" }] });
+  };
+  upstream.repair = () => {
+    repairs += 1;
+    return Promise.resolve();
+  };
+  return { attempts: () => attempts, repairs: () => repairs, upstream };
+};
+
+test("one operator-verified read retries after session repair", async () => {
+  const fixture = faultingUpstream(["confirm"], 1);
+  const { rpc } = hive({});
+  const outcome = await fixture.upstream.run(
+    rpc,
+    "connection",
+    { ...job, deadline_ms: Date.now() + 30_000 },
+    1
+  );
+  expect(outcome).toMatchObject({
+    result: { content: [{ text: "recovered", type: "text" }] },
+  });
+  expect(fixture.attempts()).toBe(2);
+  expect(fixture.repairs()).toBe(1);
+});
+
+test("mutations and unverified tools are never repeated", async () => {
+  const fixture = faultingUpstream([], 1);
+  const { rpc } = hive({});
+  const outcome = await fixture.upstream.run(
+    rpc,
+    "connection",
+    { ...job, deadline_ms: Date.now() + 30_000 },
+    1
+  );
+  expect(outcome).toMatchObject({ result: { isError: true } });
+  expect(fixture.attempts()).toBe(1);
+  expect(fixture.repairs()).toBe(1);
+});
+
+test("a read retry has a hard one-attempt ceiling", async () => {
+  const fixture = faultingUpstream(["confirm"], 3);
+  const { rpc } = hive({});
+  const outcome = await fixture.upstream.run(
+    rpc,
+    "connection",
+    { ...job, deadline_ms: Date.now() + 30_000 },
+    1
+  );
+  expect(outcome).toMatchObject({ result: { isError: true } });
+  expect(fixture.attempts()).toBe(2);
+});
+
+test("an expired read is not retried after repair", async () => {
+  const fixture = faultingUpstream(["confirm"], 1);
+  const { rpc } = hive({});
+  await fixture.upstream.run(
+    rpc,
+    "connection",
+    { ...job, deadline_ms: Date.now() - 1 },
+    1
+  );
+  expect(fixture.attempts()).toBe(1);
+});
+
+test("application error envelopes are returned without replay", async () => {
+  const fixture = faultingUpstream(["confirm"], 0);
+  fixture.upstream.client.callTool = () =>
+    Promise.resolve({ content: [], isError: true });
+  const { rpc } = hive({});
+  const outcome = await fixture.upstream.run(rpc, "connection", job, 1);
+  expect(outcome).toMatchObject({ result: { isError: true } });
+  expect(fixture.repairs()).toBe(0);
+});

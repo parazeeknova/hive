@@ -14,7 +14,7 @@ services:
     mem_limit: 1536m
     cpus: 2
     tmpfs:
-      - /tmp:rw,nosuid,nodev,size=1g,uid=10001,gid=10001
+      - /tmp:rw,nosuid,nodev,exec,size=1g,uid=10001,gid=10001
     environment:
       HIVE_SHARED_SANDBOX: "1"
       HIVE_SHARED_PROXY: http://egress:3128

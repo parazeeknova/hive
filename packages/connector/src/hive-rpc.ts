@@ -19,6 +19,11 @@ export interface HiveConfig {
     slug: string;
     name: string;
     byok: boolean;
+    /** Operator-verified hints; upstream descriptions/annotations are not retry authority. */
+    annotations?: Record<
+      string,
+      { readOnlyHint?: boolean; destructiveHint?: boolean }
+    >;
     upstream: {
       url: string;
       auth: "bearer" | "header";
