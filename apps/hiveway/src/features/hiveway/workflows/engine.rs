@@ -492,6 +492,22 @@ fn result_value(run: &Value) -> Value {
     };
     json!({"content":[{"type":"text","text":text}],"structuredContent":run,"isError":failed})
 }
+
+/// Keep intermediate previews in storage; callers request diagnostics explicitly.
+pub(super) fn response(mut result: Value, include_steps: bool) -> Value {
+    if !include_steps
+        && let Some(run) = result
+            .get_mut("structuredContent")
+            .and_then(Value::as_object_mut)
+        && (run.contains_key("run_id")
+            || (run.contains_key("status")
+                && run.contains_key("output")
+                && run.contains_key("tool_calls")))
+    {
+        run.remove("steps");
+    }
+    result
+}
 /// Run nested workflows inline, without a run record of their own.
 async fn inline(
     state: &AppState,
@@ -813,6 +829,28 @@ pub fn definition_text(definition: &Definition) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_responses_preserve_outputs_errors_and_non_run_shapes() {
+        let run = json!({"status":"failed","run_id":"fixture","output":{"report":"selected"},"steps":{"fetch":{"text":"large intermediate"}},"error":"Failed"});
+        let envelope = result_value(&run);
+        let compact = response(envelope.clone(), false);
+        assert!(compact["structuredContent"].get("steps").is_none());
+        assert_eq!(compact["isError"], true);
+        assert_eq!(compact["structuredContent"]["output"], run["output"]);
+        assert_eq!(response(envelope.clone(), true), envelope);
+        let inline = result_value(
+            &json!({"status":"completed","output":{"steps":"application data"},"tool_calls":1,"steps":{"fetch":{"text":"intermediate"}}}),
+        );
+        let compact = response(inline.clone(), false);
+        assert!(compact["structuredContent"].get("steps").is_none());
+        assert_eq!(
+            compact["structuredContent"]["output"]["steps"],
+            "application data"
+        );
+        assert_eq!(response(inline.clone(), true), inline);
+        let plan = json!({"dry_run":true,"steps":[{"id":"one"}]});
+        assert_eq!(response(plan.clone(), false), plan);
+    }
     #[test]
     fn views_expose_text_and_structured_results() {
         let mcp = json!({"content":[{"type":"text","text":"{\"rows\":[[1]]}"}]});

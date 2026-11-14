@@ -96,6 +96,11 @@ wat = "^1.262.0"
 chacha20poly1305 = { version = "^0.10.1", default-features = false, features = [
   "alloc",
 ] }
+tree-sitter = "0.27.2"
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-python = "0.25.0"
 
 [lints]
 workspace = true

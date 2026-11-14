@@ -1,7 +1,6 @@
-//! Lightweight, dependency-free source analysis: language detection, top-level
-//! symbol extraction and identifier-aware search text. Heuristics are line based
-//! on purpose; they are fast, bounded and good enough to answer "where is X
-//! defined" across many languages without shipping a parser per language.
+//! Language detection, bounded symbol extraction and identifier-aware search.
+//! Rust, JavaScript/TypeScript and Python use syntax trees for valid source;
+//! other languages and incomplete source retain the line-based fallback.
 
 /// Language for a repository path, by file name first and extension second.
 #[must_use]
@@ -416,6 +415,9 @@ fn shell(line: &str) -> Option<(String, &'static str)> {
 /// Extract up to `max` definitions with 1-based line numbers.
 #[must_use]
 pub fn extract(language: &str, content: &str, max: usize) -> Vec<Symbol> {
+    if let Some(definitions) = super::syntax::definitions(language, content, max) {
+        return definitions;
+    }
     let mut symbols = Vec::new();
     for (index, raw) in content.lines().enumerate() {
         if symbols.len() >= max {
@@ -589,6 +591,9 @@ mod tests {
                 ("handler".into(), "function"),
                 ("Config".into(), "interface"),
                 ("Id".into(), "type"),
+                // Indentation does not make a JavaScript declaration local.
+                #[cfg(not(miri))]
+                ("local".into(), "constant"),
             ]
         );
         assert_eq!(

@@ -282,6 +282,11 @@ pub struct Memory {
     pub body_bytes: usize,
     pub tags_per_entry: usize,
     pub recall_results: u64,
+    #[serde(default = "memory_response_bytes")]
+    pub response_bytes: usize,
+}
+const fn memory_response_bytes() -> usize {
+    16_384
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -460,6 +465,7 @@ impl Memory {
             || !(64..=65_536).contains(&self.body_bytes)
             || self.tags_per_entry > 64
             || !(1..=200).contains(&self.recall_results)
+            || !(1024..=262_144).contains(&self.response_bytes)
         {
             bail!("invalid memory limits");
         }

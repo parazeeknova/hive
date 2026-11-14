@@ -12,6 +12,7 @@
 //! against the requested commit, or the latest ready snapshot.
 pub mod overview;
 pub mod symbols;
+mod syntax;
 
 use crate::{
     features::{
@@ -619,6 +620,47 @@ async fn find_references(state: &AppState, c: &Credential, args: &Value) -> ApiR
     )
 }
 
+async fn code_context(state: &AppState, c: &Credential, args: &Value) -> ApiResult<Value> {
+    let (repo, commit, _) = snapshot(state, c, args).await?;
+    let path = args["path"]
+        .as_str()
+        .filter(|p| valid_path(p))
+        .ok_or_else(|| ApiError::bad("invalid_code_path"))?;
+    let name = args["name"]
+        .as_str()
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && n.len() <= 200)
+        .ok_or_else(|| ApiError::bad("invalid_symbol_name"))?
+        .to_owned();
+    let row = state.postgres.query_one_raw(statement(
+        "SELECT b.content FROM code_files f JOIN code_blobs b ON b.owner=f.owner AND b.sha=f.sha WHERE f.owner=$1 AND f.repo=$2 AND f.commit_sha=$3 AND f.path=$4",
+        vec![c.wallet.clone().into(), repo.clone().into(), commit.clone().into(), path.into()],
+    )).await?.ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "code_file_not_indexed"))?;
+    let content: String = row.try_get("", "content")?;
+    let language = symbols::language(path);
+    let line = match args.get("start_line") {
+        None => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .filter(|n| *n > 0)
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| ApiError::bad("invalid_code_start_line"))?,
+        ),
+    };
+    let max_lines = limits(state).read_lines.min(200);
+    let mut result = tokio::task::spawn_blocking(move || {
+        syntax::context(language, &content, &name, line, max_lines)
+    })
+    .await
+    .map_err(|_| ApiError::bad("code_context_analysis_failed"))?
+    .map_err(ApiError::bad)?;
+    result["repo"] = json!(repo);
+    result["commit"] = json!(commit);
+    result["path"] = json!(path);
+    Ok(result)
+}
+
 async fn read_code(state: &AppState, c: &Credential, args: &Value) -> ApiResult<Value> {
     let limits = limits(state);
     let (repo, commit, _) = snapshot(state, c, args).await?;
@@ -693,7 +735,8 @@ async fn repo_overview(state: &AppState, c: &Credential, args: &Value) -> ApiRes
             "status": r.try_get::<String>("", "status")?,
             "updated_at": r.try_get::<i64>("", "updated_at")?,
         }))).collect::<ApiResult<Vec<_>>>()?,
-        "memories": memories,
+        "memories": memories.memories,
+        "memories_truncated": memories.truncated,
     }))
 }
 
@@ -776,6 +819,7 @@ pub const TOOLS: &[(&str, &str)] = &[
     ("code_search", "code:read"),
     ("find_symbol", "code:read"),
     ("find_references", "code:read"),
+    ("code_context", "code:read"),
     ("read_code", "code:read"),
     ("repo_overview", "code:read"),
     ("list_code_indexes", "code:read"),
@@ -791,6 +835,7 @@ pub async fn call(state: &AppState, c: &Credential, name: &str, args: &Value) ->
         "code_search" => code_search(state, c, args).await,
         "find_symbol" => find_symbol(state, c, args).await,
         "find_references" => find_references(state, c, args).await,
+        "code_context" => code_context(state, c, args).await,
         "read_code" => read_code(state, c, args).await,
         "repo_overview" => repo_overview(state, c, args).await,
         "list_code_indexes" => list_indexes(state, c, args).await,

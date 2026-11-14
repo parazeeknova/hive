@@ -600,6 +600,35 @@ async fn memory(app: &Router, bearer: &str) -> Result {
         searched["structuredContent"]["memories"][0]["body"],
         "Use bun, not npm."
     );
+    let unmatched = rpc(
+        app,
+        bearer,
+        "recall",
+        json!({"repo":repo,"query":"zebrasandspaceships","include_global":false}),
+    )
+    .await?;
+    assert_eq!(unmatched["structuredContent"]["memories"], json!([]));
+    assert_eq!(unmatched["structuredContent"]["truncated"], false);
+    for query in [json!("x".repeat(401)), json!(42)] {
+        let invalid = rpc(app, bearer, "recall", json!({"repo":repo,"query":query})).await?;
+        assert_eq!(invalid["isError"], true, "{invalid}");
+        assert_eq!(
+            invalid["structuredContent"]["error"],
+            "invalid_memory_query"
+        );
+    }
+    for index in 0..4 {
+        rpc(app, bearer, "remember", json!({"repo":"local/memory-budget","kind":"note","title":format!("Large note {index}"),"body":"q".repeat(8000)})).await?;
+    }
+    let bounded = rpc(
+        app,
+        bearer,
+        "recall",
+        json!({"repo":"local/memory-budget","include_global":false}),
+    )
+    .await?;
+    assert_eq!(bounded["structuredContent"]["truncated"], true);
+    assert!(bounded["structuredContent"]["memories"].to_string().len() <= 16_384);
     let replaced = rpc(app, bearer, "remember", json!({"repo":repo,"kind":"decision","title":"Runtime","body":"Bun is the runtime and package manager.","supersedes":id})).await?;
     assert_eq!(replaced["isError"], false, "{replaced}");
     let current = rpc(
@@ -723,6 +752,21 @@ async fn code_index(app: &Router, bearer: &str) -> Result {
     assert_eq!(
         symbol["structuredContent"]["symbols"][0]["kind"],
         "function"
+    );
+    let context = rpc(app, bearer, "call_tool", json!({"name":"code_context","arguments":{"repo":short,"path":"src/lib.rs","name":"parse_config"}})).await?;
+    assert_eq!(context["isError"], false, "{context}");
+    assert_eq!(context["structuredContent"]["analysis"], "syntax");
+    assert_eq!(context["structuredContent"]["symbol"]["end_line"], 3);
+    assert!(
+        context["structuredContent"]["dependencies"]
+            .to_string()
+            .contains("load")
+    );
+    assert!(
+        !context["structuredContent"]["source"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("pub struct Config")
     );
     let prefix = rpc(
         app,
@@ -978,10 +1022,29 @@ async fn oauth(
         .flatten()
         .filter_map(|t| t["name"].as_str())
         .collect();
-    assert!(
-        names.contains(&"recall") && !names.contains(&"remember"),
-        "{names:?}"
-    );
+    assert_eq!(names, vec!["call_tool", "search_tools"]);
+    let found = rpc(
+        app,
+        &access,
+        "search_tools",
+        json!({"query":"recall decisions"}),
+    )
+    .await?;
+    let found = found["structuredContent"]["tools"]
+        .as_array()
+        .ok_or("missing discovery tools")?;
+    assert!(found.iter().any(|tool| tool["name"] == "recall"));
+    assert!(!found.iter().any(|tool| tool["name"] == "remember"));
+    let recalled = rpc(
+        app,
+        &access,
+        "call_tool",
+        json!({"name":"recall","arguments":{"repo":"global"}}),
+    )
+    .await?;
+    assert_eq!(recalled["isError"], false, "{recalled}");
+    let denied = rpc(app, &access, "call_tool", json!({"name":"remember","arguments":{"repo":"global","kind":"note","title":"Forbidden","body":"Must not be stored"}})).await?;
+    assert_eq!(denied["structuredContent"]["error"], "forbidden");
     let (status, _) = attack(
         app.clone(),
         "POST",

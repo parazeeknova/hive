@@ -138,7 +138,7 @@ async fn exercise(app: &Router, state: &AppState) -> Result {
         app,
         token,
         "run_workflow",
-        json!({"definition":definition,"inputs":{"title":"Workflow fixture"},"wait_seconds":5}),
+        json!({"definition":definition,"inputs":{"title":"Workflow fixture"},"wait_seconds":5,"include_steps":true}),
     )
     .await?;
     let run = &run["structuredContent"];
@@ -154,6 +154,26 @@ async fn exercise(app: &Router, state: &AppState) -> Result {
     assert_eq!(run["output"]["optional_ok"], false);
     assert_eq!(run["steps"]["skip"]["status"], "skipped");
     assert_eq!(run["tool_calls"], 3);
+    let compact = rpc(
+        app,
+        token,
+        "get_workflow_run",
+        json!({"run_id":run["run_id"]}),
+    )
+    .await?;
+    assert!(
+        compact["structuredContent"].get("steps").is_none(),
+        "{compact}"
+    );
+    assert_eq!(compact["structuredContent"]["output"], run["output"]);
+    let diagnostic = rpc(
+        app,
+        token,
+        "get_workflow_run",
+        json!({"run_id":run["run_id"],"include_steps":true}),
+    )
+    .await?;
+    assert_eq!(diagnostic["structuredContent"]["steps"], run["steps"]);
     let other = rpc(
         app,
         "hwa_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -195,6 +215,7 @@ async fn exercise(app: &Router, state: &AppState) -> Result {
         {"id":"save","tool":"remember","arguments":{"repo":"global","kind":"note","title":"Connected workflow","body":"{{steps.fetch.text}}"}}
     ],"output":"{{steps.save.json.memory.body}}"},"wait_seconds":5})).await?;
     worker.await?.map_err(|e| format!("worker: {e}"))?;
+    assert!(connected["structuredContent"].get("steps").is_none());
     assert_eq!(
         connected["structuredContent"]["output"], "Connected result fixture",
         "{connected}"
@@ -212,6 +233,10 @@ async fn exercise(app: &Router, state: &AppState) -> Result {
     assert_eq!(
         nested["structuredContent"]["tool_calls"], 2,
         "nested calls share the root budget"
+    );
+    assert!(
+        nested["structuredContent"]["output"].get("steps").is_none(),
+        "{nested}"
     );
     let mut constrained = state.clone();
     let mut settings = Settings::from_env()?;
