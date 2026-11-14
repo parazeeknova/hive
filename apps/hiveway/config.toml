@@ -165,6 +165,7 @@ title_bytes = 160
 body_bytes = 8192
 tags_per_entry = 8
 recall_results = 20
+response_bytes = 16384
 
 [workflows]
 # Multi-tool workflows run each step with the caller's own credential.

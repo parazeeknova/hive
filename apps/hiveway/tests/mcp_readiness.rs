@@ -303,6 +303,25 @@ async fn catalog_dependencies(app: &Router, state: &AppState) -> Result {
         vec![workflow.into(),json!({"steps":[{"id":"analyze","tool":target}]}).into()],
     )).await?;
     let expected = format!("workflow_{}", workflow.simple());
+    let compact = request(
+        app,
+        KEY,
+        "/mcp",
+        Some(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})),
+    )
+    .await?;
+    let bootstrap = compact["result"]["tools"]
+        .as_array()
+        .ok_or("missing tools")?;
+    assert_eq!(bootstrap.len(), 5, "{compact}");
+    assert!(bootstrap.iter().all(|tool| matches!(
+        tool["name"].as_str(),
+        Some("search_tools" | "call_tool" | "run_workflow" | "get_task" | "get_workflow_run")
+    )));
+    assert!(
+        compact.to_string().len() < 10_000,
+        "bootstrap schemas must stay small"
+    );
     let result = call(
         app,
         KEY,
@@ -357,6 +376,13 @@ async fn native_scopes(app: &Router, state: &AppState) -> Result {
             "code:read",
             "code_search",
             json!({"repo":"github.com/acme/app","query":"main"}),
+            Some("no_code_index_for_repository_run_sync_code_index"),
+        ),
+        (
+            '4',
+            "code:read",
+            "code_context",
+            json!({"repo":"github.com/acme/app","path":"src/lib.rs","name":"main"}),
             Some("no_code_index_for_repository_run_sync_code_index"),
         ),
     ] {

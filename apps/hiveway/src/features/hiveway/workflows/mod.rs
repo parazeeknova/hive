@@ -53,6 +53,7 @@ const NATIVE_STEPS: &[(&str, bool)] = &[
     ("code_search", true),
     ("find_symbol", true),
     ("find_references", true),
+    ("code_context", true),
     ("read_code", true),
     ("list_code_indexes", true),
     ("scaffold_project", true),
@@ -711,14 +712,14 @@ pub fn native_tools(state: &AppState, c: &Credential) -> Vec<Value> {
     tools.push(super::tools::tool(
         "run_workflow",
         &format!("Run several Hive tools as one workflow in a single call: a saved workflow (workflow_<name>) or an inline definition. Choose available tools and inspect their input schemas with search_tools before constructing the plan. Dependencies are inferred from result references; independent steps run concurrently. Pass data between steps with templates in arguments: {{{{inputs.x}}}}, {{{{steps.<id>.text}}}} (text result), {{{{steps.<id>.json.<path>}}}} (structured result), filters like {{{{steps.a.text | truncate: 4000}}}}, | sql (escape for SQL strings), | json, | default: \"x\", | split, | pluck: field, | join: \", \", | length. Use when to skip a step and for_each to repeat it per list item ({{{{item}}}}). Each step uses your own credential and connections, including Hive Local tools. Use on_error=continue for optional steps; required failures stop dependent steps. dry_run validates the graph and inputs without calling tools; availability and permissions are enforced during execution. Long runs return a run_id for get_workflow_run. Up to {} steps and {} tool calls per run. Chains you repeat are saved as private workflows automatically.", limits.max_steps, limits.max_tool_calls),
-        json!({"workflow":{"type":"string","description":"workflow_<name> or workflow id"},"definition":definition,"inputs":{"type":"object"},"dry_run":{"type":"boolean"},"wait_seconds":{"type":"integer","minimum":0,"maximum":limits.call_wait_seconds}}),
+        json!({"workflow":{"type":"string","description":"workflow_<name> or workflow id"},"definition":definition,"inputs":{"type":"object"},"dry_run":{"type":"boolean"},"include_steps":{"type":"boolean","default":false,"description":"Include intermediate previews for diagnostics; otherwise return status and selected output only"},"wait_seconds":{"type":"integer","minimum":0,"maximum":limits.call_wait_seconds}}),
         json!([]),
         false,
     ));
     tools.push(super::tools::tool(
         "get_workflow_run",
-        "Read a workflow run started by run_workflow: status, per-step results and output. wait_seconds waits for it to finish.",
-        json!({"run_id":{"type":"string","format":"uuid"},"wait_seconds":{"type":"integer","minimum":0,"maximum":limits.call_wait_seconds}}),
+        "Read a workflow run started by run_workflow: status and selected output. Set include_steps=true for intermediate previews. wait_seconds waits for it to finish.",
+        json!({"run_id":{"type":"string","format":"uuid"},"include_steps":{"type":"boolean","default":false},"wait_seconds":{"type":"integer","minimum":0,"maximum":limits.call_wait_seconds}}),
         json!(["run_id"]),
         true,
     ));
@@ -775,7 +776,7 @@ pub async fn call(
     name: &str,
     args: &Value,
 ) -> ApiResult<Value> {
-    match name {
+    let result = match name {
         "list_workflows" => list(state, c, args).await,
         "publish_workflow" => publish(state, c, args).await,
         "delete_workflow" => delete(state, c, args).await,
@@ -827,7 +828,10 @@ pub async fn call(
             .await
         }
         _ => Err(ApiError::bad("unknown_tool")),
-    }
+    }?;
+    let include_steps = matches!(name, "run_workflow" | "get_workflow_run")
+        && args["include_steps"].as_bool().unwrap_or(false);
+    Ok(engine::response(result, include_steps))
 }
 
 #[cfg(test)]

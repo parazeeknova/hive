@@ -190,9 +190,33 @@ async fn remember(
     Ok(json!({"memory":saved_entry,"created":inserted}))
 }
 
-/// Recent and relevant memories for a repository, plus account-wide ones.
+/// A bounded memory selection, in relevance or recency order.
+pub struct Recall {
+    pub memories: Vec<Value>,
+    pub truncated: bool,
+}
+
+fn bounded_memories(entries: Vec<Value>, limit: usize, bytes: usize) -> Recall {
+    let mut result = Recall {
+        memories: Vec::new(),
+        truncated: false,
+    };
+    let mut used = 2; // JSON array brackets, including separators and escaping below.
+    for entry in entries {
+        let size = entry.to_string().len() + usize::from(!result.memories.is_empty());
+        if result.memories.len() >= limit || used + size > bytes {
+            result.truncated = true;
+            break;
+        }
+        used += size;
+        result.memories.push(entry);
+    }
+    result
+}
+
+/// Select matching memories, or recent context when no query is supplied.
 /// # Errors
-/// Rejects invalid repositories and filters.
+/// Returns database and stored-entry decoding errors.
 pub async fn recall_for(
     state: &AppState,
     owner: &str,
@@ -201,7 +225,9 @@ pub async fn recall_for(
     kinds: &[String],
     tags: &[String],
     limit: u64,
-) -> ApiResult<Vec<Value>> {
+) -> ApiResult<Recall> {
+    let limits = &state.settings.runtime.memory;
+    let limit = limit.min(limits.recall_results);
     let at = now();
     let base = "owner=$1 AND repo=ANY($2) AND superseded_by IS NULL AND (expires_at IS NULL OR expires_at>$3) AND (cardinality($4::text[])=0 OR kind=ANY($4)) AND (cardinality($5::text[])=0 OR tags && $5)";
     let values = |extra: Vec<sea_orm::Value>| {
@@ -211,31 +237,34 @@ pub async fn recall_for(
             at.into(),
             kinds.to_vec().into(),
             tags.to_vec().into(),
-            i64::try_from(limit).unwrap_or(20).into(),
+            i64::try_from(limit.saturating_add(1)).unwrap_or(21).into(),
         ];
         values.extend(extra);
         values
     };
-    if let Some(query) = query.filter(|q| !q.trim().is_empty()) {
-        let rows = state
+    let rows = if let Some(query) = query.filter(|q| !q.trim().is_empty()) {
+        state
             .postgres
             .query_all_raw(statement(
                 &format!("SELECT {ENTRY} FROM agent_memories WHERE {base} AND search @@ websearch_to_tsquery('english',$7) ORDER BY pinned DESC, ts_rank(search, websearch_to_tsquery('english',$7)) DESC, updated_at DESC LIMIT $6"),
                 values(vec![query.to_owned().into()]),
             ))
-            .await?;
-        if !rows.is_empty() {
-            return rows.iter().map(entry).collect();
-        }
-    }
-    let rows = state
+            .await?
+    } else {
+        state
         .postgres
         .query_all_raw(statement(
             &format!("SELECT {ENTRY} FROM agent_memories WHERE {base} ORDER BY pinned DESC, updated_at DESC LIMIT $6"),
             values(Vec::new()),
         ))
-        .await?;
-    rows.iter().map(entry).collect()
+        .await?
+    };
+    let entries = rows.iter().map(entry).collect::<ApiResult<Vec<_>>>()?;
+    Ok(bounded_memories(
+        entries,
+        usize::try_from(limit).unwrap_or(20),
+        limits.response_bytes,
+    ))
 }
 
 fn strings(args: &Value, key: &str) -> Vec<String> {
@@ -263,7 +292,11 @@ async fn recall(state: &AppState, c: &Credential, args: &Value) -> ApiResult<Val
     if kinds.iter().any(|k| !KINDS.contains(&k.as_str())) {
         return Err(ApiError::bad("invalid_memory_kind"));
     }
-    let query = args["query"].as_str().filter(|q| q.len() <= 400);
+    let query = match args.get("query") {
+        None => None,
+        Some(Value::String(query)) if query.len() <= 400 => Some(query.as_str()),
+        Some(_) => return Err(ApiError::bad("invalid_memory_query")),
+    };
     let memories = recall_for(
         state,
         &c.wallet,
@@ -274,7 +307,9 @@ async fn recall(state: &AppState, c: &Credential, args: &Value) -> ApiResult<Val
         limit,
     )
     .await?;
-    Ok(json!({"repo":repo,"memories":memories,"notice":NOTICE}))
+    Ok(
+        json!({"repo":repo,"memories":memories.memories,"truncated":memories.truncated,"notice":NOTICE}),
+    )
 }
 async fn forget(state: &AppState, c: &Credential, args: &Value) -> ApiResult<Value> {
     let id: Uuid = args["id"]
@@ -318,6 +353,20 @@ pub async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recall_budget_counts_serialized_bytes_and_preserves_rank() {
+        let first = json!({"body":"界\n\"".repeat(20)});
+        let second = json!({"body":"lower ranked"});
+        let budget = first.to_string().len() + 2;
+        let bounded = bounded_memories(vec![first.clone(), second], 20, budget);
+        assert!(bounded.truncated);
+        assert_eq!(bounded.memories, vec![first.clone()]);
+        assert_eq!(json!(bounded.memories).to_string().len(), budget);
+        assert!(!bounded_memories(vec![first], 1, budget).truncated);
+        let bounded = bounded_memories(vec![json!(1), json!(2)], 1, 1024);
+        assert_eq!(bounded.memories, vec![json!(1)]);
+        assert!(bounded.truncated);
+    }
     #[test]
     fn memory_inputs_are_bounded_and_normalized() -> ApiResult<()> {
         assert_eq!(scope("GLOBAL")?, GLOBAL);

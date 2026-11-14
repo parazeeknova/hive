@@ -258,15 +258,7 @@ fn matches_intent(tool: &Value, intents: &[&str], query: &str) -> bool {
                     | ("docs", "context7")
             );
         }
-        if matches!(
-            name,
-            "repo_overview"
-                | "code_search"
-                | "find_symbol"
-                | "find_references"
-                | "read_code"
-                | "list_code_indexes"
-        ) {
+        if codeintel::TOOLS.iter().any(|(tool, _)| *tool == name) {
             return *intent == "code" || (*intent == "files" && has("indexed"));
         }
         if let Some(steps) = tool["_meta"]["dev.hive/requiredTools"].as_array() {
@@ -289,29 +281,33 @@ fn matches_intent(tool: &Value, intents: &[&str], query: &str) -> bool {
         ))
         .into_iter()
         .collect();
-        let terms: &[&str] = match *intent {
-            "files" => &["filesystem", "folder", "directory", "file"],
-            "media" => &["ffmpeg", "video", "audio"],
-            "code" => &[
-                "symbol",
-                "definition",
-                "references",
-                "refactor",
-                "rename",
-                "code",
-                "repository",
-            ],
-            "data" => &["sql", "csv", "parquet", "analytics"],
-            "document" => &["pdf", "markdown", "document"],
-            "templates" => &["template", "inspiration", "design", "landing", "website"],
-            "docs" => &["documentation", "docs", "library", "framework", "sdk"],
-            "web" => &[
-                "research", "web", "website", "browse", "monitor", "latest", "recent", "news",
-            ],
-            _ => &[],
-        };
-        terms.iter().any(|term| text.contains(&stem(term)))
+        intent_terms(intent)
+            .iter()
+            .any(|term| text.contains(&stem(term)))
     })
+}
+fn intent_terms(intent: &str) -> &'static [&'static str] {
+    match intent {
+        "files" => &["filesystem", "folder", "directory", "file"],
+        "media" => &["ffmpeg", "video", "audio"],
+        "code" => &[
+            "symbol",
+            "definition",
+            "references",
+            "refactor",
+            "rename",
+            "code",
+            "repository",
+        ],
+        "data" => &["sql", "csv", "parquet", "analytics"],
+        "document" => &["pdf", "markdown", "document"],
+        "templates" => &["template", "inspiration", "design", "landing", "website"],
+        "docs" => &["documentation", "docs", "library", "framework", "sdk"],
+        "web" => &[
+            "research", "web", "website", "browse", "monitor", "latest", "recent", "news",
+        ],
+        _ => &[],
+    }
 }
 fn routing_intent_score(name: &str, intents: &[&str]) -> f64 {
     if intents.contains(&"document") && name == "mcp_tinyfish__fetch_content" {
@@ -320,13 +316,49 @@ fn routing_intent_score(name: &str, intents: &[&str]) -> f64 {
     if intents.contains(&"code")
         && matches!(
             name,
-            "find_symbol" | "find_references" | "code_search" | "workflow_code_change_brief"
+            "find_symbol"
+                | "find_references"
+                | "code_search"
+                | "code_context"
+                | "workflow_code_change_brief"
         )
     {
         1.5
     } else {
         0.0
     }
+}
+
+/// Lifecycle and publishing schemas should load only for an explicit operation,
+/// rather than matching incidental domain words inside their large schemas.
+fn operation_matches(name: &str, query: &str) -> bool {
+    let required: &[&str] = match name {
+        "scaffold_project" => &["scaffold", "bootstrap", "clone", "starter"],
+        "index_repository" | "upload_code_blobs" | "delete_code_index" => {
+            &["index", "sync", "upload"]
+        }
+        "run_workflow"
+        | "get_workflow_run"
+        | "cancel_workflow_run"
+        | "list_workflows"
+        | "publish_workflow"
+        | "delete_workflow"
+        | "compose_workflow" => &["workflow", "parallel", "combine", "orchestrate"],
+        "search_capabilities"
+        | "discover_capabilities"
+        | "invoke_capability"
+        | "publish_capability"
+        | "upload_artifact"
+        | "build_capability"
+        | "get_build" => &["capability", "artifact", "wasm", "publish", "build"],
+        "dodo_checkout" | "get_receipt" | "refund_operation" | "creator_sales" => {
+            &["checkout", "receipt", "refund", "payment", "sale"]
+        }
+        "get_task" | "cancel_task" => &["task", "progress", "cancel"],
+        _ => return true,
+    };
+    let words = tokens(query);
+    required.iter().any(|word| words.contains(&stem(word)))
 }
 
 /// Only return workflows whose routed dependencies are currently reachable. Native steps
@@ -525,10 +557,9 @@ async fn candidates(
             .unwrap_or_default();
     let available = callable_names(&mut callable);
     tools.retain(|tool| {
-        tool["name"]
-            .as_str()
-            .is_some_and(|name| super::discoverable(name) && available.contains(name))
-            && tool["_meta"]["dev.hive/requiresBinding"] != true
+        tool["name"].as_str().is_some_and(|name| {
+            super::discoverable(name) && available.contains(name) && operation_matches(name, query)
+        }) && tool["_meta"]["dev.hive/requiresBinding"] != true
     });
     Ok(tools)
 }
@@ -727,6 +758,30 @@ fn setup_hints(terms: &[String], names: &[String]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn management_schemas_require_explicit_operation_intent() {
+        assert!(!operation_matches(
+            "scaffold_project",
+            "Read files in my local project"
+        ));
+        assert!(operation_matches(
+            "scaffold_project",
+            "Bootstrap a new project"
+        ));
+        assert!(!operation_matches(
+            "publish_workflow",
+            "Analyze CSV totals using SQL"
+        ));
+        assert!(operation_matches("publish_workflow", "Publish a workflow"));
+        assert!(operation_matches(
+            "index_repository",
+            "Sync this repository index"
+        ));
+        assert!(operation_matches(
+            "code_context",
+            "Find symbol dependencies"
+        ));
+    }
     #[test]
     fn intent_filter_preserves_custom_tools_and_explicit_combinations() {
         let query = "Read files in my local project and list its folders";
