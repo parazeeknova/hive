@@ -79,10 +79,23 @@ const buildTransport = () => {
 let refresh = () => {
   // Replaced once the connection is registered.
 };
+const integration = settings.integrations.find(
+  (item) => item.slug === config.name
+);
+const readOnlyTools = [
+  ...(integration?.upstream?.read_only_tools ?? []),
+  ...Object.entries(integration?.annotations ?? {})
+    .filter(
+      ([, hints]) =>
+        hints.readOnlyHint === true && hints.destructiveHint !== true
+    )
+    .map(([name]) => name),
+];
 const upstream = new Upstream({
   name: config.name,
   negotiate: config.negotiate === true,
   onChanged: () => refresh(),
+  readOnlyTools,
   transport: buildTransport,
 });
 await upstream.connect();

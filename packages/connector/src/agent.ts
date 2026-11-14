@@ -117,6 +117,7 @@ const providerService = async (
   const upstream = new Upstream({
     name: spec.name,
     negotiate,
+    readOnlyTools: spec.readOnlyTools,
     transport: () =>
       new StreamableHTTPClientTransport(new URL(spec.url), {
         requestInit: { headers: { [spec.header]: value }, redirect: "error" },

@@ -31,6 +31,8 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 Supply `OTEL_EXPORTER_OTLP_HEADERS` using deployment secret storage, with the authorization required by your collector. Signal-specific `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and corresponding header variables may override the shared endpoint. Confirm the collector's ingestion paths and permissions; a configured exporter is not proof of ingestion. Check both container stdout and the collector after an authenticated `search_tools` call. Match `request_id` and `call_id` instead of relying on message text alone.
 
+Connector transport failures emit `upstream_request_failed` with the connection name, job ID, method and retry eligibility. The TypeScript connector reconnects and retries once only for tools explicitly classified as read-only by the operator catalog; it never retries application error envelopes or unknown/mutating tools. A successful transport recovery emits `upstream_read_recovered`. Bundled copies of the connector must be updated separately when their host application is deployed.
+
 Arguments, results, authorization headers and provider keys are not added to the MCP activity ledger or these completion logs. Client identity is optional, bounded metadata; it is reported identity, not verified attribution.
 
 ## Activity and deferred execution

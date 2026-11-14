@@ -146,6 +146,8 @@ export interface UpstreamOptions {
   transport: () => Transport;
   /** Probe for the 2026-07-28 protocol before falling back to 2025 initialize. */
   negotiate?: boolean;
+  /** Explicitly verified by the operator, never inferred from an upstream hint. */
+  readOnlyTools?: readonly string[];
   /** Called when the upstream reports that its tools, resources or prompts changed. */
   onChanged?: () => void;
 }
@@ -153,13 +155,15 @@ export interface UpstreamOptions {
 /**
  * One upstream MCP server behind a connector. Server-to-client elicitation is
  * relayed to the Hive caller, progress and cancellation flow both ways, and a
- * failed call heals the session without ever repeating the call.
+ * failed call heals the session. Only explicitly verified read-only tools may
+ * be retried once; mutations and unknown operations are never repeated.
  */
 export class Upstream {
   client: Client;
   private running: Running | null = null;
   private readonly options: UpstreamOptions;
   private inputWait = 20;
+  private needsRepair = false;
   constructor(options: UpstreamOptions) {
     this.options = options;
     this.client = this.create();
@@ -185,14 +189,22 @@ export class Upstream {
     );
     return client;
   }
-  async connect() {
-    await this.client.connect(this.options.transport());
+  async connect(signal?: AbortSignal) {
+    await this.client.connect(
+      this.options.transport(),
+      signal ? { signal } : {}
+    );
   }
-  /** Replace the session after a failure. The failed call is never repeated. */
+  /** Replace the session after a failure; retry decisions belong to run(). */
   async repair() {
+    this.needsRepair = true;
     await this.client.close().catch(ignore);
     this.client = this.create();
-    await this.connect();
+    const signal = this.running?.controller.signal;
+    await this.connect(signal);
+    // Replacements need the catalog cache for SDK output-schema validation.
+    await this.client.listTools(undefined, signal ? { signal } : {});
+    this.needsRepair = false;
   }
   close() {
     return this.client.close();
@@ -226,6 +238,22 @@ export class Upstream {
       tools: tools as unknown as Record<string, unknown>[],
     };
   }
+  private isReadOnlyTool(method: string, job: ClaimedJob) {
+    return (
+      method === "tools/call" &&
+      this.options.readOnlyTools?.includes(job.request.name ?? "") === true
+    );
+  }
+  private static canRetry(
+    readOnly: boolean,
+    repaired: boolean,
+    signal: AbortSignal,
+    deadline: number
+  ) {
+    return (
+      readOnly && repaired && !signal.aborted && Date.now() < deadline - 2000
+    );
+  }
   /** Execute one claimed job against the upstream. */
   async run(
     rpc: HiveRpc,
@@ -235,6 +263,13 @@ export class Upstream {
   ): Promise<Outcome> {
     const controller = new AbortController();
     const deadline = job.deadline_ms ?? Date.now() + 30_000;
+    const deadlineTimer = setTimeout(
+      () => controller.abort(),
+      Math.max(0, deadline - Date.now())
+    );
+    if (deadline <= Date.now()) {
+      controller.abort();
+    }
     const running: Running = { connectionId, controller, deadline, job, rpc };
     this.running = running;
     this.inputWait = inputWait;
@@ -263,6 +298,10 @@ export class Upstream {
     };
     const method = job.method ?? job.request.method ?? "tools/call";
     try {
+      controller.signal.throwIfAborted();
+      if (this.needsRepair) {
+        await this.repair();
+      }
       if (method === "resources/read") {
         const result = await this.client.readResource(
           job.request.params as { uri: string },
@@ -293,13 +332,65 @@ export class Upstream {
         throw error;
       }
       if (controller.signal.aborted) {
+        this.needsRepair = true;
         return {
           cancelled: true,
           result: cancelledResult as unknown as Record<string, unknown>,
         };
       }
-      // Heal a dead upstream session; the failed call is reported once and never repeated.
-      await this.repair().catch(ignore);
+      const retryReadOnly = this.isReadOnlyTool(method, job);
+      // Do not print exception messages: upstream failures may contain credentials
+      // or document contents. These fields are sufficient to correlate the fault.
+      console.error(
+        JSON.stringify({
+          connection: this.options.name,
+          event: "upstream_request_failed",
+          job_id: job.id,
+          method,
+          retry_read_only: retryReadOnly,
+        })
+      );
+      const repaired = await this.repair().then(
+        () => true,
+        () => false
+      );
+      if (
+        Upstream.canRetry(retryReadOnly, repaired, controller.signal, deadline)
+      ) {
+        try {
+          const result = await this.client.callTool(
+            {
+              arguments: job.request.arguments ?? {},
+              name: job.request.name ?? "",
+            },
+            {
+              ...options,
+              maxTotalTimeout: Math.max(1, deadline - Date.now() - 2000),
+            }
+          );
+          console.error(
+            JSON.stringify({
+              connection: this.options.name,
+              event: "upstream_read_recovered",
+              job_id: job.id,
+            })
+          );
+          return { result: result as unknown as Record<string, unknown> };
+        } catch (retryError) {
+          this.needsRepair = true;
+          if (retryError instanceof FatalHiveError) {
+            throw retryError;
+          }
+          // Repair before the next job without executing this call a third time.
+        }
+      }
+      if (controller.signal.aborted) {
+        this.needsRepair = true;
+        return {
+          cancelled: true,
+          result: cancelledResult as unknown as Record<string, unknown>,
+        };
+      }
       if (method === "tools/call") {
         return { result: failure as unknown as Record<string, unknown> };
       }
@@ -310,6 +401,7 @@ export class Upstream {
         },
       };
     } finally {
+      clearTimeout(deadlineTimer);
       clearInterval(beat);
       this.running = null;
     }
