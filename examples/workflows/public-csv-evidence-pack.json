@@ -1,0 +1,110 @@
+{
+  "inputs": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "csv_url": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "default": "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv",
+        "description": "Public HTTPS CSV URL. Private-network destinations are blocked.",
+        "pattern": "^https://"
+      },
+      "notes_url": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "default": "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/README.md",
+        "description": "Public HTTPS provenance or methodology document.",
+        "pattern": "^https://"
+      },
+      "subject": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "Iris flower measurements",
+        "description": "Dataset subject used for contextual evidence."
+      },
+      "sample_rows": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10,
+        "default": 5
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "schema",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "DESCRIBE SELECT * FROM read_csv_auto('{{inputs.csv_url | sql}}')"
+      }
+    },
+    {
+      "id": "statistics",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "SUMMARIZE SELECT * FROM read_csv_auto('{{inputs.csv_url | sql}}')"
+      }
+    },
+    {
+      "id": "sample",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "SELECT * FROM read_csv_auto('{{inputs.csv_url | sql}}') LIMIT {{inputs.sample_rows}}"
+      }
+    },
+    {
+      "id": "rows",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "SELECT COUNT(*) AS row_count FROM read_csv_auto('{{inputs.csv_url | sql}}')"
+      }
+    },
+    {
+      "id": "provenance",
+      "tool": "mcp_markitdown__convert_to_markdown",
+      "arguments": {
+        "uri": "{{inputs.notes_url}}"
+      },
+      "on_error": "continue"
+    },
+    {
+      "id": "research",
+      "tool": "mcp_tinyfish__search",
+      "arguments": {
+        "query": "{{inputs.subject}} dataset measurement limitations data quality"
+      },
+      "on_error": "continue"
+    },
+    {
+      "id": "source",
+      "tool": "mcp_tinyfish__fetch_content",
+      "arguments": {
+        "urls": ["{{steps.research.json.results.0.url}}"],
+        "format": "markdown",
+        "links": false,
+        "image_links": false,
+        "iframe_links": false,
+        "page_metadata": false
+      },
+      "when": "{{steps.research.json.results | length}}",
+      "on_error": "continue"
+    }
+  ],
+  "output": {
+    "dataset_url": "{{inputs.csv_url}}",
+    "schema": "{{steps.schema.json}}",
+    "statistics": "{{steps.statistics.json}}",
+    "sample": "{{steps.sample.json}}",
+    "rows": "{{steps.rows.json}}",
+    "provenance_ok": "{{steps.provenance.ok}}",
+    "provenance": "{{steps.provenance.text | truncate: 6000}}",
+    "research_ok": "{{steps.research.ok}}",
+    "sources": "{{steps.research.json.results | pluck: url}}",
+    "context_ok": "{{steps.source.ok}}",
+    "context": "{{steps.source.text | truncate: 5000}}"
+  }
+}

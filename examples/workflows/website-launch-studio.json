@@ -1,0 +1,108 @@
+{
+  "inputs": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "business": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "coffee shop",
+        "description": "Business type used to discover real website designs."
+      },
+      "library_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "/vercel/next.js",
+        "description": "A Context7 library ID resolved before running this workflow."
+      },
+      "preview": {
+        "type": "boolean",
+        "default": true,
+        "description": "Download actual HTML and start previews on the computer running Hive Local."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "designs",
+      "tool": "mcp_templr__search_templates",
+      "arguments": {
+        "query": "{{inputs.business}}",
+        "limit": 3
+      }
+    },
+    {
+      "id": "docs",
+      "tool": "mcp_context7__query-docs",
+      "arguments": {
+        "libraryId": "{{inputs.library_id}}",
+        "query": "Accessible fast websites: image loading, fonts, forms, metadata and deployment",
+        "language": "TypeScript"
+      }
+    },
+    {
+      "id": "research",
+      "tool": "mcp_tinyfish__search",
+      "arguments": {
+        "query": "{{inputs.business}} website accessibility online ordering best practices"
+      },
+      "on_error": "continue"
+    },
+    {
+      "id": "details",
+      "tool": "mcp_templr__get_template",
+      "arguments": {
+        "slug": "{{item.slug}}"
+      },
+      "for_each": "{{steps.designs.json.templates}}"
+    },
+    {
+      "id": "previews",
+      "tool": "mcp_local-preview__preview_templates",
+      "arguments": {
+        "slugs": ["{{item.slug}}"]
+      },
+      "for_each": "{{steps.designs.json.templates}}",
+      "when": "{{inputs.preview}}"
+    },
+    {
+      "id": "source",
+      "tool": "mcp_tinyfish__fetch_content",
+      "arguments": {
+        "urls": ["{{steps.research.json.results.0.url}}"],
+        "format": "markdown",
+        "links": false,
+        "image_links": false,
+        "iframe_links": false,
+        "page_metadata": false
+      },
+      "when": "{{steps.research.json.results | length}}",
+      "on_error": "continue"
+    },
+    {
+      "id": "inventory",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "SELECT '{{inputs.business | sql}}' AS business, json_array_length('{{steps.designs.json.templates | json | sql}}') AS candidate_count"
+      }
+    }
+  ],
+  "output": {
+    "business": "{{inputs.business}}",
+    "slugs": "{{steps.designs.json.templates | pluck: slug}}",
+    "summaries": "{{steps.designs.json.templates | pluck: summary}}",
+    "fonts": "{{steps.details.json | pluck: meta | pluck: fonts}}",
+    "libraries": "{{steps.details.json | pluck: meta | pluck: libraries}}",
+    "preview_enabled": "{{inputs.preview}}",
+    "previews": "{{steps.previews.json}}",
+    "gallery_url": "{{steps.previews.json.0.gallery_url}}",
+    "implementation_docs": "{{steps.docs.text | truncate: 6000}}",
+    "research_ok": "{{steps.research.ok}}",
+    "research_sources": "{{steps.research.json.results | pluck: url}}",
+    "source_ok": "{{steps.source.ok}}",
+    "source_notes": "{{steps.source.text | truncate: 4000}}",
+    "inventory": "{{steps.inventory.json}}"
+  }
+}

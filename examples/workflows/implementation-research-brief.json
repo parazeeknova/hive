@@ -1,0 +1,103 @@
+{
+  "inputs": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "library_name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "Next.js",
+        "description": "Human-readable library name."
+      },
+      "library_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "/vercel/next.js",
+        "description": "Context7 library ID, resolved by the calling agent."
+      },
+      "task": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000,
+        "default": "Protect authenticated routes with Proxy and test access boundaries",
+        "description": "Concrete implementation question."
+      },
+      "repo": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600,
+        "default": "local/implementation-research",
+        "description": "Memory namespace used only if save_note is true."
+      },
+      "save_note": {
+        "type": "boolean",
+        "default": false,
+        "description": "Explicitly save a bounded research note in account memory."
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "docs",
+      "tool": "mcp_context7__query-docs",
+      "arguments": {
+        "libraryId": "{{inputs.library_id}}",
+        "query": "{{inputs.task}}",
+        "language": "TypeScript"
+      }
+    },
+    {
+      "id": "search",
+      "tool": "mcp_tinyfish__search",
+      "arguments": {
+        "query": "{{inputs.library_name}} {{inputs.task}} official documentation"
+      }
+    },
+    {
+      "id": "fetch",
+      "tool": "mcp_tinyfish__fetch_content",
+      "arguments": {
+        "urls": ["{{steps.search.json.results.0.url}}"],
+        "format": "markdown",
+        "links": false,
+        "image_links": false,
+        "iframe_links": false,
+        "page_metadata": false
+      },
+      "when": "{{steps.search.json.results | length}}",
+      "on_error": "continue"
+    },
+    {
+      "id": "evidence",
+      "tool": "mcp_duckdb__execute_query",
+      "arguments": {
+        "sql": "SELECT '{{inputs.library_name | sql}}' AS library, json_array_length('{{steps.search.json.results | json | sql}}') AS source_count, '{{steps.search.json.results.0.url | sql}}' AS lead_source"
+      }
+    },
+    {
+      "id": "save",
+      "tool": "remember",
+      "arguments": {
+        "repo": "{{inputs.repo}}",
+        "kind": "note",
+        "title": "Research: {{inputs.library_name}}",
+        "body": "Question: {{inputs.task}}\n\nDocumentation:\n{{steps.docs.text | truncate: 3000}}\n\nWeb evidence:\n{{steps.fetch.text | truncate: 2000}}",
+        "tags": ["workflow-research"]
+      },
+      "when": "{{inputs.save_note}}"
+    }
+  ],
+  "output": {
+    "library": "{{inputs.library_name}}",
+    "question": "{{inputs.task}}",
+    "documentation": "{{steps.docs.text | truncate: 8000}}",
+    "web_source": "{{steps.search.json.results.0.url}}",
+    "web_ok": "{{steps.fetch.ok}}",
+    "web_evidence": "{{steps.fetch.text | truncate: 6000}}",
+    "sources": "{{steps.search.json.results | pluck: url}}",
+    "evidence_summary": "{{steps.evidence.json}}",
+    "saved_note_id": "{{steps.save.json.memory.id}}"
+  }
+}
