@@ -239,7 +239,27 @@
       "url": "https://agent.tinyfish.ai/mcp",
       "auth": "header",
       "header": "X-API-Key",
-      "read_only_tools": []
+      "read_only_tools": [
+        "search",
+        "fetch_content",
+        "batch_status",
+        "get_dataset",
+        "get_dataset_rows",
+        "get_deep_research",
+        "get_monitor",
+        "get_run",
+        "get_search_usage",
+        "get_wallet",
+        "guide_next_step",
+        "list_browser_sessions",
+        "list_datasets",
+        "list_deep_research",
+        "list_fetch_usage",
+        "list_monitors",
+        "list_profiles",
+        "list_runs",
+        "plan_dataset"
+      ]
     },
     "discovery_keywords": [
       "web",
@@ -251,7 +271,9 @@
       "advisory",
       "security",
       "sources",
-      "browse"
+      "browse",
+      "monitor",
+      "automate"
     ]
   },
   {
