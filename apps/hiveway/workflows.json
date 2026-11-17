@@ -503,8 +503,8 @@
           "arguments": {
             "repo": "{{inputs.repo}}",
             "kind": "note",
-            "title": "{{inputs.title}}",
-            "body": "Query: {{inputs.query}}\n\n{{steps.search.text | truncate: 7500}}",
+            "title": "{{inputs.title | truncate_bytes: 150}}",
+            "body": "Query: {{inputs.query | truncate_bytes: 1024}}\n\n{{steps.search.text | truncate_bytes: 7000}}",
             "tags": ["research", "web"]
           }
         }
@@ -520,7 +520,7 @@
     "id": "f10a7c00-0000-4000-8000-000000000011",
     "slug": "library_docs_to_memory",
     "name": "Look up library documentation and remember it",
-    "description": "Resolves a library with Context7, queries its current documentation for a topic, and stores the answer in Hive repository memory.",
+    "description": "Queries current Context7 documentation for a topic by library ID and stores the answer in Hive repository memory. Resolve the Context7 library ID first (e.g. /vercel/next.js).",
     "definition": {
       "inputs": {
         "type": "object",
@@ -528,6 +528,10 @@
           "library": {
             "type": "string",
             "description": "Library or framework name, e.g. next.js or axum"
+          },
+          "library_id": {
+            "type": "string",
+            "description": "Context7 library ID, e.g. /vercel/next.js — resolve it before calling"
           },
           "query": {
             "type": "string",
@@ -543,22 +547,14 @@
             "description": "Short memory title"
           }
         },
-        "required": ["library", "query", "title"]
+        "required": ["library", "library_id", "query", "title"]
       },
       "steps": [
-        {
-          "id": "resolve",
-          "tool": "mcp_context7__resolve-library-id",
-          "arguments": {
-            "libraryName": "{{inputs.library}}",
-            "query": "{{inputs.query}}"
-          }
-        },
         {
           "id": "docs",
           "tool": "mcp_context7__query-docs",
           "arguments": {
-            "libraryId": "{{steps.resolve.json.libraryId | default: inputs.library}}",
+            "libraryId": "{{inputs.library_id}}",
             "query": "{{inputs.query}}"
           }
         },
@@ -568,8 +564,8 @@
           "arguments": {
             "repo": "{{inputs.repo}}",
             "kind": "note",
-            "title": "{{inputs.title}}",
-            "body": "Library: {{inputs.library}}\nTopic: {{inputs.query}}\n\n{{steps.docs.text | truncate: 7500}}",
+            "title": "{{inputs.title | truncate_bytes: 150}}",
+            "body": "Library: {{inputs.library | truncate_bytes: 256}}\nTopic: {{inputs.query | truncate_bytes: 1024}}\n\n{{steps.docs.text | truncate_bytes: 6500}}",
             "tags": ["docs"]
           }
         }
