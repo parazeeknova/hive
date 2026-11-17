@@ -155,8 +155,15 @@ pub fn step_reads_only(name: &str) -> bool {
     integrations::registry()
         .iter()
         .find(|item| item.slug == slug)
-        .and_then(|item| item.annotations.get(tool))
-        .is_some_and(|hints| hints["readOnlyHint"] == true)
+        .is_some_and(|item| {
+            item.annotations
+                .get(tool)
+                .is_some_and(|hints| hints["readOnlyHint"] == true)
+                || item
+                    .upstream
+                    .as_ref()
+                    .is_some_and(|u| u.read_only_tools.iter().any(|t| t == tool))
+        })
 }
 /// Validate a definition and derive its dependency graph.
 /// # Errors
@@ -884,6 +891,9 @@ mod tests {
         assert!(step_reads_only("recall"));
         assert!(!step_reads_only("remember"));
         assert!(step_reads_only("mcp_markitdown__convert_to_markdown"));
+        assert!(step_reads_only("mcp_tinyfish__search"));
+        assert!(step_reads_only("mcp_context7__query-docs"));
+        assert!(!step_reads_only("mcp_tinyfish__run_web_automation"));
         assert!(!step_reads_only("mcp_filesystem__write_file"));
     }
 }

@@ -209,7 +209,18 @@ fn task_intents(query: &str) -> Vec<&'static str> {
         (
             "web",
             has(&["research", "latest", "recent", "news"])
-                || (has(&["web", "website"]) && has(&["search", "browse", "monitor"])),
+                || (has(&["web", "website"])
+                    && has(&[
+                        "search",
+                        "browse",
+                        "monitor",
+                        "automate",
+                        "automation",
+                        "scrape",
+                        "extract",
+                        "dataset",
+                        "login",
+                    ])),
         ),
     ]
     .into_iter()
@@ -241,6 +252,25 @@ fn matches_intent(tool: &Value, intents: &[&str], query: &str) -> bool {
                             || (has("deep") && tool.contains("deep_research"))
                             || (has("monitor") && tool.contains("monitor"))
                             || (has("browser") && tool.contains("browser"))
+                            || ((has("automate")
+                                || has("automation")
+                                || has("scrape")
+                                || has("login")
+                                || has("form")
+                                || has("interact"))
+                                && (tool.contains("web_automation") || tool.contains("profile")))
+                            || ((has("dataset") || has("table") || has("scrape"))
+                                && matches!(
+                                    tool,
+                                    "plan_dataset"
+                                        | "create_dataset"
+                                        | "get_dataset"
+                                        | "get_dataset_rows"
+                                        | "list_datasets"
+                                        | "populate_dataset"
+                                ))
+                            || ((has("wallet") || has("balance") || has("top_up"))
+                                && tool.contains("wallet"))
                             || ((has("history") || has("usage")) && tool.contains("usage"))
                     }
                     "document" => tool == "fetch_content",
@@ -823,6 +853,29 @@ mod tests {
             &json!({"name":"mcp_tinyfish__cancel_deep_research"}),
             &intents,
             query
+        ));
+        let auto_query = "Automate website login and scrape structured dataset rows";
+        let auto_intents = task_intents(auto_query);
+        assert!(auto_intents.contains(&"web"));
+        assert!(matches_intent(
+            &json!({"name":"mcp_tinyfish__run_web_automation"}),
+            &auto_intents,
+            auto_query
+        ));
+        assert!(matches_intent(
+            &json!({"name":"mcp_tinyfish__list_profiles"}),
+            &auto_intents,
+            auto_query
+        ));
+        assert!(matches_intent(
+            &json!({"name":"mcp_tinyfish__create_dataset"}),
+            &auto_intents,
+            auto_query
+        ));
+        assert!(!matches_intent(
+            &json!({"name":"mcp_tinyfish__delete_dataset"}),
+            &auto_intents,
+            auto_query
         ));
         assert_eq!(
             search_description(

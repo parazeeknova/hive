@@ -463,5 +463,122 @@
         "excerpts": "{{steps.read.items | pluck: text}}"
       }
     }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000010",
+    "slug": "web_research_brief",
+    "name": "Search the web and save a research brief to memory",
+    "description": "Searches the web with TinyFish and saves the findings as a repository memory note so future sessions can recall them.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Web search query"
+          },
+          "repo": {
+            "type": "string",
+            "default": "global",
+            "description": "Repository, e.g. github.com/acme/app, or global"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short memory title"
+          }
+        },
+        "required": ["query", "title"]
+      },
+      "steps": [
+        {
+          "id": "search",
+          "tool": "mcp_tinyfish__search",
+          "arguments": {
+            "query": "{{inputs.query}}"
+          }
+        },
+        {
+          "id": "remember",
+          "tool": "remember",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "kind": "note",
+            "title": "{{inputs.title}}",
+            "body": "Query: {{inputs.query}}\n\n{{steps.search.text | truncate: 7500}}",
+            "tags": ["research", "web"]
+          }
+        }
+      ],
+      "output": {
+        "query": "{{inputs.query}}",
+        "results": "{{steps.search.json}}",
+        "note": "{{inputs.title}}"
+      }
+    }
+  },
+  {
+    "id": "f10a7c00-0000-4000-8000-000000000011",
+    "slug": "library_docs_to_memory",
+    "name": "Look up library documentation and remember it",
+    "description": "Resolves a library with Context7, queries its current documentation for a topic, and stores the answer in Hive repository memory.",
+    "definition": {
+      "inputs": {
+        "type": "object",
+        "properties": {
+          "library": {
+            "type": "string",
+            "description": "Library or framework name, e.g. next.js or axum"
+          },
+          "query": {
+            "type": "string",
+            "description": "Documentation question or topic"
+          },
+          "repo": {
+            "type": "string",
+            "default": "global",
+            "description": "Repository, e.g. github.com/acme/app, or global"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short memory title"
+          }
+        },
+        "required": ["library", "query", "title"]
+      },
+      "steps": [
+        {
+          "id": "resolve",
+          "tool": "mcp_context7__resolve-library-id",
+          "arguments": {
+            "libraryName": "{{inputs.library}}",
+            "query": "{{inputs.query}}"
+          }
+        },
+        {
+          "id": "docs",
+          "tool": "mcp_context7__query-docs",
+          "arguments": {
+            "libraryId": "{{steps.resolve.json.libraryId | default: inputs.library}}",
+            "query": "{{inputs.query}}"
+          }
+        },
+        {
+          "id": "remember",
+          "tool": "remember",
+          "arguments": {
+            "repo": "{{inputs.repo}}",
+            "kind": "note",
+            "title": "{{inputs.title}}",
+            "body": "Library: {{inputs.library}}\nTopic: {{inputs.query}}\n\n{{steps.docs.text | truncate: 7500}}",
+            "tags": ["docs"]
+          }
+        }
+      ],
+      "output": {
+        "library": "{{inputs.library}}",
+        "docs": "{{steps.docs.text}}",
+        "note": "{{inputs.title}}"
+      }
+    }
   }
 ]
